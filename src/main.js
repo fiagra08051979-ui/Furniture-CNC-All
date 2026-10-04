@@ -21,12 +21,21 @@ const worlds = components.get(OBC.Worlds);
 const world = worlds.create();
 world.scene = new OBC.SimpleScene(components);
 world.scene.setup();
-world.scene.three.background = new THREE.Color("#0d1117");
-world.scene.three.add(new THREE.HemisphereLight(0xffffff, 0x334155, 2.2));
-const keyLight = new THREE.DirectionalLight(0xffffff, 3.0);
-keyLight.position.set(1000, 1400, 1000);
+world.scene.three.background = new THREE.Color("#d8dde5");
+world.scene.three.add(new THREE.HemisphereLight(0xffffff, 0x667085, 2.8));
+const keyLight = new THREE.DirectionalLight(0xffffff, 4.0);
+keyLight.position.set(900, 1300, 1100);
 world.scene.three.add(keyLight);
+const fillLight = new THREE.DirectionalLight(0xffffff, 1.8);
+fillLight.position.set(-900, 700, -700);
+world.scene.three.add(fillLight);
 world.renderer = new OBC.SimpleRenderer(components, viewer);
+if (world.renderer.three) {
+  world.renderer.three.outputColorSpace = THREE.SRGBColorSpace;
+  world.renderer.three.toneMapping = THREE.ACESFilmicToneMapping;
+  world.renderer.three.toneMappingExposure = 1.15;
+  world.renderer.three.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+}
 world.camera = new OBC.OrthoPerspectiveCamera(components);
 components.init();
 
@@ -61,6 +70,40 @@ fragments.core.models.materials.list.onItemSet.add(({ value: material }) => {
 let currentModel = null;
 let originalTransforms = new Map();
 let exploded = false;
+const edgeMaterial = new THREE.LineBasicMaterial({
+  color: 0x17202b,
+  transparent: true,
+  opacity: 0.92,
+  depthTest: true,
+  depthWrite: false
+});
+
+function addEdgeOverlays(root) {
+  if (!root) return;
+  let edgeCount = 0;
+  root.traverse(obj => {
+    if (!obj.isMesh || !obj.geometry || obj.userData?.__edgeOverlay) return;
+    const position = obj.geometry.getAttribute?.("position");
+    if (!position || position.count < 3 || position.count > 180000) return;
+    try {
+      const edges = new THREE.EdgesGeometry(obj.geometry, 14);
+      if (!edges.getAttribute("position")?.count) {
+        edges.dispose();
+        return;
+      }
+      const lines = new THREE.LineSegments(edges, edgeMaterial);
+      lines.name = "CNC_Edges";
+      lines.renderOrder = 20;
+      lines.frustumCulled = false;
+      lines.userData.__edgeOverlay = true;
+      obj.add(lines);
+      edgeCount += 1;
+    } catch (error) {
+      console.warn("Edge overlay skipped", error);
+    }
+  });
+  return edgeCount;
+}
 
 fragments.list.onItemSet.add(({ value: model }) => {
   model.useCamera(world.camera.three);
@@ -116,7 +159,8 @@ function explodeObject(root) {
   const box = new THREE.Box3().setFromObject(root);
   const center = box.getCenter(new THREE.Vector3());
   const children = root.children.filter(c => c.visible);
-  const amount = Math.max(box.getSize(new THREE.Vector3()).length() * 0.16, 80);
+  const size = box.getSize(new THREE.Vector3());
+  const amount = Math.max(Math.max(size.x, size.y, size.z) * 0.42, 140);
 
   children.forEach((child, index) => {
     const childBox = new THREE.Box3().setFromObject(child);
@@ -126,6 +170,14 @@ function explodeObject(root) {
       dir.set((index % 3) - 1, Math.floor(index / 3) - 1, 0);
     }
     dir.normalize();
+    // Make the exploded view directional and readable: vertical parts separate
+    // left/right, horizontal parts move up/down, rear parts move backward.
+    if (Math.abs(dir.x) > Math.abs(dir.z) && Math.abs(dir.x) > Math.abs(dir.y)) {
+      dir.y *= 0.35;
+    } else if (Math.abs(dir.y) > Math.abs(dir.z)) {
+      dir.x *= 0.45;
+      dir.z *= 0.45;
+    }
     child.position.add(dir.multiplyScalar(amount));
   });
 }
@@ -191,6 +243,7 @@ async function loadIfc(file) {
       world.scene.three.add(model.object);
     }
     fragments.core.update(true);
+    addEdgeOverlays(model.object);
     collectTransforms(model.object);
     fitObject(model.object);
     modelName.textContent = file.name;
@@ -199,7 +252,7 @@ async function loadIfc(file) {
     updateChecks(true, false);
     setStatus("IFC загружен · 3D-модель подключена");
     console.info("IFC loaded", { fragments: fragments.list.size, objects: stats.objects, parts: stats.meshes, size: stats.size });
-    setStatus("IFC загружен · геометрия готова");
+    setStatus("IFC загружен · 3D-взрывная схема готова");
     showProgress(false);
   } catch (error) {
     console.error(error);
