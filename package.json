@@ -15,5 +15,8 @@
   },
   "devDependencies": {
     "vite": "^7.1.7"
+  },
+  "stackblitz": {
+    "startCommand": "npm run dev"
   }
 }
