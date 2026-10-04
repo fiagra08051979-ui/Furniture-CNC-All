@@ -168,7 +168,8 @@ async function loadIfc(file) {
     fitObject(model.object);
     modelName.textContent = file.name;
     elementCount.textContent = "3D-модель загружена";
-    updateGeometryStats(model.object);\n    updateChecks(true, false);
+    updateGeometryStats(model.object);
+    updateChecks(true, false);
     setStatus("IFC загружен · геометрия готова");
     showProgress(false);
   } catch (error) {
