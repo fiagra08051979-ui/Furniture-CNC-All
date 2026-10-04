@@ -79,7 +79,10 @@ function showProgress(show, value = 0, text = "Загрузка…") {
 function fitObject(object) {
   if (!object) return;
   const box = new THREE.Box3().setFromObject(object);
-  if (box.isEmpty()) return;
+  if (box.isEmpty()) {
+    world.camera.controls.setLookAt(900, 700, 900, 0, 0, 0, true);
+    return;
+  }
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
   const radius = Math.max(size.x, size.y, size.z) * 1.6 || 100;
@@ -169,7 +172,7 @@ async function loadIfc(file) {
   fileInfo.textContent = file.name + " · " + Math.round(file.size / 1024) + " KB";
 
   try {
-    const model = await ifcLoader.load(buffer, (1 === 0), "FurnitureModel", {
+    const model = await ifcLoader.load(buffer, true, "FurnitureModel", {
       processData: {
         progressCallback: (p) => {
           const value = typeof p === "number" ? p : 0;
