@@ -66,6 +66,13 @@ fragments.init(workerUrl);
 
 world.camera.controls.addEventListener("update", () => fragments.core.update());
 
+if (world.onCameraChanged?.add) {
+  world.onCameraChanged.add((camera) => {
+    for (const [, model] of fragments.list) model.useCamera(camera.three);
+    fragments.core.update(true);
+  });
+}
+
 fragments.core.models.materials.list.onItemSet.add(({ value: material }) => {
   if (!("isLodMaterial" in material && material.isLodMaterial)) {
     material.polygonOffset = true;
@@ -130,8 +137,24 @@ function showProgress(show, value = 0, text = "Загрузка…") {
   progressText.textContent = text;
 }
 
+async function waitForRenderableModel(model, timeoutMs = 5000) {
+  const started = performance.now();
+  while (performance.now() - started < timeoutMs) {
+    model.object?.updateMatrixWorld?.(true);
+    let hasGeometry = false;
+    model.object?.traverse?.(obj => {
+      if (obj.isMesh && obj.geometry?.getAttribute?.("position")?.count) hasGeometry = true;
+    });
+    if (hasGeometry || model.object?.children?.length) return true;
+    fragments.core.update(true);
+    await new Promise(resolve => requestAnimationFrame(resolve));
+  }
+  return false;
+}
+
 function fitObject(object) {
   if (!object) return;
+  object.updateMatrixWorld?.(true);
   const box = new THREE.Box3().setFromObject(object);
   if (box.isEmpty()) {
     world.camera.controls.setLookAt(900, 700, 900, 0, 0, 0, true);
@@ -311,7 +334,14 @@ async function loadIfc(file) {
     if (!world.scene.three.children.includes(model.object)) {
       world.scene.three.add(model.object);
     }
+
+    const renderable = await waitForRenderableModel(model);
+    model.object.updateMatrixWorld?.(true);
     fragments.core.update(true);
+    if (!renderable) {
+      throw new Error("IFC загружен, но 3D-геометрия не появилась в Fragments-модели.");
+    }
+
     addEdgeOverlays(model.object);
     collectTransforms(model.object);
     fitObject(model.object);
@@ -326,6 +356,11 @@ async function loadIfc(file) {
     console.info("IFC loaded", { fragments: fragments.list.size, objects: stats.objects, parts: stats.meshes, size: stats.size });
     setStatus("IFC загружен · рабочее пространство готово");
     showProgress(false);
+    requestAnimationFrame(() => {
+      model.object.updateMatrixWorld?.(true);
+      fragments.core.update(true);
+      fitObject(model.object);
+    });
   } catch (error) {
     console.error(error);
     setStatus("Ошибка загрузки IFC");
