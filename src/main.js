@@ -11,6 +11,10 @@ const fileInfo = document.getElementById("fileInfo");
 const modelName = document.getElementById("modelName");
 const elementCount = document.getElementById("elementCount");
 const checks = document.getElementById("checks");
+const meshCount = document.getElementById("meshCount");
+const sizeX = document.getElementById("sizeX");
+const sizeY = document.getElementById("sizeY");
+const sizeZ = document.getElementById("sizeZ");
 
 const components = new OBC.Components();
 const worlds = components.get(OBC.Worlds);
@@ -117,9 +121,22 @@ function resetTransforms() {
   });
 }
 
-function updateChecks(loaded) {
+function updateGeometryStats(root) {
+  const box = new THREE.Box3().setFromObject(root);
+  const size = box.getSize(new THREE.Vector3());
+  let meshes = 0;
+  root.traverse(obj => { if (obj.isMesh) meshes += 1; });
+  meshCount.textContent = String(meshes);
+  sizeX.textContent = size.x.toFixed(1) + " mm";
+  sizeY.textContent = size.y.toFixed(1) + " mm";
+  sizeZ.textContent = size.z.toFixed(1) + " mm";
+  elementCount.textContent = "Элементы: " + meshes;
+  return { box, size, meshes };
+}
+
+function updateChecks(loaded, verified = false) {
   checks.innerHTML = loaded
-    ? "<div>✓ IFC загружен</div><div>✓ 3D-геометрия отображается</div><div>○ Технологический расчёт — следующий этап</div>"
+    ? "<div class=\"check ok\">✓ IFC загружен</div><div class=\"check ok\">✓ 3D-геометрия отображается</div><div class=\"check neutral\">○ Технологический расчёт — следующий этап</div>"
     : "<div>○ IFC не загружен</div><div>○ Геометрия не проверена</div><div>○ Технология не рассчитана</div>";
 }
 
@@ -151,7 +168,7 @@ async function loadIfc(file) {
     fitObject(model.object);
     modelName.textContent = file.name;
     elementCount.textContent = "3D-модель загружена";
-    updateChecks(true);
+    updateGeometryStats(model.object);\n    updateChecks(true, false);
     setStatus("IFC загружен · геометрия готова");
     showProgress(false);
   } catch (error) {
@@ -179,6 +196,17 @@ document.getElementById("explodeBtn").addEventListener("click", () => {
     exploded = false;
   }
   fragments.core.update(true);
+});
+
+document.getElementById("inspectBtn").addEventListener("click", () => {
+  if (!currentModel) {
+    setStatus("Сначала загрузите IFC");
+    return;
+  }
+  const s = updateGeometryStats(currentModel.object);
+  const valid = !s.box.isEmpty() && s.meshes > 0 && [s.size.x, s.size.y, s.size.z].every(v => Number.isFinite(v) && v > 0);
+  updateChecks(true, valid);
+  setStatus(valid ? "Проверка геометрии пройдена" : "Проверка геометрии не пройдена");
 });
 
 document.getElementById("resetBtn").addEventListener("click", () => {
