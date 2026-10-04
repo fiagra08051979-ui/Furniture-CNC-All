@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Furniture CNC AI</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <div class="brand">Furniture CNC AI</div>
+      <div class="subtitle">IFC → 3D → технология → производство</div>
+    </div>
+    <div class="status" id="status">Готов к загрузке IFC</div>
+  </header>
+  <main class="layout">
+    <aside class="sidebar">
+      <section class="card">
+        <h2>1. IFC-модель</h2>
+        <label class="upload">
+          <input id="ifcInput" type="file" accept=".ifc" />
+          <span>Загрузить IFC</span>
+        </label>
+        <div id="fileInfo" class="muted">Файл не выбран</div>
+      </section>
+
+      <section class="card">
+        <h2>2. Управление 3D</h2>
+        <div class="buttons">
+          <button id="fitBtn">Вписать модель</button>
+          <button id="explodeBtn">Взрывная схема</button>
+          <button id="resetBtn">Сбросить</button>
+        </div>
+        <div class="muted">ЛКМ — вращение · колёсико — масштаб · ПКМ — панорамирование</div>
+      </section>
+
+      <section class="card">
+        <h2>3. Технология</h2>
+        <div class="field"><span>Материал корпуса</span><b>ЛДСП EGGER</b></div>
+        <div class="field"><span>Толщина IFC</span><b>20 мм</b></div>
+        <div class="field"><span>Кромка</span><b>ABS 1 мм, по кругу</b></div>
+        <div class="field"><span>Задняя стенка</span><b>HDF/HDFR 3,2 мм</b></div>
+        <div class="field"><span>Ящики</span><b>2</b></div>
+        <div class="field"><span>Направляющие</span><b>BOYARD SB38GRPH.1/350</b></div>
+        <div class="field"><span>Фасады</span><b>ЛДСП EGGER, 20 мм</b></div>
+        <div class="field"><span>Ножки P01–P04</span><b>Исключить</b></div>
+      </section>
+
+      <section class="card">
+        <h2>4. Контроль</h2>
+        <div id="checks" class="checks">
+          <div>○ IFC не загружен</div>
+          <div>○ Геометрия не проверена</div>
+          <div>○ Технология не рассчитана</div>
+        </div>
+      </section>
+    </aside>
+
+    <section class="viewer-wrap">
+      <div id="viewer"></div>
+      <div class="viewer-overlay">
+        <span id="modelName">3D-просмотр</span>
+        <span id="elementCount">Элементы: —</span>
+      </div>
+      <div id="progress" class="progress hidden">
+        <div class="progress-bar"><div id="progressFill"></div></div>
+        <span id="progressText">Загрузка…</span>
+      </div>
+    </section>
+  </main>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
