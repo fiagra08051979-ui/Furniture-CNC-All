@@ -188,21 +188,6 @@ function showProgress(show, value = 0, text = "Загрузка…") {
   progressText.textContent = text;
 }
 
-async function waitForRenderableModel(model, timeoutMs = 5000) {
-  const started = performance.now();
-  while (performance.now() - started < timeoutMs) {
-    model.object?.updateMatrixWorld?.(true);
-    let hasGeometry = false;
-    model.object?.traverse?.(obj => {
-      if (obj.isMesh && obj.geometry?.getAttribute?.("position")?.count) hasGeometry = true;
-    });
-    if (hasGeometry || model.object?.children?.length) return true;
-    fragments.core.update(true);
-    await new Promise(resolve => requestAnimationFrame(resolve));
-  }
-  return false;
-}
-
 function fitObject(object) {
   if (!object) return;
   object.updateMatrixWorld?.(true);
@@ -371,7 +356,7 @@ async function loadIfc(file) {
   fileInfo.textContent = file.name + " · " + Math.round(file.size / 1024) + " KB";
 
   try {
-    const model = await ifcLoader.load(buffer, true, "FurnitureModel", {
+    await ifcLoader.load(buffer, false, "FurnitureModel", {
       processData: {
         progressCallback: (p) => {
           const value = typeof p === "number" ? p : 0;
@@ -380,18 +365,23 @@ async function loadIfc(file) {
       }
     });
 
+    // IfcLoader resolves after conversion; the authoritative model is the
+    // model emitted into FragmentsManager.list. Do not require a Three.js
+    // Mesh to exist on the container object, because Fragments renders its
+    // geometry internally.
+    const model = Array.from(fragments.list.values()).at(-1);
+    if (!model) {
+      throw new Error("IFC конвертирован, но FragmentsManager не зарегистрировал модель.");
+    }
+
     currentModel = model;
     model.useCamera(world.camera.three);
     if (!world.scene.three.children.includes(model.object)) {
       world.scene.three.add(model.object);
     }
 
-    const renderable = await waitForRenderableModel(model);
     model.object.updateMatrixWorld?.(true);
     fragments.core.update(true);
-    if (!renderable) {
-      throw new Error("IFC загружен, но 3D-геометрия не появилась в Fragments-модели.");
-    }
 
     applyWoodAppearance(model.object);
     addEdgeOverlays(model.object);
