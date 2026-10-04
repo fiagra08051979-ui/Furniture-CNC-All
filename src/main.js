@@ -50,10 +50,14 @@ let currentModel = null;
 let originalTransforms = new Map();
 let exploded = false;
 
-fragments.list.onItemSet.add(({ value: model }) => {
+fragments.list.onItemSet.add(async ({ value: model }) => {
   model.useCamera(world.camera.three);
   world.scene.three.add(model.object);
-  fragments.core.update(true);
+  await fragments.core.update(true);
+  if (currentModel === model) {
+    fitObject(model.object);
+    updateGeometryStats(model.object);
+  }
 });
 
 function setStatus(text) {
@@ -125,13 +129,18 @@ function updateGeometryStats(root) {
   const box = new THREE.Box3().setFromObject(root);
   const size = box.getSize(new THREE.Vector3());
   let meshes = 0;
-  root.traverse(obj => { if (obj.isMesh) meshes += 1; });
-  meshCount.textContent = String(meshes);
+  let objects = 0;
+  root.traverse(obj => {
+    objects += 1;
+    if (obj.isMesh) meshes += 1;
+  });
+  const parts = Math.max(meshes, root.children?.length || 0);
+  meshCount.textContent = String(parts);
   sizeX.textContent = size.x.toFixed(1) + " mm";
   sizeY.textContent = size.y.toFixed(1) + " mm";
   sizeZ.textContent = size.z.toFixed(1) + " mm";
-  elementCount.textContent = "Элементы: " + meshes;
-  return { box, size, meshes };
+  elementCount.textContent = "Элементы: " + parts;
+  return { box, size, meshes: parts, objects };
 }
 
 function updateChecks(loaded, verified = false) {
@@ -205,7 +214,7 @@ document.getElementById("inspectBtn").addEventListener("click", () => {
     return;
   }
   const s = updateGeometryStats(currentModel.object);
-  const valid = !s.box.isEmpty() && s.meshes > 0 && [s.size.x, s.size.y, s.size.z].every(v => Number.isFinite(v) && v > 0);
+  const valid = s.meshes > 0 && [s.size.x, s.size.y, s.size.z].every(v => Number.isFinite(v) && v > 0);
   updateChecks(true, valid);
   setStatus(valid ? "Проверка геометрии пройдена" : "Проверка геометрии не пройдена");
 });
