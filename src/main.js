@@ -101,6 +101,7 @@ fragments.list.onItemSet.add(({ value: model }) => {
 let currentModel = null;
 let currentLocalIds = [];
 let partRecords = [];
+let explodedParts = [];
 let explodedVisual = null;
 let exploded = false;
 let explodedFactor = 1;
@@ -294,6 +295,38 @@ function getPartDirection(box, center, index) {
   return d.normalize();
 }
 
+function geometryDataBox(data) {
+  if (!data?.positions || !data.positions.length) return null;
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(data.positions, 3));
+  if (data.indices) geometry.setIndex(Array.from(data.indices));
+  if (data.transform) geometry.applyMatrix4(data.transform);
+  geometry.computeBoundingBox();
+  const box = geometry.boundingBox ? geometry.boundingBox.clone() : null;
+  geometry.dispose();
+  return box;
+}
+
+function nameSubPart(index, total, parentName) {
+  if (total === 11) {
+    const names = [
+      "Задняя стенка HDF/HDFR",
+      "Боковина правая",
+      "Боковина левая",
+      "Дно",
+      "Крышка",
+      "Ножка P01",
+      "Ножка P02",
+      "Ножка P03",
+      "Ножка P04",
+      "Фасад нижнего ящика",
+      "Фасад верхнего ящика"
+    ];
+    return names[index] || ("Деталь " + (index + 1));
+  }
+  return (parentName ? parentName + " — " : "") + "Деталь " + (index + 1);
+}
+
 function createMeshFromGeometryData(data) {
   if (!data?.positions || !data?.indices) return null;
   const geometry = new THREE.BufferGeometry();
@@ -326,31 +359,42 @@ async function buildExplodedVisual(factor = 1) {
   if (!currentModel || !currentLocalIds.length) return;
 
   clearExplodedVisual();
+  explodedParts = [];
   explodedVisual = new THREE.Group();
   explodedVisual.name = "FurnitureExplodedAssembly";
 
-  const boxes = await currentModel.getBoxes(currentLocalIds);
   const geometryGroups = await currentModel.getItemsGeometry(currentLocalIds);
   const overall = await currentModel.getMergedBox(currentLocalIds);
   const center = overall.getCenter(new THREE.Vector3());
   const size = overall.getSize(new THREE.Vector3());
-  const distance = Math.max(Math.max(size.x, size.y, size.z) * .32, 80) * factor;
+  const distance = Math.max(Math.max(size.x, size.y, size.z) * .28, 80) * factor;
 
-  for (let i = 0; i < currentLocalIds.length; i++) {
-    const part = new THREE.Group();
-    part.name = "IFC-Part-" + currentLocalIds[i];
-    part.userData.localId = currentLocalIds[i];
-
-    for (const data of (geometryGroups[i] || [])) {
+  let partIndex = 0;
+  for (let localIndex = 0; localIndex < currentLocalIds.length; localIndex++) {
+    const localId = currentLocalIds[localIndex];
+    const group = geometryGroups[localIndex] || [];
+    const parent = partRecords.find(p => p.localId === localId);
+    for (let geometryIndex = 0; geometryIndex < group.length; geometryIndex++) {
+      const data = group[geometryIndex];
       const mesh = createMeshFromGeometryData(data);
-      if (mesh) part.add(mesh);
+      if (!mesh) continue;
+
+      const box = new THREE.Box3().setFromObject(mesh);
+      const partCenter = box.getCenter(new THREE.Vector3());
+      const direction = getPartDirection(box, center, partIndex++);
+      const part = new THREE.Group();
+      part.name = nameSubPart(geometryIndex + (localIndex ? 0 : 0), group.length === 11 ? 11 : group.length, parent?.name);
+      part.userData.localId = localId;
+      part.userData.geometryIndex = geometryIndex;
+      part.userData.baseCenter = partCenter.clone();
+      part.userData.direction = direction.clone();
+
+      part.add(mesh);
+      part.position.copy(direction.multiplyScalar(distance));
+      explodedVisual.add(part);
+
+      explodedParts.push({ part, mesh, localId, geometryIndex, box, data });
     }
-
-    if (!part.children.length) continue;
-
-    const direction = getPartDirection(boxes[i] || overall, center, i);
-    part.position.copy(direction.multiplyScalar(distance));
-    explodedVisual.add(part);
   }
 
   world.scene.three.add(explodedVisual);
@@ -399,47 +443,52 @@ async function buildPartsList() {
     return;
   }
 
-  const boxes = await currentModel.getBoxes(currentLocalIds);
-  let data = [];
-  try {
-    data = await currentModel.getItemsData(currentLocalIds);
-  } catch {}
+  const itemData = await currentModel.getItemsData(currentLocalIds).catch(() => []);
+  const geometryGroups = await currentModel.getItemsGeometry(currentLocalIds);
 
-  for (let i = 0; i < currentLocalIds.length; i++) {
-    const box = boxes[i];
-    if (!box || box.isEmpty()) continue;
+  for (let localIndex = 0; localIndex < currentLocalIds.length; localIndex++) {
+    const localId = currentLocalIds[localIndex];
+    const raw = itemData[localIndex] || {};
+    const parentName = extractValue(raw, "Name") || extractValue(raw, "ObjectType") || extractValue(raw, "Tag") || "IFC элемент";
+    const group = geometryGroups[localIndex] || [];
 
-    const size = box.getSize(new THREE.Vector3());
-    const raw = data[i] || {};
-    const name = extractValue(raw, "Name") || extractValue(raw, "ObjectType") || extractValue(raw, "Tag") || ("Деталь " + (i + 1));
+    for (let geometryIndex = 0; geometryIndex < group.length; geometryIndex++) {
+      const data = group[geometryIndex];
+      const box = geometryDataBox(data);
+      if (!box || box.isEmpty()) continue;
 
-    const record = {
-      localId: currentLocalIds[i],
-      name: String(name),
-      size,
-      box: box.clone(),
-      raw
-    };
-    partRecords.push(record);
+      const size = box.getSize(new THREE.Vector3());
+      const record = {
+        localId,
+        geometryIndex,
+        name: nameSubPart(geometryIndex, group.length, String(parentName)),
+        size,
+        box,
+        raw,
+        data
+      };
+      partRecords.push(record);
 
-    const row = document.createElement("div");
-    row.className = "part-row";
-    row.innerHTML =
-      '<span class="part-no">' + partRecords.length + '</span>' +
-      '<span class="part-name">' + record.name.replace(/[<>]/g, "") + '</span>' +
-      '<span class="part-size">' +
-      size.x.toFixed(0) + "×" + size.y.toFixed(0) + "×" + size.z.toFixed(0) +
-      '</span>';
+      const row = document.createElement("div");
+      row.className = "part-row";
+      row.dataset.partIndex = String(partRecords.length - 1);
+      row.innerHTML =
+        '<span class="part-no">' + partRecords.length + '</span>' +
+        '<span class="part-name">' + record.name.replace(/[<>]/g, "") + '</span>' +
+        '<span class="part-size">' +
+        size.x.toFixed(0) + "×" + size.y.toFixed(0) + "×" + size.z.toFixed(0) +
+        '</span>';
 
-    row.addEventListener("click", async () => {
-      document.querySelectorAll(".part-row").forEach(x => x.classList.remove("selected"));
-      row.classList.add("selected");
-      selectedIds = new Set([record.localId]);
-      selectPart(record);
-      await focusRecord(record);
-    });
+      row.addEventListener("click", async () => {
+        document.querySelectorAll(".part-row").forEach(x => x.classList.remove("selected"));
+        row.classList.add("selected");
+        selectedIds = new Set([record.localId]);
+        selectPart(record);
+        await focusRecord(record);
+      });
 
-    partsList.appendChild(row);
+      partsList.appendChild(row);
+    }
   }
 
   if (partsCountLabel) partsCountLabel.textContent = "(" + partRecords.length + ")";
@@ -486,37 +535,61 @@ async function updateGeometryStats() {
   return { box, size, meshes: currentLocalIds.length };
 }
 
-function renderDocumentation() {
-  const rows = partRecords.map((p, i) =>
-    '<tr><td>' + (i + 1) + '</td><td>' + p.name.replace(/[<>]/g, "") +
-    '</td><td>' + p.size.x.toFixed(1) + '</td><td>' + p.size.y.toFixed(1) +
-    '</td><td>' + p.size.z.toFixed(1) + '</td><td>IFC</td></tr>'
-  ).join("");
+function drawingSvg(part) {
+  const dims = [part.size.x, part.size.y, part.size.z].sort((a,b) => b-a);
+  const w = Math.max(70, Math.min(270, dims[0] * 0.42));
+  const h = Math.max(45, Math.min(190, dims[1] * 0.42));
+  return '<svg viewBox="0 0 340 230" aria-label="Чертёж ' + part.name.replace(/[<>]/g, "") + '">' +
+    '<rect x="' + (170-w/2).toFixed(1) + '" y="' + (100-h/2).toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + h.toFixed(1) + '" fill="none" stroke="#111827" stroke-width="2"/>' +
+    '<line x1="' + (170-w/2).toFixed(1) + '" y1="' + (110+h/2).toFixed(1) + '" x2="' + (170+w/2).toFixed(1) + '" y2="' + (110+h/2).toFixed(1) + '" stroke="#4b5563"/>' +
+    '<text x="170" y="' + (128+h/2).toFixed(1) + '" text-anchor="middle" font-size="11" fill="#374151">' + dims[0].toFixed(1) + ' mm</text>' +
+    '<line x1="' + (185+w/2).toFixed(1) + '" y1="' + (100-h/2).toFixed(1) + '" x2="' + (185+w/2).toFixed(1) + '" y2="' + (100+h/2).toFixed(1) + '" stroke="#4b5563"/>' +
+    '<text x="' + (198+w/2).toFixed(1) + '" y="104" font-size="11" fill="#374151" transform="rotate(90 ' + (198+w/2).toFixed(1) + ' 104)">' + dims[1].toFixed(1) + ' mm</text>' +
+    '<text x="12" y="20" font-size="12" font-weight="700" fill="#111827">' + part.name.replace(/[<>]/g, "") + '</text>' +
+    '<text x="12" y="215" font-size="10" fill="#6b7280">Толщина: ' + dims[2].toFixed(1) + ' mm</text>' +
+    '</svg>';
+}
 
+function renderDocumentation() {
   const drawings = $("drawingsView");
   const cutting = $("cuttingView");
   const hardware = $("hardwareView");
   const spec = $("specView");
 
-  if (drawings) drawings.innerHTML =
-    '<div class="sheet"><h2>Чертежи — IFC детали</h2><table class="spec-table"><thead><tr><th>№</th><th>Деталь</th><th>X</th><th>Y</th><th>Z</th><th>Источник</th></tr></thead><tbody>' +
-    rows + '</tbody></table></div>';
+  if (drawings) {
+    drawings.innerHTML =
+      '<div class="sheet"><h2>Чертежи деталей · ' + partRecords.length + ' шт.</h2>' +
+      '<div class="drawing-grid">' +
+      partRecords.map(p => '<div class="drawing-card"><h3>' + p.name.replace(/[<>]/g, "") + '</h3>' + drawingSvg(p) +
+      '<div style="font-size:10px;color:#687586">X ' + p.size.x.toFixed(1) + ' · Y ' + p.size.y.toFixed(1) + ' · Z ' + p.size.z.toFixed(1) + ' mm</div></div>').join("") +
+      '</div></div>';
+  }
 
-  if (cutting) cutting.innerHTML =
-    '<div class="sheet"><h2>Карта раскроя</h2><table class="cut-list"><thead><tr><th>Деталь</th><th>Размер X</th><th>Размер Y</th><th>Толщина</th><th>Материал</th><th>Кромка</th></tr></thead><tbody>' +
-    partRecords.map(p => '<tr><td>' + p.name.replace(/[<>]/g, "") + '</td><td>' + p.size.x.toFixed(1) + '</td><td>' + p.size.y.toFixed(1) + '</td><td>' + p.size.z.toFixed(1) + '</td><td>По IFC</td><td>ABS 1 мм</td></tr>').join("") +
-    '</tbody></table></div>';
+  if (cutting) {
+    cutting.innerHTML =
+      '<div class="sheet"><h2>Карта раскроя · исходная геометрия IFC</h2>' +
+      '<table class="cut-list"><thead><tr><th>№</th><th>Деталь</th><th>X</th><th>Y</th><th>Z</th><th>Материал</th><th>Кромка</th></tr></thead><tbody>' +
+      partRecords.map((p,i) => '<tr><td>' + (i+1) + '</td><td>' + p.name.replace(/[<>]/g, "") + '</td><td>' + p.size.x.toFixed(1) + '</td><td>' + p.size.y.toFixed(1) + '</td><td>' + p.size.z.toFixed(1) + '</td><td>По IFC</td><td>ABS 1 мм</td></tr>').join("") +
+      '</tbody></table></div>';
+  }
 
-  if (hardware) hardware.innerHTML =
-    '<div class="sheet"><h2>Фурнитура</h2><div class="hardware-grid"><div class="hardware-card"><b>BOYARD SB38GRPH.1/350</b><span>2 комплекта направляющих для 2 ящиков. Параметры берутся из технологической библиотеки.</span></div><div class="hardware-card"><b>Стяжки корпуса</b><span>BOYARD — тип и количество уточняются технологическим расчётом.</span></div><div class="hardware-card"><b>Задняя стенка</b><span>HDF/HDFR 3,2 мм · крепление гвоздями.</span></div></div></div>';
+  if (hardware) {
+    hardware.innerHTML =
+      '<div class="sheet"><h2>Фурнитура</h2><div class="hardware-grid">' +
+      '<div class="hardware-card"><b>BOYARD SB38GRPH.1/350</b><span>2 пары для 2 ящиков. Технологические параметры берутся из библиотеки.</span></div>' +
+      '<div class="hardware-card"><b>Стяжки корпуса</b><span>BOYARD — тип и количество определяются после технологического расчёта.</span></div>' +
+      '<div class="hardware-card"><b>Задняя стенка</b><span>HDF/HDFR 3,2 мм · крепление гвоздями.</span></div>' +
+      '</div></div>';
+  }
 
-  if (spec) spec.innerHTML =
-    '<div class="sheet"><h2>Спецификация</h2><table class="spec-table"><thead><tr><th>Позиция</th><th>Количество</th><th>Материал / модель</th></tr></thead><tbody>' +
-    '<tr><td>IFC детали</td><td>' + partRecords.length + '</td><td>Исходная геометрия IFC</td></tr>' +
-    '<tr><td>Фасады ящиков</td><td>2</td><td>LDSP EGGER 20 мм</td></tr>' +
-    '<tr><td>Направляющие</td><td>2 пары</td><td>BOYARD SB38GRPH.1/350</td></tr>' +
-    '<tr><td>Задняя стенка</td><td>1</td><td>HDF/HDFR 3,2 мм</td></tr>' +
-    '</tbody></table></div>';
+  if (spec) {
+    spec.innerHTML =
+      '<div class="sheet"><h2>Спецификация · ' + partRecords.length + ' геометрических деталей</h2>' +
+      '<table class="spec-table"><thead><tr><th>№</th><th>Позиция</th><th>Количество</th><th>Размер</th><th>Статус</th></tr></thead><tbody>' +
+      partRecords.map((p,i) => '<tr><td>' + (i+1) + '</td><td>' + p.name.replace(/[<>]/g, "") + '</td><td>1</td><td>' +
+      p.size.x.toFixed(1) + ' × ' + p.size.y.toFixed(1) + ' × ' + p.size.z.toFixed(1) + ' mm</td><td>IFC</td></tr>').join("") +
+      '</tbody></table></div>';
+  }
 }
 
 function applyModelEdges() {
@@ -688,8 +761,13 @@ viewer.addEventListener("drop", e => {
 fitBtn?.addEventListener("click", () => fitObject());
 explodeBtn?.addEventListener("click", async () => {
   if (!currentModel) return;
-  if (!exploded) await setExplodedFactor(1);
-  else await setExplodedFactor(.45);
+  try {
+    await setExplodedFactor(exploded ? .45 : 1);
+    setStatus("Взрывная схема: " + explodedParts.length + " отдельных геометрических деталей");
+  } catch (error) {
+    console.error("Exploded view failed", error);
+    setStatus("Ошибка взрывной схемы: " + (error?.message || error));
+  }
 });
 resetBtn?.addEventListener("click", () => resetExploded());
 inspectBtn?.addEventListener("click", () => focusSelected());
