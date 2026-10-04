@@ -161,7 +161,7 @@ async function loadIfc(file) {
   fileInfo.textContent = file.name + " · " + Math.round(file.size / 1024) + " KB";
 
   try {
-    const model = await ifcLoader.load(buffer, true, "FurnitureModel", {
+    const model = await ifcLoader.load(buffer, (1 === 0), "FurnitureModel", {
       processData: {
         progressCallback: (p) => {
           const value = typeof p === "number" ? p : 0;
