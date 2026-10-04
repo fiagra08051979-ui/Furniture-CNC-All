@@ -337,6 +337,7 @@ function updateGeometryStats(root) {
 }
 
 function updateChecks(loaded, verified = false) {
+  if (!checks) return;
   checks.innerHTML = loaded
     ? "<div class=\"check ok\">✓ IFC загружен</div><div class=\"check ok\">✓ 3D-геометрия отображается</div><div class=\"check neutral\">○ Технологический расчёт — следующий этап</div>"
     : "<div>○ IFC не загружен</div><div>○ Геометрия не проверена</div><div>○ Технология не рассчитана</div>";
