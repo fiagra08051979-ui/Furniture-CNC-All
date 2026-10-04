@@ -7,78 +7,97 @@
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div>
-      <div class="brand">Furniture CNC AI</div>
-      <div class="subtitle">IFC → 3D → технология → производство</div>
-    </div>
-    <div class="status" id="status">Готов к загрузке IFC</div>
-  </header>
-  <main class="layout">
-    <aside class="sidebar">
-      <section class="card">
-        <h2>1. IFC-модель</h2>
-        <label class="upload">
-          <input id="ifcInput" type="file" accept=".ifc" />
-          <span>Загрузить IFC</span>
-        </label>
-        <div id="fileInfo" class="muted">Файл не выбран</div>
-      </section>
+<header class="topbar">
+  <div class="brand-wrap"><div class="brand">Furniture CNC AI</div><div class="subtitle">IFC → 3D → технология → производство</div></div>
+  <div class="status" id="status">Готов. Загрузите IFC-файл.</div>
+</header>
 
-      <section class="card">
-        <h2>2. Управление 3D</h2>
-        <div class="buttons">
-          <button id="fitBtn">Вписать модель</button>
-          <button id="explodeBtn">3D-взрывная схема</button>
-          <button id="resetBtn">Сбросить</button>
-          <button id="inspectBtn">Проверить</button>
-        </div>
-        <div class="muted">ЛКМ — вращение · колёсико — масштаб · ПКМ — панорамирование</div>
-      </section>
+<nav class="work-tabs" aria-label="Разделы проекта">
+  <button class="work-tab active" data-tab="model">▣ <span>3D модель</span></button>
+  <button class="work-tab" data-tab="drawings">▤ <span>Чертежи</span></button>
+  <button class="work-tab" data-tab="cutting">▦ <span>Карта раскроя</span></button>
+  <button class="work-tab" data-tab="hardware">⚙ <span>Фурнитура</span></button>
+  <button class="work-tab" data-tab="spec">☷ <span>Спецификация</span></button>
+</nav>
 
-      <section class="card">
-        <h2>3. Технология</h2>
-        <div class="field"><span>Материал корпуса</span><b>ЛДСП EGGER</b></div>
-        <div class="field"><span>Толщина IFC</span><b>20 мм</b></div>
-        <div class="field"><span>Кромка</span><b>ABS 1 мм, по кругу</b></div>
-        <div class="field"><span>Задняя стенка</span><b>HDF/HDFR 3,2 мм</b></div>
-        <div class="field"><span>Ящики</span><b>2</b></div>
-        <div class="field"><span>Направляющие</span><b>BOYARD SB38GRPH.1/350</b></div>
-        <div class="field"><span>Фасады</span><b>ЛДСП EGGER, 20 мм</b></div>
-        <div class="field"><span>Ножки P01–P04</span><b>Исключить</b></div>
-      </section>
+<main class="workspace">
+  <aside class="left-panel">
+    <section class="panel-section model-section">
+      <div class="section-title">Детали <span id="partsCountLabel">(0)</span></div>
+      <div id="partsList" class="parts-list"><div class="empty-state">Загрузите IFC — детали появятся здесь.</div></div>
+    </section>
 
-      <section class="card">
-        <h2>4. Контроль</h2>
-        <div id="checks" class="checks">
-          <div>○ IFC не загружен</div>
-          <div>○ Геометрия не проверена</div>
-          <div>○ Технология не рассчитана</div>
-        </div>
-      </section>
-      <section class="card">
-        <h2>5. Геометрия</h2>
-        <div class="geom-stats">
-          <div><span>Детали</span><b id="meshCount">—</b></div>
-          <div><span>X</span><b id="sizeX">—</b></div>
-          <div><span>Y</span><b id="sizeY">—</b></div>
-          <div><span>Z</span><b id="sizeZ">—</b></div>
-        </div>
-      </section>
-    </aside>
+    <section class="panel-section">
+      <div class="section-title">Материалы</div>
+      <div class="material-row"><span>Корпус</span><b>ЛДСП EGGER · 20 мм</b></div>
+      <div class="material-row"><span>Фасады</span><b>ЛДСП EGGER · 20 мм</b></div>
+      <div class="material-row"><span>Кромка</span><b>ABS 1 мм · по кругу</b></div>
+      <div class="material-row"><span>Задняя стенка</span><b>HDF/HDFR · 3,2 мм</b></div>
+    </section>
 
-    <section class="viewer-wrap">
+    <section class="panel-section" id="techPanel">
+      <div class="section-title">Технология</div>
+      <div class="material-row"><span>Ящики</span><b>2</b></div>
+      <div class="material-row"><span>Направляющие</span><b>SB38GRPH.1/350</b></div>
+      <div class="material-row"><span>Ножки</span><b>Исключить P01–P04</b></div>
+    </section>
+  </aside>
+
+  <section class="center-stage">
+    <div id="modelView" class="view-panel active">
       <div id="viewer"></div>
-      <div class="viewer-overlay">
-        <span id="modelName">3D-просмотр</span>
-        <span id="elementCount">Элементы: —</span>
+      <div class="viewer-toolbar">
+        <button id="fitBtn">Вписать</button><button id="explodeBtn">Взрывная схема</button>
+        <button id="resetBtn">Сбросить</button><button id="inspectBtn">Проверить</button>
       </div>
-      <div id="progress" class="progress hidden">
-        <div class="progress-bar"><div id="progressFill"></div></div>
-        <span id="progressText">Загрузка…</span>
+      <div class="viewer-labels"><span id="modelName">3D-просмотр</span><span id="elementCount">Элементы: —</span></div>
+    </div>
+    <div id="drawingsView" class="view-panel drawing-panel"></div>
+    <div id="cuttingView" class="view-panel cutting-panel"></div>
+    <div id="hardwareView" class="view-panel hardware-panel"></div>
+    <div id="specView" class="view-panel spec-panel"></div>
+    <div id="progress" class="progress hidden"><div class="progress-bar"><div id="progressFill"></div></div><span id="progressText">Загрузка…</span></div>
+  </section>
+
+  <aside class="right-panel">
+    <section class="panel-section">
+      <div class="section-title">Размеры детали</div>
+      <div id="selectedPart" class="selected-part">Выберите деталь в списке</div>
+      <div class="dimension-grid">
+        <div><span>Ширина</span><b id="dimX">—</b></div>
+        <div><span>Глубина</span><b id="dimY">—</b></div>
+        <div><span>Высота</span><b id="dimZ">—</b></div>
       </div>
     </section>
-  </main>
-  <script type="module" src="/src/main.js"></script>
+    <section class="panel-section">
+      <div class="section-title">Виды</div>
+      <div class="view-grid">
+        <button data-view="explode">Взрыв-схема</button>
+        <button data-view="assembled">Собранный</button>
+        <button data-view="front">Спереди</button>
+        <button data-view="side">Сбоку</button>
+        <button data-view="top">Сверху</button>
+        <button data-view="bottom">Снизу</button>
+      </div>
+    </section>
+    <section class="panel-section">
+      <div class="section-title">Контроль</div>
+      <div id="checks" class="checks"><div>○ IFC не загружен</div><div>○ Геометрия не проверена</div><div>○ Технология не рассчитана</div></div>
+    </section>
+    <section class="panel-section">
+      <div class="section-title">Габариты модели</div>
+      <div class="dimension-grid">
+        <div><span>X</span><b id="sizeX">—</b></div>
+        <div><span>Y</span><b id="sizeY">—</b></div>
+        <div><span>Z</span><b id="sizeZ">—</b></div>
+      </div>
+    </section>
+    <label class="upload"><input id="ifcInput" type="file" accept=".ifc" /><span>Загрузить IFC</span></label>
+    <div id="fileInfo" class="file-info">Файл не выбран</div>
+  </aside>
+</main>
+
+<footer class="statusbar"><span>IFC-геометрия является исходной геометрией проекта.</span><span id="projectState">Проект не загружен</span></footer>
+<script type="module" src="/src/main.js"></script>
 </body>
 </html>
