@@ -84,10 +84,61 @@ fragments.core.models.materials.list.onItemSet.add(({ value: material }) => {
 let currentModel = null;
 let originalTransforms = new Map();
 let exploded = false;
+
+function createWoodTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1024;
+  canvas.height = 1024;
+  const ctx = canvas.getContext("2d");
+  const g = ctx.createLinearGradient(0, 0, 1024, 0);
+  g.addColorStop(0, "#b98552");
+  g.addColorStop(0.18, "#d6ad7a");
+  g.addColorStop(0.42, "#c4945f");
+  g.addColorStop(0.68, "#e0bd8b");
+  g.addColorStop(1, "#b27c49");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 1024, 1024);
+  for (let y = -40; y < 1060; y += 13) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    for (let x = 0; x <= 1024; x += 28) {
+      const yy = y + Math.sin(x * 0.018 + y * 0.021) * 5 + Math.sin(x * 0.051) * 2;
+      ctx.lineTo(x, yy);
+    }
+    ctx.strokeStyle = "rgba(75,45,24,0.24)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(2.2, 3.4);
+  texture.anisotropy = 4;
+  return texture;
+}
+
+const woodTexture = createWoodTexture();
+
+function applyWoodAppearance(root) {
+  if (!root) return;
+  root.traverse(obj => {
+    if (!obj.isMesh || obj.userData?.__edgeOverlay) return;
+    const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+    materials.forEach(material => {
+      if (!material) return;
+      if ("map" in material) material.map = woodTexture;
+      if ("color" in material) material.color.set("#d0a06c");
+      if ("roughness" in material) material.roughness = 0.72;
+      if ("metalness" in material) material.metalness = 0;
+      material.needsUpdate = true;
+    });
+  });
+}
 const edgeMaterial = new THREE.LineBasicMaterial({
-  color: 0x17202b,
-  transparent: true,
-  opacity: 0.92,
+  color: 0x000000,
+  transparent: false,
+  opacity: 1,
   depthTest: true,
   depthWrite: false
 });
@@ -342,6 +393,7 @@ async function loadIfc(file) {
       throw new Error("IFC загружен, но 3D-геометрия не появилась в Fragments-модели.");
     }
 
+    applyWoodAppearance(model.object);
     addEdgeOverlays(model.object);
     collectTransforms(model.object);
     fitObject(model.object);
