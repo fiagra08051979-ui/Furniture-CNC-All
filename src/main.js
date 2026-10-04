@@ -46,6 +46,19 @@ fragments.init(workerUrl);
 
 world.camera.controls.addEventListener("update", () => fragments.core.update());
 
+world.onCameraChanged.add((camera) => {
+  for (const [, model] of fragments.list) model.useCamera(camera.three);
+  fragments.core.update(true);
+});
+
+fragments.core.models.materials.list.onItemSet.add(({ value: material }) => {
+  if (!("isLodMaterial" in material && material.isLodMaterial)) {
+    material.polygonOffset = true;
+    material.polygonOffsetUnits = 1;
+    material.polygonOffsetFactor = 1;
+  }
+});
+
 let currentModel = null;
 let originalTransforms = new Map();
 let exploded = false;
