@@ -50,14 +50,12 @@ let currentModel = null;
 let originalTransforms = new Map();
 let exploded = false;
 
-fragments.list.onItemSet.add(async ({ value: model }) => {
+fragments.list.onItemSet.add(({ value: model }) => {
   model.useCamera(world.camera.three);
-  world.scene.three.add(model.object);
-  await fragments.core.update(true);
-  if (currentModel === model) {
-    fitObject(model.object);
-    updateGeometryStats(model.object);
+  if (!world.scene.three.children.includes(model.object)) {
+    world.scene.three.add(model.object);
   }
+  fragments.core.update(true);
 });
 
 function setStatus(text) {
@@ -173,13 +171,18 @@ async function loadIfc(file) {
     });
 
     currentModel = model;
-    await fragments.core.update(true);
+    model.useCamera(world.camera.three);
+    if (!world.scene.three.children.includes(model.object)) {
+      world.scene.three.add(model.object);
+    }
+    fragments.core.update(true);
     collectTransforms(model.object);
     fitObject(model.object);
     modelName.textContent = file.name;
     elementCount.textContent = "3D-модель загружена";
     const stats = updateGeometryStats(model.object);
     updateChecks(true, false);
+    setStatus("IFC загружен · 3D-модель подключена");
     console.info("IFC loaded", { fragments: fragments.list.size, objects: stats.objects, parts: stats.meshes, size: stats.size });
     setStatus("IFC загружен · геометрия готова");
     showProgress(false);
