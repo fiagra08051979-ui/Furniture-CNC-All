@@ -173,12 +173,14 @@ async function loadIfc(file) {
     });
 
     currentModel = model;
+    await fragments.core.update(true);
     collectTransforms(model.object);
     fitObject(model.object);
     modelName.textContent = file.name;
     elementCount.textContent = "3D-модель загружена";
-    updateGeometryStats(model.object);
+    const stats = updateGeometryStats(model.object);
     updateChecks(true, false);
+    console.info("IFC loaded", { fragments: fragments.list.size, objects: stats.objects, parts: stats.meshes, size: stats.size });
     setStatus("IFC загружен · геометрия готова");
     showProgress(false);
   } catch (error) {
