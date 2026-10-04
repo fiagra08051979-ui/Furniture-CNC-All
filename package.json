@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@thatopen/components": "3.4.8",
-    "three": "^0.180.0",
+    "three": "0.186.1",
     "web-ifc": "0.0.77"
   },
   "devDependencies": {
