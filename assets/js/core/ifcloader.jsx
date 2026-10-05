@@ -71,7 +71,7 @@ function classKey(name) {
 // ---------------------------------------------------------------------------
 // Lazy web-ifc bootstrap
 // ---------------------------------------------------------------------------
-const IFC_LOADER_BUNDLE_URL = 'assets/js/ifc-loader-bundle.js?v=web-ifc-0.0.35';
+const IFC_LOADER_BUNDLE_URL = 'https://cdn.jsdelivr.net/gh/isaddiq/IFC_Web_Viewer@main/assets/js/ifc-loader-bundle.js';
 const IFC_WASM_PATH = 'https://unpkg.com/web-ifc@0.0.35/';
 
 let _ifcPromise = null;
