@@ -1,108 +1,77 @@
 <!doctype html>
-<html lang="ru">
+<html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Furniture CNC AI</title>
-  <link rel="stylesheet" href="/src/style.css" />
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="description" content="A static IFC viewer for inspecting BIM geometry, metadata, selections, sections, measurements, and schema data in the browser." />
+<title>IFC Static Web Viewer</title>
+<link rel="icon" type="image/png" href="assets/logos/ifc-logo.png" />
+<!-- Preload IFC runtime assets so they are already in-flight when the app requests them -->
+<link rel="preload" href="assets/js/ifc-loader-bundle.js?v=web-ifc-0.0.35" as="script" />
+<link rel="preload" href="assets/js/web-ifc-0.0.35/web-ifc.wasm" as="fetch" crossorigin="anonymous" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="assets/css/main.css" />
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script type="module">
+import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+window.THREE = THREE;
+
+const appScripts = [
+  'assets/js/compiled/core/model.js',
+  'assets/js/compiled/core/ifcloader.js',
+  'assets/js/compiled/viewer/viewer.js',
+  'assets/js/compiled/ui/icons.js',
+  'assets/js/compiled/ui/panels.js',
+  'assets/js/compiled/app.js',
+];
+
+for (const src of appScripts) {
+  await new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = src;
+    script.onload = resolve;
+    script.onerror = () => reject(new Error(`Failed to load ${src}`));
+    document.head.appendChild(script);
+  });
+}
+</script>
+<script>
+const { useCallback, useEffect, useMemo, useReducer, useRef, useState } = React;
+</script>
 </head>
 <body>
-<header class="topbar">
-  <div class="brand-wrap">
-    <div class="brand-mark">◇</div>
-    <div><div class="brand">Furniture CNC AI</div><div class="subtitle">IFC → 3D → технология → производство</div></div>
+<main id="root"></main>
+<noscript>This IFC viewer requires JavaScript.</noscript>
+
+<div id="vc-popover" class="vc-popover" role="dialog" aria-label="Visitor Statistics">
+  <div class="vc-popover-top">
+    <span>Visitor Statistics</span>
+    <button
+      type="button"
+      class="vc-pop-close"
+      onclick="document.getElementById('vc-popover').classList.remove('vc-open')"
+      aria-label="Close visitor statistics"
+    >
+      &times;
+    </button>
   </div>
-  <div class="top-actions">
-    <button>▱ <span>Проект</span></button><button>▣ <span>Сохранить</span></button><button>⇧ <span>Загрузить</span></button><button>⚙ <span>Настройки</span></button>
-  </div>
-</header>
+  <a
+    href="http://s01.flagcounter.com/more/2uk"
+    target="_blank"
+    rel="noopener noreferrer"
+    class="vc-flag-link"
+    title="Click to see full analytics"
+  >
+    <img
+      src="https://s01.flagcounter.com/count2/2uk/bg_161b22/txt_e6edf3/border_30363d/columns_4/maxflags_20/viewers_0/labels_1/pageviews_1/flags_0/percent_0/"
+      alt="Flag Counter - visitor statistics by country"
+      class="vc-flag-img"
+    />
+  </a>
+</div>
 
-<nav class="work-tabs" aria-label="Разделы проекта">
-  <button class="work-tab active" data-tab="model"><i>◇</i><span>3D модель</span></button>
-  <button class="work-tab" data-tab="drawings"><i>▤</i><span>Чертежи</span></button>
-  <button class="work-tab" data-tab="cutting"><i>▦</i><span>Карта раскроя</span></button>
-  <button class="work-tab" data-tab="hardware"><i>✣</i><span>Фурнитура</span></button>
-  <button class="work-tab" data-tab="spec"><i>☷</i><span>Спецификация</span></button>
-  <div class="status" id="status">Готов. Загрузите IFC-файл.</div>
-</nav>
-
-<main class="workspace">
-  <aside class="left-panel">
-    <section class="panel-section parts-section">
-      <div class="section-title big">Детали <span id="partsCountLabel">(0)</span></div>
-      <div id="partsList" class="parts-list"><div class="empty-state">Загрузите IFC — детали появятся здесь.</div></div>
-    </section>
-    <section class="panel-section materials-section">
-      <div class="section-title big">Материалы</div>
-      <div class="material-card"><div class="material-thumb wood"></div><div><span>Корпус</span><b>ЛДСП EGGER 20 мм</b><small>Дуб Сонома</small></div><button>⌄</button></div>
-      <div class="material-card"><div class="material-thumb white"></div><div><span>Фасад</span><b>ЛДСП EGGER 20 мм</b><small>Белый матовый</small></div><button>⌄</button></div>
-      <div class="material-card"><div class="material-thumb edge"></div><div><span>Кромка</span><b>ABS 1 мм</b><small>По кругу</small></div><button>⌄</button></div>
-      <div class="material-card"><div class="material-thumb back"></div><div><span>Задняя стенка</span><b>HDF/HDFR 3,2 мм</b><small>Коричневый</small></div><button>⌄</button></div>
-    </section>
-  </aside>
-
-  <section class="center-stage">
-    <div id="modelView" class="view-panel active">
-      <div id="viewer"></div>
-      <div class="viewer-labels"><span id="modelName">Просмотр модели</span><span id="elementCount">Элементы: —</span></div>
-      <div class="center-controls">
-        <button id="fitBtn">⌗ Вписать</button>
-        <button id="explodeBtn" class="primary-control">✣ Взрывная схема</button>
-        <button id="resetBtn">↻ Сбросить</button>
-        <button id="inspectBtn">☑ Проверить</button>
-      </div>
-      <div class="bottom-views">
-        <button class="view-card active" data-view="explode"><div class="mini-view exploded-mini">◇</div><span>Взрывная схема</span></button>
-        <button class="view-card" data-view="assembled"><div class="mini-view cabinet-mini">▣</div><span>Собранный вид</span></button>
-        <button class="view-card" data-view="front"><div class="mini-view front-mini">▯</div><span>Спереди</span></button>
-        <button class="view-card" data-view="side"><div class="mini-view side-mini">▯</div><span>Сбоку</span></button>
-        <button class="view-card" data-view="top"><div class="mini-view top-mini">▭</div><span>Сверху</span></button>
-        <button class="view-card" data-view="bottom"><div class="mini-view top-mini">▭</div><span>Снизу</span></button>
-        <div class="dimension-preview"><span>450</span><i></i><span>316</span><i class="vertical"></i><span>500</span></div>
-      </div>
-    </div>
-    <div id="drawingsView" class="view-panel drawing-panel"></div>
-    <div id="cuttingView" class="view-panel cutting-panel"></div>
-    <div id="hardwareView" class="view-panel hardware-panel"></div>
-    <div id="specView" class="view-panel spec-panel"></div>
-    <div id="progress" class="progress hidden"><div class="progress-bar"><div id="progressFill"></div></div><span id="progressText">Загрузка…</span></div>
-  </section>
-
-  <aside class="right-panel">
-    <section class="panel-section material-picker">
-      <div class="section-title big">Просмотр модели</div>
-      <div class="swatch-grid">
-        <button class="swatch selected"><div class="swatch-img wood"></div><span>Дуб Сонома</span></button>
-        <button class="swatch"><div class="swatch-img darkwood"></div><span>Дуб Венге</span></button>
-        <button class="swatch"><div class="swatch-img beech"></div><span>Бук</span></button>
-        <button class="swatch"><div class="swatch-img walnut"></div><span>Орех</span></button>
-        <button class="swatch"><div class="swatch-img ash"></div><span>Ясень</span></button>
-        <button class="swatch"><div class="swatch-img concrete"></div><span>Бетон</span></button>
-        <button class="swatch"><div class="swatch-img white"></div><span>Белый</span></button>
-        <button class="swatch"><div class="swatch-img grey"></div><span>Серый</span></button>
-        <button class="swatch"><div class="swatch-img black"></div><span>Чёрный</span></button>
-      </div>
-    </section>
-    <section class="panel-section">
-      <div class="section-title big">Размеры детали</div>
-      <div id="selectedPart" class="selected-part">Выберите деталь</div>
-      <label class="field"><span>Название</span><input id="partNameField" value="—" readonly /></label>
-      <label class="field"><span>Длина (высота)</span><b id="dimZ">—</b></label>
-      <label class="field"><span>Ширина (глубина)</span><b id="dimY">—</b></label>
-      <label class="field"><span>Толщина</span><b id="dimX">—</b></label>
-      <div class="material-detail"><div class="detail-swatch wood"></div><div><span>Материал</span><b>ЛДСП 20 мм</b></div></div>
-      <div class="field"><span>Кромка</span><b>ABS 1 мм</b></div>
-      <div class="detail-sketch"><div class="sketch-board"><span>↕</span><b>500</b><span>↔</span><b>316</b></div></div>
-    </section>
-    <section class="panel-section">
-      <div class="section-title big">Габариты модели</div>
-      <div class="dimension-grid"><div><span>Детали</span><b id="meshCount">—</b></div><div><span>X</span><b id="sizeX">—</b></div><div><span>Y</span><b id="sizeY">—</b></div><div><span>Z</span><b id="sizeZ">—</b></div></div>
-    </section>
-    <label class="upload"><input id="ifcInput" type="file" accept=".ifc" /><span>Загрузить IFC</span></label>
-    <div id="fileInfo" class="file-info">Файл не выбран</div>
-  </aside>
-</main>
-<footer class="statusbar"><span>IFC-геометрия является исходной геометрией проекта.</span><span id="projectState">Проект не загружен</span></footer>
-<script type="module" src="/src/main.js"></script>
 </body>
 </html>
