@@ -3,14 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "build": "esbuild assets/js/core/model.jsx --outfile=assets/js/compiled/core/model.js --format=iife --target=es2018 --jsx-factory=React.createElement --jsx-fragment=React.Fragment && esbuild assets/js/core/ifcloader.jsx --outfile=assets/js/compiled/core/ifcloader.js --format=iife --target=es2018 --jsx-factory=React.createElement --jsx-fragment=React.Fragment && esbuild assets/js/viewer/viewer.jsx --outfile=assets/js/compiled/viewer/viewer.js --format=iife --target=es2018 --jsx-factory=React.createElement --jsx-fragment=React.Fragment && esbuild assets/js/ui/icons.jsx --outfile=assets/js/compiled/ui/icons.js --format=iife --target=es2018 --jsx-factory=React.createElement --jsx-fragment=React.Fragment && esbuild assets/js/ui/panels.jsx --outfile=assets/js/compiled/ui/panels.js --format=iife --target=es2018 --jsx-factory=React.createElement --jsx-fragment=React.Fragment && esbuild assets/js/app.jsx --outfile=assets/js/compiled/app.js --format=iife --target=es2018 --jsx-factory=React.createElement --jsx-fragment=React.Fragment && esbuild assets/js/ifc-loader-entry.js --bundle --format=iife --target=es2018 --outfile=assets/js/ifc-loader-bundle.js",
+    "build": "esbuild assets/js/core/model.jsx --outfile=assets/js/compiled/core/model.js --format=iife --target=es2018 --jsx-factory=React.createElement --jsx-fragment=React.Fragment && esbuild assets/js/core/ifcloader.jsx --outfile=assets/js/compiled/core/ifcloader.js --format=iife --target=es2018 --jsx-factory=React.createElement --jsx-fragment=React.Fragment && esbuild assets/js/viewer/viewer.jsx --outfile=assets/js/compiled/viewer/viewer.js --format=iife --target=es2018 --jsx-factory=React.createElement --jsx-fragment=React.Fragment && esbuild assets/js/ui/icons.jsx --outfile=assets/js/compiled/ui/icons.js --format=iife --target=es2018 --jsx-factory=React.createElement --jsx-fragment=React.Fragment && esbuild assets/js/ui/panels.jsx --outfile=assets/js/compiled/ui/panels.js --format=iife --target=es2018 --jsx-factory=React.createElement --jsx-fragment=React.Fragment && esbuild assets/js/app.jsx --outfile=assets/js/compiled/app.js --format=iife --target=es2018 --jsx-factory=React.createElement --jsx-fragment=React.Fragment",
     "start": "npm run build && npx --yes serve . -l 5173"
   },
-  "dependencies": {
-    "web-ifc": "0.0.35",
-    "web-ifc-three": "0.0.118",
-    "three": "0.135.0"
-  },
+  "dependencies": {},
   "devDependencies": {
     "esbuild": "^0.25.10"
   }
