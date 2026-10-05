@@ -6,9 +6,8 @@
 <meta name="description" content="A static IFC viewer for inspecting BIM geometry, metadata, selections, sections, measurements, and schema data in the browser." />
 <title>IFC Static Web Viewer</title>
 <link rel="icon" type="image/png" href="assets/logos/ifc-logo.png" />
-<!-- Preload IFC runtime assets so they are already in-flight when the app requests them -->
-<link rel="preload" href="assets/js/ifc-loader-bundle.js?v=web-ifc-0.0.35" as="script" />
-<link rel="preload" href="assets/js/web-ifc-0.0.35/web-ifc.wasm" as="fetch" crossorigin="anonymous" />
+<!-- Reference IFC runtime: loaded from the working reference viewer bundle -->
+<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
