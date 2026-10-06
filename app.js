@@ -318,7 +318,7 @@ function extractIfcPlanarContour(part) {
   );
   const ratio=maxA>0 ? area/maxA : 0;
 
-  // Для серийного CNC разрешаем автоматический контур только
+  // Для серийного ЧПУ разрешаем автоматический контур только
   // для плоской детали, у которой фактическая геометрия практически
   // совпадает с прямоугольной оболочкой.
   const rectangular = hull.length === 4 && ratio >= 0.995;
@@ -446,7 +446,7 @@ function buildIfcDrillingPlan() {
         contactAxis:j.contactAxis, linkedPart:j.partB===(u.partNumber||u.name)?j.partA:j.partB,
         source:"IFC contact geometry", needsReference:!valid,
         checks:{contourReady,surfaceConfirmed,planarSafe,depthSafe:depth<thickness,surfaceDistance:Number(surfaceDistance.toFixed(2)),edgeClearance},
-        note:valid?"База и направление сверления определены по фактическому габариту IFC; операция разрешена к CNC-предпроверке.":"Требуется проверка базовой поверхности/положения контакта перед передачей в CNC."
+        note:valid?"База и направление сверления определены по фактическому габариту IFC; операция разрешена к ЧПУ-предпроверке.":"Требуется проверка базовой поверхности/положения контакта перед передачей в ЧПУ."
       };
       u.technology.drilling.push(candidate); candidates++;
       if(valid) ready++; else blocked++;
@@ -881,7 +881,7 @@ async function importIfcIntoFurnitureCore(file) {
       "Распознано: " + recognitionSummary +
       (recognition.lowConfidence ? " · требуют проверки: " + recognition.lowConfidence : " · неоднозначных деталей нет") +
       " · технология: готово " + technology.ready + ", на проверке " + technology.review +
-      " · CNC-контур: готов " + cncReadiness.ready + ", заблокирован " + cncReadiness.blocked +
+      " · ЧПУ-контур: готов " + cncReadiness.ready + ", заблокирован " + cncReadiness.blocked +
       " · соединения-кандидаты: " + ifcTechnologyOps.joints.length +
       " · позиции крепежа-кандидаты: " + ifcHardwareSchedule.length;
 
@@ -1950,11 +1950,11 @@ function readCncMachineSetup() {
 
 function validateCncMachineSetup(setup = readCncMachineSetup()) {
   const issues = [];
-  if (setup.safeZ <= 0) issues.push({level:"error",message:"Safe Z должен быть больше 0 мм."});
+  if (setup.safeZ <= 0) issues.push({level:"error",message:"Безопасная высота Z должен быть больше 0 мм."});
   if (setup.defaultFeed <= 0) issues.push({level:"error",message:"Подача должна быть больше 0 мм/мин."});
   if (setup.spindle <= 0) issues.push({level:"error",message:"Обороты шпинделя должны быть больше 0 об/мин."});
   if (setup.workZ > 0) issues.push({level:"warning",message:"Рабочий Z выше нулевой плоскости детали."});
-  if (setup.safeZ <= Math.abs(setup.workZ)) issues.push({level:"error",message:"Safe Z должен быть выше рабочей глубины."});
+  if (setup.safeZ <= Math.abs(setup.workZ)) issues.push({level:"error",message:"Безопасная высота Z должен быть выше рабочей глубины."});
   return issues;
 }
 
@@ -1965,9 +1965,9 @@ function applyCncMachineSetup() {
     validate(setupIssues.map(i => i.message).join(" "), "error");
     return setup;
   }
-  CNC_POSTPROCESSORS.generic.safeZ = setup.safeZ;
-  CNC_POSTPROCESSORS.generic.drillFeed = setup.defaultFeed;
-  validate("Настройки CNC применены: Safe Z " + setup.safeZ + " мм, подача " + setup.defaultFeed + " мм/мин.", "ok");
+  ЧПУ_POSTPROCESSORS.generic.safeZ = setup.safeZ;
+  ЧПУ_POSTPROCESSORS.generic.drillFeed = setup.defaultFeed;
+  validate("Настройки ЧПУ применены: Безопасная высота Z " + setup.safeZ + " мм, подача " + setup.defaultFeed + " мм/мин.", "ok");
   return setup;
 }
 
@@ -1998,7 +1998,7 @@ function buildCncJobManifest() {
     }
   }));
   return {
-    format:"Furniture AI Designer CNC Job",
+    format:"Furniture AI Designer — ПРОГРАММА ЧПУ Job",
     version:"2.7",
     postprocessor:post.name,
     postprocessorStatus: post.name === "Universal G-code" ? "generic" : "template-unvalidated",
@@ -2078,8 +2078,8 @@ function exportCncJobManifest() {
   link.click();
   URL.revokeObjectURL(link.href);
   validate(manifest.readyForMachine ?
-    "CNC Job Manifest сформирован: критических ошибок нет." :
-    "CNC Job Manifest сформирован, но обнаружены ошибки Preflight.", manifest.readyForMachine ? "ok" : "error");
+    "ЧПУ Job Manifest сформирован: критических ошибок нет." :
+    "ЧПУ Job Manifest сформирован, но обнаружены ошибки Preflight.", manifest.readyForMachine ? "ok" : "error");
 }
 
 function buildCncJob(part) {
@@ -2154,7 +2154,7 @@ function cncCollisionChecks(part) {
   }
   operations.forEach(op => {
     if (op.type === "CONTOUR_BLOCKED") {
-      issues.push({level:"error",operation:op.sequence,message:"CNC-контур IFC не подтверждён: автоматический экспорт запрещён до проверки геометрии"});
+      issues.push({level:"error",operation:op.sequence,message:"ЧПУ-контур IFC не подтверждён: автоматический экспорт запрещён до проверки геометрии"});
       return;
     }
     if (op.type === "TECH_BLOCKED") {
@@ -2195,18 +2195,18 @@ function validateIfcManufacturingIntegrity(part) {
   const issues=[];
   const ids=new Set();
   cnc.forEach(op=>{
-    if(!op.id) issues.push({level:"error",operation:op.sequence,message:"IFC CNC-операция не имеет стабильного ID"});
-    else if(ids.has(op.id)) issues.push({level:"error",operation:op.sequence,message:"Дублирование IFC CNC operation ID: "+op.id});
+    if(!op.id) issues.push({level:"error",operation:op.sequence,message:"IFC ЧПУ-операция не имеет стабильного ID"});
+    else if(ids.has(op.id)) issues.push({level:"error",operation:op.sequence,message:"Дублирование IFC ЧПУ operation ID: "+op.id});
     else ids.add(op.id);
   });
   const packetReady=(packet?.contour?.ready ? 1 : 0) + (packet?.drilling||[]).filter(d=>d.status==="ready").length +
     (packet?.operations||[]).filter(o=>o.status==="ready" && (o.type==="MILL" || o.type==="POCKET")).length;
   if(packetReady !== cnc.length)
-    issues.push({level:"error",operation:"MANUFACTURING",message:"Несоответствие Manufacturing Plan и CNC: "+packetReady+" подтверждённых операций против "+cnc.length+" CNC-операций"});
+    issues.push({level:"error",operation:"MANUFACTURING",message:"Несоответствие Manufacturing Plan и ЧПУ: "+packetReady+" подтверждённых операций против "+cnc.length+" ЧПУ-операций"});
   const expectedDrills=(packet?.drilling||[]).filter(d=>d.status==="ready").map(d=>d.id).filter(Boolean);
   const cncDrills=cnc.filter(o=>o.type==="DRILL").map(o=>o.id);
   expectedDrills.forEach(id=>{
-    if(!cncDrills.includes(id)) issues.push({level:"error",operation:id,message:"Подтверждённое IFC-сверление потеряно при передаче в CNC"});
+    if(!cncDrills.includes(id)) issues.push({level:"error",operation:id,message:"Подтверждённое IFC-сверление потеряно при передаче в ЧПУ"});
   });
   return issues;
 }
@@ -2238,9 +2238,9 @@ function manufacturingPreflight(part) {
     if(op.type==="CONTOUR" && (!Array.isArray(op.path) || op.path.length<3))
       issues.push({level:"error",operation:op.sequence,message:"Контур не содержит достаточного количества точек"});
     if(op.toolId && op.toolId!=="TBD" && tool.id!==op.toolId)
-      issues.push({level:"error",operation:op.sequence,message:"Несоответствие назначенного инструмента библиотеке CNC"});
+      issues.push({level:"error",operation:op.sequence,message:"Несоответствие назначенного инструмента библиотеке ЧПУ"});
   });
-  if(setup.safeZ<=0) issues.push({level:"error",operation:"SETUP",message:"Safe Z должен быть больше 0"});
+  if(setup.safeZ<=0) issues.push({level:"error",operation:"SETUP",message:"Безопасная высота Z должен быть больше 0"});
   return issues;
 }
 
@@ -2284,7 +2284,7 @@ function renderCncPreflight() {
       list.map(i=>"<div class='status "+i.level+"'>Деталь "+i.partNumber+
       ", операция "+i.operation+": "+i.message+"</div>").join("")+"</div>";
   }).join("");
-  target.innerHTML = "<b>Проверка CNC перед экспортом</b>" +
+  target.innerHTML = "<b>Проверка ЧПУ перед экспортом</b>" +
     (issues.length ? stageHtml : "<div class='status ok'>Все звенья производственной цепочки прошли проверку.</div>");
   return issues;
 }
@@ -2335,7 +2335,7 @@ function assertManufacturingLifecycleReady(part) {
   const blocked=lifecycle.filter(x=>!x.valid);
   if(blocked.length || !plan.machineReady) {
     const validation=(plan.validation||[]).map(x=>x.code || x.message).join(", ");
-    throw new Error("CNC заблокирован: "+blocked.map(x=>x.operationId+"="+x.status).join(", ")+(validation ? " | "+validation : ""));
+    throw new Error("ЧПУ заблокирован: "+blocked.map(x=>x.operationId+"="+x.status).join(", ")+(validation ? " | "+validation : ""));
   }
   return lifecycle;
 }
@@ -2346,10 +2346,10 @@ function buildCncProgram(part) {
   const u = part.userData;
   const rawOps = plan.operations;
   if (rawOps.some(op => op.type === "CONTOUR_BLOCKED" || op.type === "TECH_BLOCKED"))
-    throw new Error("CNC export blocked: IFC technology is not confirmed.");
+    throw new Error("ЧПУ export blocked: IFC technology is not confirmed.");
   const ops = rawOps.map(op => cncOperationWithTool(op, u.material));
   const lines = [
-    "; Furniture AI Designer CNC",
+    "; Furniture AI Designer — ПРОГРАММА ЧПУ",
     "; Detail: " + u.partNumber + " " + u.name,
     "; Size: " + Math.round(u.width) + " x " + Math.round(u.height) + " x " + Math.round(u.depth),
     "G21",
@@ -2359,7 +2359,7 @@ function buildCncProgram(part) {
   ];
   ops.forEach(op => {
     if (op.type === "CONTOUR") {
-      lines.push("; CONTOUR " + op.width + " X " + op.height);
+      lines.push("; КОНТУР " + op.width + " X " + op.height);
       lines.push("G0 Z5.000");
       op.path.forEach(([x,y], i) => {
         if (i === 0) lines.push("G0 X" + x.toFixed(3) + " Y" + y.toFixed(3));
@@ -2393,7 +2393,7 @@ function exportCncProgram(part) {
   URL.revokeObjectURL(link.href);
 }
 
-const CNC_TOOL_LIBRARY = {
+const ЧПУ_TOOL_LIBRARY = {
   drilling: [
     {id:"DRILL-5",name:"Сверло Ø5 мм",diameter:5,kind:"drill",materials:["ЛДСП","МДФ","Фанера"]},
     {id:"DRILL-6",name:"Сверло Ø6 мм",diameter:6,kind:"drill",materials:["ЛДСП","МДФ","Фанера"]},
@@ -2414,7 +2414,7 @@ function cncMaterialFamily(material) {
 }
 
 function selectCncTool(op, material) {
-  const family = op.type === "DRILL" ? CNC_TOOL_LIBRARY.drilling : CNC_TOOL_LIBRARY.milling;
+  const family = op.type === "DRILL" ? ЧПУ_TOOL_LIBRARY.drilling : ЧПУ_TOOL_LIBRARY.milling;
   const familyName=cncMaterialFamily(material);
   const candidates = family.filter(t => t.materials.includes(familyName));
   if (op.diameter > 0) {
@@ -2548,7 +2548,7 @@ function renderCncOperationJournal(part) {
   const target=$("cncOperationJournal");
   if(!target) return;
   const journal=buildCncOperationJournal(part);
-  target.innerHTML="<b>Операционный журнал CNC · "+part.userData.partNumber+"</b>"+
+  target.innerHTML="<b>Операционный журнал ЧПУ · "+part.userData.partNumber+"</b>"+
     (journal.length ? "<div>"+journal.map(op=>
       "<div class='cnc-journal-row'><b>"+op.sequence+". "+op.id+"</b> · "+op.type+
       " · "+op.preflightStatus+
@@ -2565,18 +2565,18 @@ function renderCncTechCard(part) {
   const target = $("cncTechCard");
   if (!target) return;
   target.innerHTML =
-    "<b>CNC-карточка детали " + card.partNumber + "</b>" +
+    "<b>ЧПУ-карточка детали " + card.partNumber + "</b>" +
     "<div>Материал: " + card.material + " | Толщина: " + card.thickness + " мм</div>" +
     "<div>Размер: " + Math.round(card.size.length) + " × " + Math.round(card.size.width) + " × " + Math.round(card.size.depth) + " мм</div>" +
     "<div>Постпроцессор: " + card.machine + " | Нулевая точка: " + card.zeroPoint + "</div>" +
-    "<div>Safe Z: " + card.safeZ + " мм | Подача: " + card.feed + " мм/мин</div>" +
+    "<div>Безопасная высота Z: " + card.safeZ + " мм | Подача: " + card.feed + " мм/мин</div>" +
     "<div>Инструмент: " + card.tool + " | Обороты: " + card.spindle + "</div>" +
     "<div>Операций: " + card.operations.length + "</div>";
 }
 
 function exportCncOperationJournals() {
   const payload={
-    format:"Furniture AI CNC Operation Journal",
+    format:"Furniture AI ЧПУ Operation Journal",
     version:"1.0",
     generatedAt:new Date().toISOString(),
     parts:parts.map(part=>({
@@ -2592,13 +2592,13 @@ function exportCncOperationJournals() {
   link.download="cnc-operation-journal.json";
   link.click();
   URL.revokeObjectURL(link.href);
-  validate("Операционный журнал CNC экспортирован.", "ok");
+  validate("Операционный журнал ЧПУ экспортирован.", "ok");
 }
 
 function exportCncTechCards() {
   const cards = parts.map(buildCncTechCard);
   const blob = new Blob([JSON.stringify({
-    format:"Furniture AI CNC Tech Card",
+    format:"Furniture AI ЧПУ Tech Card",
     version:"2.0",
     postprocessor:getPostprocessor().name,
     cards
@@ -2608,10 +2608,10 @@ function exportCncTechCards() {
   link.download="cnc-tech-cards.json";
   link.click();
   URL.revokeObjectURL(link.href);
-  validate("Технологическая карта CNC экспортирована.", "ok");
+  validate("Технологическая карта ЧПУ экспортирована.", "ok");
 }
 
-const CNC_POSTPROCESSORS = {
+const ЧПУ_POSTPROCESSORS = {
   generic: {
     name: "Universal G-code",
     extension: ".nc",
@@ -2623,7 +2623,7 @@ const CNC_POSTPROCESSORS = {
   biesse: {
     name: "Biesse — базовый шаблон",
     extension: ".cix",
-    header: ["; BIESSE CNC PROGRAM","; Furniture AI Designer"],
+    header: ["; BIESSE ЧПУ PROGRAM","; Furniture AI Designer"],
     footer: ["; END"],
     drillFeed: 300,
     safeZ: 5
@@ -2631,7 +2631,7 @@ const CNC_POSTPROCESSORS = {
   homag: {
     name: "Homag — базовый шаблон",
     extension: ".mpr",
-    header: ["; HOMAG CNC PROGRAM","; Furniture AI Designer"],
+    header: ["; HOMAG ЧПУ PROGRAM","; Furniture AI Designer"],
     footer: ["; END"],
     drillFeed: 300,
     safeZ: 5
@@ -2639,7 +2639,7 @@ const CNC_POSTPROCESSORS = {
   scm: {
     name: "SCM — базовый шаблон",
     extension: ".pgm",
-    header: ["; SCM CNC PROGRAM","; Furniture AI Designer"],
+    header: ["; SCM ЧПУ PROGRAM","; Furniture AI Designer"],
     footer: ["; END"],
     drillFeed: 300,
     safeZ: 5
@@ -2647,7 +2647,7 @@ const CNC_POSTPROCESSORS = {
 };
 
 function getPostprocessor() {
-  return CNC_POSTPROCESSORS[$("cncPostprocessor")?.value || "generic"] || CNC_POSTPROCESSORS.generic;
+  return ЧПУ_POSTPROCESSORS[$("cncPostprocessor")?.value || "generic"] || ЧПУ_POSTPROCESSORS.generic;
 }
 
 function buildIfcProductionPacket(part) {
@@ -2711,12 +2711,12 @@ function refreshPartTechnologyRecord(part) {
 function buildCncJobProgram(part) {
   const plan=getCompiledManufacturingPlan(part);
   assertManufacturingLifecycleReady(part);
-  if(!plan.compiledToolpathProgram?.length) throw new Error("CNC заблокирован: отсутствует Compiled Toolpath Program.");
-  const u=part.userData, lines=["; Furniture AI Designer CNC JOB","; DETAIL "+plan.partNumber,"; MATERIAL "+plan.material,"; THICKNESS "+plan.thickness,"G21","G90","G17","G54"];
+  if(!plan.compiledToolpathProgram?.length) throw new Error("ЧПУ заблокирован: отсутствует Compiled Toolpath Program.");
+  const u=part.userData, lines=["; Furniture AI Designer — ПРОГРАММА ЧПУ","; ДЕТАЛЬ "+plan.partNumber,"; МАТЕРИАЛ "+plan.material,"; ТОЛЩИНА "+plan.thickness,"G21","G90","G17","G54"];
   let currentTool=null;
   plan.compiledToolpathProgram.forEach(op=>{
     const tool=selectCncTool({type:op.type,diameter:op.diameter||0},u.material);
-    if(tool && tool.id!==currentTool){ lines.push("; TOOL CHANGE "+tool.id,"M5","T"+tool.id+" M6"); currentTool=tool.id; }
+    if(tool && tool.id!==currentTool){ lines.push("; СМЕНА ИНСТРУМЕНТА "+tool.id,"M5","T"+tool.id+" M6"); currentTool=tool.id; }
     lines.push("; "+op.type+" "+op.operationId);
     op.points.forEach((p,i)=>lines.push((i===0||Number(p.z)>=op.safeZ?"G0":"G1")+" X"+p.x.toFixed(3)+" Y"+p.y.toFixed(3)+" Z"+p.z.toFixed(3)));
   });
@@ -2728,11 +2728,11 @@ function buildPostprocessedProgram(part) {
   const post=getPostprocessor(), plan=getCompiledManufacturingPlan(part);
   assertManufacturingLifecycleReady(part);
   if(!plan.compiledToolpathProgram?.length) throw new Error("Postprocessor blocked: отсутствует Compiled Toolpath Program.");
-  const u=part.userData, lines=[...post.header,"; DETAIL "+u.partNumber+" "+u.name,"; SOURCE COMPILED_TOOLPATH"];
+  const u=part.userData, lines=[...post.header,"; ДЕТАЛЬ "+u.partNumber+" "+u.name,"; ИСТОЧНИК: СКОМПИЛИРОВАННАЯ ТРАЕКТОРИЯ"];
   let currentTool=null;
   plan.compiledToolpathProgram.forEach(op=>{
     const tool=selectCncTool({type:op.type,diameter:op.diameter||0},u.material);
-    if(tool && tool.id!==currentTool){ lines.push("; TOOL CHANGE "+tool.id,"M5","T"+tool.id+" M6"); currentTool=tool.id; }
+    if(tool && tool.id!==currentTool){ lines.push("; СМЕНА ИНСТРУМЕНТА "+tool.id,"M5","T"+tool.id+" M6"); currentTool=tool.id; }
     lines.push("; "+op.type+" "+op.operationId);
     op.points.forEach((p,i)=>lines.push((i===0||Number(p.z)>=op.safeZ?"G0":"G1")+" X"+p.x.toFixed(3)+" Y"+p.y.toFixed(3)+" Z"+p.z.toFixed(3)));
   });
@@ -2745,7 +2745,7 @@ function exportAllCnc() {
   const preflightIssues = cncPreflight();
   const critical = [...setupIssues, ...preflightIssues].filter(i => i.level === "error");
   if (critical.length) {
-    validate("CNC-экспорт заблокирован: обнаружены критические ошибки. Исправьте их в Preflight.", "error");
+    validate("Экспорт ЧПУ заблокирован: обнаружены критические ошибки. Исправьте их в предварительной проверке.", "error");
     renderCncPreflight();
     renderCncSetupValidation();
     return;
@@ -2759,12 +2759,12 @@ function exportAllCnc() {
     link.click();
     URL.revokeObjectURL(link.href);
   });
-  validate("CNC-файлы подготовлены после успешного Preflight: " + post.name, "ok");
+  validate("Файлы ЧПУ подготовлены после успешной предварительной проверки: " + post.name, "ok");
 }
 
 
   parts.forEach(part => exportCncProgram(part));
-  validate("CNC-программы подготовлены для " + parts.length + " деталей.", "ok");
+  validate("Программы ЧПУ подготовлены для " + parts.length + " деталей.", "ok");
 }
 
 function addMillingEntities(lines, part) {
@@ -2861,13 +2861,13 @@ function exportExcel() {
     "Дюбели/эксцентрики": part.userData.secondaryFasteners?.map(h => h.type + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
     "Обработка": part.userData.detailing?.processing?.map(h => h.operation + " " + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
     "IFC-контур": part.userData.source === "IFC" ? (part.userData.ifcContour?.ready ? "подтверждён" : "заблокирован") : "",
-    "IFC Manufacturing ID": part.userData.source === "IFC" ? (part.userData.productionPacket?.expressId || "") : "",
-    "IFC CNC-операции": part.userData.source === "IFC" ? buildIfcManufacturingOperations(part).map(op => op.id).join(" | ") : "",
-    "IFC Integrity": part.userData.source === "IFC" ? (validateIfcManufacturingIntegrity(part).length ? "ОШИБКА" : "OK") : "",
-    "CNC Preflight": manufacturingPreflight(part).length ? "ОШИБКА" : "OK",
-    "CNC Operation IDs": buildCncOperationJournal(part).map(op=>op.id).join(" | "),
-    "IFC-база сверления": part.userData.source === "IFC" ? (part.userData.technology?.drillingStatus || "нет") : "",
-    "IFC-сопряжения": part.userData.source === "IFC" ? (part.userData.technology?.jointCount || 0) : "",
+    "Идентификатор производства IFC": part.userData.source === "IFC" ? (part.userData.productionPacket?.expressId || "") : "",
+    "Операции ЧПУ IFC": part.userData.source === "IFC" ? buildIfcManufacturingOperations(part).map(op => op.id).join(" | ") : "",
+    "Целостность IFC": part.userData.source === "IFC" ? (validateIfcManufacturingIntegrity(part).length ? "ОШИБКА" : "OK") : "",
+    "Предварительная проверка ЧПУ": manufacturingPreflight(part).length ? "ОШИБКА" : "OK",
+    "Идентификаторы операций ЧПУ": buildCncOperationJournal(part).map(op=>op.id).join(" | "),
+    "База сверления IFC": part.userData.source === "IFC" ? (part.userData.technology?.drillingStatus || "нет") : "",
+    "Сопряжения IFC": part.userData.source === "IFC" ? (part.userData.technology?.jointCount || 0) : "",
     "Примечания": constructionChecksDetailed().filter(x => x.includes(part.userData.name)).join(" | ")
   }));
   const ws = XLSX.utils.json_to_sheet(rows); const wb = XLSX.utils.book_new();
@@ -2932,7 +2932,7 @@ function renderCncSetupValidation() {
   const issues=validateCncMachineSetup();
   target.innerHTML="<b>Проверка настроек станка</b>"+(issues.length ?
     issues.map(i=>"<div class='status "+i.level+"'>"+i.message+"</div>").join("") :
-    "<div class='status ok'>Настройки CNC корректны.</div>");
+    "<div class='status ok'>Настройки ЧПУ корректны.</div>");
 }
 ["cncSafeZ","cncWorkZ","cncFeed","cncSpindle"].forEach(id=>{
   const el=$(id);
@@ -2943,7 +2943,7 @@ function renderCncOperations() {
   const target=$("cncOperationsTable");
   if(!target || !parts.length) return;
   const rows=parts.flatMap(p=>buildCncOperations(p).map(op=>"<tr><td>"+op.partNumber+"</td><td>"+op.sequence+"</td><td>"+op.type+"</td><td>"+op.operation+"</td><td>"+(op.diameter||"—")+"</td><td>"+(op.depth||"—")+"</td></tr>"));
-  target.innerHTML="<b>CNC-операции</b><table><thead><tr><th>№</th><th>№ оп.</th><th>Тип</th><th>Операция</th><th>Ø</th><th>Глубина</th></tr></thead><tbody>"+rows.join("")+"</tbody></table>";
+  target.innerHTML="<b>Операции ЧПУ</b><table><thead><tr><th>№</th><th>№ оп.</th><th>Тип</th><th>Операция</th><th>Ø</th><th>Глубина</th></tr></thead><tbody>"+rows.join("")+"</tbody></table>";
 }
 setTimeout(renderCncOperations, 0);
 
@@ -3090,7 +3090,7 @@ function buildCncToolpaths(plan) {
       points.push({x:Number(op.x)||0,y:Number(op.y)||0,z:safeZ});
       zLevels.forEach(z=>points.push({x:Number(op.x)||0,y:Number(op.y)||0,z}));
       points.push({x:Number(op.x)||0,y:Number(op.y)||0,z:safeZ});
-      out.push({operationId:op.id,type:op.type,toolId,passes,zLevels,points,source:"CNC_PASS_PLAN"});
+      out.push({operationId:op.id,type:op.type,toolId,passes,zLevels,points,source:"ЧПУ_PASS_PLAN"});
     } else if(op.type==="CONTOUR" && Array.isArray(op.path)) {
       const base=op.path.map(p=>({x:Number(p.x)||0,y:Number(p.y)||0}));
       if(base.length<3) return;
@@ -3100,13 +3100,13 @@ function buildCncToolpaths(plan) {
         base.forEach(p=>points.push({x:p.x,y:p.y,z}));
         points.push({x:base[0].x,y:base[0].y,z:safeZ});
       });
-      out.push({operationId:op.id,type:op.type,toolId,passes,zLevels,points,source:"CNC_PASS_PLAN"});
+      out.push({operationId:op.id,type:op.type,toolId,passes,zLevels,points,source:"ЧПУ_PASS_PLAN"});
     } else if(op.type==="POCKET") {
       const typed=(plan.compensatedToolpaths||[]).filter(x=>x.operationId===op.id);
       if(typed.length) {
         typed.forEach(path=>out.push({...path,toolId,source:path.source||"IFC_POCKET_PASS"}));
       } else {
-        out.push({operationId:op.id,type:op.type,toolId,passes,zLevels,points:[{x:Number(op.x)||0,y:Number(op.y)||0,z:safeZ}],source:"CNC_PASS_PLAN"});
+        out.push({operationId:op.id,type:op.type,toolId,passes,zLevels,points:[{x:Number(op.x)||0,y:Number(op.y)||0,z:safeZ}],source:"ЧПУ_PASS_PLAN"});
       }
     }
   });
@@ -3560,7 +3560,7 @@ function validateCncToolpaths(plan) {
       if(!Number.isFinite(p.x)||!Number.isFinite(p.y)||!Number.isFinite(p.z))
         issues.push({level:"error",code:"TOOLPATH_COORD",message:"Некорректная координата траектории.",operation:path.operationId});
       if(p.z>safeZ+0.001)
-        issues.push({level:"error",code:"TOOLPATH_SAFE_Z",message:"Точка траектории выше допустимого Safe Z.",operation:path.operationId});
+        issues.push({level:"error",code:"TOOLPATH_SAFE_Z",message:"Точка траектории выше допустимого Безопасная высота Z.",operation:path.operationId});
       if(p.z<-(thickness+0.001))
         issues.push({level:"error",code:"TOOLPATH_DEPTH",message:"Траектория выходит за толщину детали.",operation:path.operationId});
     });
@@ -3583,7 +3583,7 @@ function validateCncMotionSafety(plan) {
     }
     if(previous) {
       const changedTool=previous.toolId!==op.toolId;
-      if(changedTool && safeZ<=0) issues.push({level:"error",code:"MOTION_TOOLCHANGE_Z",message:"Смена инструмента невозможна без положительного Safe Z.",operation:op.id});
+      if(changedTool && safeZ<=0) issues.push({level:"error",code:"MOTION_TOOLCHANGE_Z",message:"Смена инструмента невозможна без положительного Безопасная высота Z.",operation:op.id});
     }
     previous=op;
   });
@@ -3614,7 +3614,7 @@ function validateToolChangeSequence(plan) {
 function buildCncToolTechnologyPlan(plan) {
   const groups=[];
   (plan.operations||[]).forEach(op=>{
-    const tool=CNC_TOOL_LIBRARY.find(t=>t.id===op.toolId);
+    const tool=ЧПУ_TOOL_LIBRARY.find(t=>t.id===op.toolId);
     const parameters=resolveCncCuttingParameters(op,tool,plan.material,plan.thickness);
     let group=groups.find(g=>g.toolId===op.toolId);
     if(!group) {
@@ -3632,14 +3632,14 @@ function validateMachineCompatibility(plan, post=getPostprocessor()) {
   const issues=[];
   const setup=plan.machineSetup || readCncMachineSetup();
   const safeZ=Number(setup.safeZ);
-  if(!Number.isFinite(safeZ) || safeZ<=0) issues.push({level:"error",code:"MACHINE_SAFE_Z",message:"Некорректный Safe Z."});
+  if(!Number.isFinite(safeZ) || safeZ<=0) issues.push({level:"error",code:"MACHINE_SAFE_Z",message:"Некорректный Безопасная высота Z."});
   if(!setup.origin) issues.push({level:"error",code:"MACHINE_ORIGIN",message:"Не задана нулевая точка станка."});
   if(!post || !post.name) issues.push({level:"error",code:"POSTPROCESSOR_MISSING",message:"Постпроцессор не выбран."});
   if(post && post.safeZ!==undefined && Number(post.safeZ)>safeZ)
-    issues.push({level:"error",code:"POST_SAFE_Z",message:"Safe Z постпроцессора превышает настройку станка."});
+    issues.push({level:"error",code:"POST_SAFE_Z",message:"Безопасная высота Z постпроцессора превышает настройку станка."});
   (plan.operations||[]).forEach(op=>{
     const toolId=op.toolId;
-    const tool=toolId && CNC_TOOL_LIBRARY.find(t=>t.id===toolId);
+    const tool=toolId && ЧПУ_TOOL_LIBRARY.find(t=>t.id===toolId);
     if(!tool) issues.push({level:"error",code:"MACHINE_TOOL",message:"Инструмент не найден в библиотеке: "+(toolId||"NONE"),operation:op.id});
     if(op.depth!=null && Number(op.depth)>Number(plan.thickness||0))
       issues.push({level:"error",code:"MACHINE_DEPTH",message:"Глубина операции превышает толщину детали.",operation:op.id});
