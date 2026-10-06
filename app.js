@@ -407,6 +407,142 @@ function buildIfcTechnologyState() {
   return { ready, review };
 }
 
+function buildIfcTechnologyOperations() {
+  const result = { joints: [], operations: 0, review: 0 };
+  if (!ifcImportedParts.length) return result;
+
+  const boxes = ifcImportedParts.map(part => ({
+    part,
+    box: new THREE.Box3().setFromObject(part),
+    size: new THREE.Vector3()
+  }));
+  boxes.forEach(x => x.box.getSize(x.size));
+
+  const compatible = (a,b) => {
+    const pair = new Set([a,b]);
+    return (
+      pair.has("Боковина") && (pair.has("Полка") || pair.has("Горизонтальная перегородка") || pair.has("Крышка") || pair.has("Дно") || pair.has("Вертикальная перегородка"))
+    ) || (
+      pair.has("Вертикальная перегородка") && (pair.has("Крышка") || pair.has("Дно") || pair.has("Горизонтальная перегородка") || pair.has("Полка"))
+    );
+  };
+
+  const overlapLength = (aMin,aMax,bMin,bMax) => Math.max(0, Math.min(aMax,bMax)-Math.max(aMin,bMin));
+  const axisGap = (aMin,aMax,bMin,bMax) => Math.max(bMin-aMax, aMin-bMax);
+
+  for(let i=0;i<boxes.length;i++){
+    const A=boxes[i];
+    const ua=A.part.userData;
+    ua.technology.operations=[];
+    ua.technology.joints=[];
+    ua.technology.edgeOperations=(ua.edges||[]).map((edge,index)=>({
+      type:"Кромление",
+      edge:index+1,
+      material:edge,
+      status:"ready",
+      source:"IFC-параметр",
+      note:"Кромка назначена как технологический атрибут; IFC-геометрия не изменяется."
+    }));
+    ua.technology.operations.push(...ua.technology.edgeOperations);
+    result.operations += ua.technology.edgeOperations.length;
+  }
+
+  for(let i=0;i<boxes.length;i++){
+    for(let j=i+1;j<boxes.length;j++){
+      const A=boxes[i], B=boxes[j];
+      const ua=A.part.userData, ub=B.part.userData;
+      const ka=ua.recognizedKind||ua.kind, kb=ub.recognizedKind||ub.kind;
+      if(!compatible(ka,kb)) continue;
+
+      const gaps=[
+        axisGap(A.box.min.x,A.box.max.x,B.box.min.x,B.box.max.x),
+        axisGap(A.box.min.y,A.box.max.y,B.box.min.y,B.box.max.y),
+        axisGap(A.box.min.z,A.box.max.z,B.box.min.z,B.box.max.z)
+      ];
+      const overlap=[
+        overlapLength(A.box.min.x,A.box.max.x,B.box.min.x,B.box.max.x),
+        overlapLength(A.box.min.y,A.box.max.y,B.box.min.y,B.box.max.y),
+        overlapLength(A.box.min.z,A.box.max.z,B.box.min.z,B.box.max.z)
+      ];
+      const contactAxis=gaps.indexOf(Math.min(...gaps));
+      const other=overlap.filter((_,idx)=>idx!==contactAxis);
+      const hasContact=gaps[contactAxis] <= 2 && other.every(v=>v >= 20);
+
+      if(!hasContact) continue;
+
+      const minBox=new THREE.Vector3(
+        Math.max(A.box.min.x,B.box.min.x),
+        Math.max(A.box.min.y,B.box.min.y),
+        Math.max(A.box.min.z,B.box.min.z)
+      );
+      const maxBox=new THREE.Vector3(
+        Math.min(A.box.max.x,B.box.max.x),
+        Math.min(A.box.max.y,B.box.max.y),
+        Math.min(A.box.max.z,B.box.max.z)
+      );
+      const center=minBox.add(maxBox).multiplyScalar(0.5);
+
+      const roleSet=new Set([ka,kb]);
+      const jointType=roleSet.has("Полка") ? "Соединение полки с корпусом" :
+        roleSet.has("Крышка") ? "Соединение крышки с корпусом" :
+        roleSet.has("Дно") ? "Соединение дна с корпусом" :
+        "Соединение перегородки с корпусом";
+
+      const joint={
+        id:"IFC-J"+(result.joints.length+1),
+        type:jointType,
+        status:"candidate",
+        confidence:"medium",
+        partA:ua.partNumber || ua.name,
+        partB:ub.partNumber || ub.name,
+        roleA:ka,
+        roleB:kb,
+        contactAxis:["X","Y","Z"][contactAxis],
+        gapMm:Number(gaps[contactAxis].toFixed(2)),
+        contactCenter:{x:Number(center.x.toFixed(2)),y:Number(center.y.toFixed(2)),z:Number(center.z.toFixed(2))},
+        source:"IFC bounding boxes",
+        hardwareRecommendation: roleSet.has("Полка") ? "полкодержатель или штифт" : "конфирмат / стяжка",
+        note:"Кандидат соединения определён по фактическому пересечению/контакту IFC. Отверстия не генерируются автоматически до подтверждения базы и направления сверления."
+      };
+
+      ua.technology.joints.push(joint);
+      ub.technology.joints.push(joint);
+      ua.technology.operations.push({
+        type:"Соединение",
+        operation:joint.type,
+        status:"candidate",
+        linkedPart:ub.partNumber || ub.name,
+        contactCenter:joint.contactCenter,
+        contactAxis:joint.contactAxis,
+        hardwareRecommendation:joint.hardwareRecommendation
+      });
+      ub.technology.operations.push({
+        type:"Соединение",
+        operation:joint.type,
+        status:"candidate",
+        linkedPart:ua.partNumber || ua.name,
+        contactCenter:joint.contactCenter,
+        contactAxis:joint.contactAxis,
+        hardwareRecommendation:joint.hardwareRecommendation
+      });
+      result.joints.push(joint);
+      result.operations += 2;
+      result.review += 2;
+    }
+  }
+
+  ifcImportedParts.forEach(part=>{
+    const u=part.userData;
+    u.technology.jointCount=u.technology.joints.length;
+    u.technology.operationCount=u.technology.operations.length;
+    u.technology.status = u.technology.status==="ready" && u.technology.joints.every(j=>j.status==="candidate" || j.status==="ready")
+      ? "ready"
+      : u.technology.status;
+  });
+
+  return result;
+}
+
 function syncIfcParametersFromRecognition() {
   if (!ifcImportedParts.length) return;
 
@@ -629,8 +765,9 @@ async function importIfcIntoFurnitureCore(file) {
     syncIfcParametersFromRecognition();
     applyIfcMaterial();
     const technology = buildIfcTechnologyState();
-    const cncReadiness = updateIfcCncReadiness();
     assignPartNumbers();
+    const ifcTechnologyOps = buildIfcTechnologyOperations();
+    const cncReadiness = updateIfcCncReadiness();
     renderPartsTable();
     fitView();
 
@@ -648,7 +785,8 @@ async function importIfcIntoFurnitureCore(file) {
       "Распознано: " + recognitionSummary +
       (recognition.lowConfidence ? " · требуют проверки: " + recognition.lowConfidence : " · неоднозначных деталей нет") +
       " · технология: готово " + technology.ready + ", на проверке " + technology.review +
-      " · CNC-контур: готов " + cncReadiness.ready + ", заблокирован " + cncReadiness.blocked;
+      " · CNC-контур: готов " + cncReadiness.ready + ", заблокирован " + cncReadiness.blocked +
+      " · соединения-кандидаты: " + ifcTechnologyOps.joints.length;
 
     if ($("projectName")) $("projectName").textContent = file.name;
     if ($("status")) $("status").textContent = "IFC импортирован · геометрия является источником истины";
