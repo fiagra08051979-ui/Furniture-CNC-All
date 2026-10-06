@@ -2019,6 +2019,11 @@ function buildCncJobManifest() {
       partNumber:plan.partNumber,
       groups:plan.toolTechnology || []
     })),
+    toolRadiusCompensation: plans.map(plan => ({
+      partNumber:plan.partNumber,
+      status:(plan.toolRadiusCompensation||[]).some(i=>i.level==="error") ? "BLOCKED" : "READY",
+      issues:plan.toolRadiusCompensation || []
+    })),
     segmentToolpathValidation: plans.map(plan => ({
       partNumber:plan.partNumber,
       status:(plan.segmentToolpathValidation||[]).some(i=>i.level==="error") ? "BLOCKED" : "READY",
@@ -3142,6 +3147,39 @@ function buildToolpathGeometryEnvelope(plan, part) {
   return {minX,maxX,minY,maxY,width:maxX-minX,height:maxY-minY,toolRadiusMax:Math.max(...(plan.operations||[]).map(o=>Number(o.toolDiameter||o.diameter||6)/2),0)};
 }
 
+function offsetContourForToolRadius(contour, radius) {
+  if(!Array.isArray(contour) || contour.length<3 || radius<=0) return contour || [];
+  const cx=contour.reduce((a,p)=>a+Number(p.x||0),0)/contour.length;
+  const cy=contour.reduce((a,p)=>a+Number(p.y||0),0)/contour.length;
+  return contour.map(p=>{
+    const dx=Number(p.x||0)-cx, dy=Number(p.y||0)-cy;
+    const len=Math.hypot(dx,dy)||1;
+    return {x:Number(p.x||0)-dx/len*radius,y:Number(p.y||0)-dy/len*radius};
+  });
+}
+
+function validateToolRadiusCompensation(plan, part) {
+  const issues=[];
+  const contour=part.userData?.ifcContour?.path;
+  if(!Array.isArray(contour) || contour.length<3) return issues;
+  (plan.operations||[]).filter(op=>op.type==="CONTOUR").forEach(op=>{
+    const radius=Number(op.toolDiameter||op.diameter||6)/2;
+    const compensated=offsetContourForToolRadius(contour,radius);
+    if(compensated.length<3) {
+      issues.push({level:"error",code:"TOOL_RADIUS_COMPENSATION",message:"Невозможно построить компенсацию радиуса инструмента.",operation:op.id});
+      return;
+    }
+    const minX=Math.min(...compensated.map(p=>p.x)),maxX=Math.max(...compensated.map(p=>p.x));
+    const minY=Math.min(...compensated.map(p=>p.y)),maxY=Math.max(...compensated.map(p=>p.y));
+    const path=(plan.toolpaths||[]).find(x=>x.operationId===op.id);
+    (path?.points||[]).forEach(p=>{
+      if(p.x<minX-0.001||p.x>maxX+0.001||p.y<minY-0.001||p.y>maxY+0.001)
+        issues.push({level:"error",code:"TOOL_RADIUS_COMPENSATION_OUTSIDE",message:"Центр фрезы выходит за компенсированную область контура.",operation:op.id});
+    });
+  });
+  return issues;
+}
+
 function validateToolpathSegmentsAgainstGeometry(plan, part) {
   const issues=[];
   const contour=part.userData?.ifcContour?.path;
@@ -3337,7 +3375,8 @@ function getCompiledManufacturingPlan(part) {
   plan.toolpathGeometryEnvelope=buildToolpathGeometryEnvelope(plan,part);
   plan.geometryToolpathValidation=validateToolpathAgainstGeometry(plan,part);
   plan.segmentToolpathValidation=validateToolpathSegmentsAgainstGeometry(plan,part);
-  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation];
+  plan.toolRadiusCompensation=validateToolRadiusCompensation(plan,part);
+  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation];
   plan.machineReady=plan.validation.every(x=>x.level!=="error") &&
     plan.status==="READY" &&
     plan.lifecycle.every(x=>x.valid) &&
