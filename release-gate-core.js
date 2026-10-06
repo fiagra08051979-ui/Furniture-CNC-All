@@ -116,6 +116,11 @@ function evaluateReleaseGateState({ qc, partsCount, partStates, cuttingGroups, s
     if (state.sourceGeometry === "IFC" && state.geometryLocked !== true) {
       issues.push("Деталь " + (state.detailing.number || id) + ": IFC-геометрия не зафиксирована.");
     }
+    if (state.detailing.construction?.source &&
+        state.sourceGeometry &&
+        state.detailing.construction.source !== state.sourceGeometry) {
+      issues.push("Деталь " + (state.detailing.number || id) + ": источник геометрии деталировки не соответствует источнику модели.");
+    }
   });
 
   let groups = Array.isArray(cuttingGroups) ? cuttingGroups : [];
