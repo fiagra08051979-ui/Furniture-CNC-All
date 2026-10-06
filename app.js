@@ -1971,6 +1971,44 @@ function applyCncMachineSetup() {
   return setup;
 }
 
+function buildProductionOperationPassport(part){
+  const plan=getCompiledManufacturingPlan(part);
+  const u=part.userData||{};
+  const operations=(plan.operations||[]).map((op,index)=>{
+    const group=(plan.technologyGroups||[]).find(g=>g.operations?.includes(op.id));
+    const path=(plan.compensatedToolpaths||[]).find(p=>p.operationId===op.id);
+    const trace={
+      traceId:"OP-"+String(index+1).padStart(4,"0"),
+      operationId:op.id,
+      expressId:op.expressId||op.sourceExpressId||null,
+      role:u.role||u.recognizedKind||null,
+      source:op.source||plan.source,
+      toolId:op.toolId||null,
+      toolName:group?.toolName||null,
+      technologyGroupKey:group?.key||null,
+      rpm:group?.rpm||null,
+      feed:group?.feed||null,
+      plunge:group?.plunge||null,
+      passDepth:group?.passDepth||null,
+      depth:op.depth||0,
+      pathPoints:path?.points?.length||0,
+      lifecycle:(plan.lifecycle||[]).find(x=>x.operationId===op.id)?.status||"READY"
+    };
+    return trace;
+  });
+  return {
+    partNumber:u.partNumber||plan.partNumber,
+    source:plan.source,
+    expressId:u.expressId||null,
+    role:u.role||u.recognizedKind||null,
+    material:plan.material,
+    thickness:plan.thickness,
+    operationCount:operations.length,
+    operations,
+    validation:plan.validation||[],
+    machineReady:plan.machineReady
+  };
+}
 function buildCncJobManifest() {
   const post = getPostprocessor();
   const machineSetup = applyCncMachineSetup();
@@ -1985,6 +2023,7 @@ function buildCncJobManifest() {
     zeroPoint:plan.machineSetup.origin || "top-center",
     operations:plan.operations,
     operationJournal:plan.operationJournal,
+    productionOperationPassport:buildProductionOperationPassport(parts.find(p=>p.userData?.partNumber===plan.partNumber)||{userData:{},userData2:{}}),
     toolTechnology:plan.toolTechnology,
     technologyGroups:plan.technologyGroups || [],
     technologyGroupValidation:plan.technologyGroupValidation || [],
