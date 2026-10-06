@@ -611,6 +611,23 @@ function clearModel() {
   parts.length = 0;
 }
 
+function analyzeFurnitureImageMetadata(file) {
+  if (!file) return null;
+  const result = {fileName:file.name,type:file.type||"unknown",recognized:[],params:{},confidence:"низкая"};
+  if (/^image\\//.test(file.type || "")) {
+    result.recognized.push("изображение мебели загружено");
+    result.recognized.push("требуется визуальное распознавание конструкции");
+  }
+  result.confirmation = "Я распознал конструкцию следующим образом: " + result.recognized.join(", ") + ".";
+  return result;
+}
+function renderAiImageRecognition(result) {
+  const target=$("aiImageRecognition");
+  if(!target || !result) return;
+  target.innerHTML="<b>"+result.confirmation+"</b><div class='status'>Файл: "+result.fileName+"</div><div class='status'>Геометрия автоматически не изменяется до подтверждения AI-анализа.</div>";
+  window._aiImageRecognition=result;
+}
+
 function recognizeFurnitureText(text) {
   const source = String(text || "").toLowerCase().replace(/,/g, ".");
   const nums = source.match(/(\d+(?:\.\d+)?)\s*[×xх*]\s*(\d+(?:\.\d+)?)\s*[×xх*]\s*(\d+(?:\.\d+)?)/i);
