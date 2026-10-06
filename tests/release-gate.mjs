@@ -133,7 +133,8 @@ const contractChecks = [
   ["раскладка сохраняет материал и толщину", app.includes("thickness: item.thickness") && app.includes("material: item.material")],
   ["PDF использует зафиксированный состав Gate", app.includes("gatedParts") && app.includes("buildCuttingPdfHtml(layout, gatedParts)")],
   ["PDF проверяет ревизию снимка Gate", app.includes("gatedPartsRevision") && app.includes("состав деталей относится к другой ревизии модели")],
-  ["PDF сохраняет источник геометрии детали", app.includes('Источник геометрии:') && app.includes('(u.source || "Furniture Core")')],
+  ["PDF не содержит внутренний источник геометрии", !app.includes('<b>Источник геометрии:</b>')],
+  ["Схема сверловки использует размеры деталировки", app.includes("const d = u.detailing || {}") && app.includes("Number(d.length) || Number(u.width)") && app.includes("Number(d.width) || Number(u.height)")],
   ["просмотр карты проходит через Release Gate", app.includes("function showCuttingMap()") && app.includes("просмотр карты раскроя заблокирован") && app.includes("renderCuttingMap(releaseGate.sheetLayout)")],
   ["изменение технологии инвалидирует старый параметрический Gate", app.includes("technologyBuildFields") && app.includes("technologyBuildFields.forEach") && app.includes('if (ifcMode)')],
   ["загрузка JSON возвращает модель в параметрический путь", app.includes('$("loadProject").addEventListener') && app.includes("Object.entries(data.parameters||{})") && app.includes("build();") && app.includes("ifcMode = false")]
