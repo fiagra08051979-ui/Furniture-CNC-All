@@ -2544,6 +2544,12 @@ function buildCncTechCard(part) {
   };
 }
 
+function cncDisplayType(type){
+  return ({DRILL:"Сверление",MILL:"Фрезерование",POCKET:"Карман",CONTOUR:"Контур",INNER_CONTOUR:"Внутренний контур",OUTER_CONTOUR:"Наружный контур",OTHER:"Другое"})[type] || type || "Другое";
+}
+function cncDisplayStatus(status){
+  return ({READY:"ГОТОВО",REVIEW:"ТРЕБУЕТ ПРОВЕРКИ",BLOCKED:"ЗАБЛОКИРОВАНО",EXPORTED:"ЭКСПОРТИРОВАНО",ERROR:"ОШИБКА",WARNING:"ПРЕДУПРЕЖДЕНИЕ",OK:"ОК",CANDIDATE:"КАНДИДАТ"})[status] || status || "НЕИЗВЕСТНО";
+}
 function renderCncOperationJournal(part) {
   const target=$("cncOperationJournal");
   if(!target) return;
@@ -2942,7 +2948,7 @@ renderCncSetupValidation();
 function renderCncOperations() {
   const target=$("cncOperationsTable");
   if(!target || !parts.length) return;
-  const rows=parts.flatMap(p=>buildCncOperations(p).map(op=>"<tr><td>"+op.partNumber+"</td><td>"+op.sequence+"</td><td>"+op.type+"</td><td>"+op.operation+"</td><td>"+(op.diameter||"—")+"</td><td>"+(op.depth||"—")+"</td></tr>"));
+  const rows=parts.flatMap(p=>buildCncOperations(p).map(op=>"<tr><td>"+op.partNumber+"</td><td>"+op.sequence+"</td><td>"+cncDisplayType(op.type)+"</td><td>"+op.operation+"</td><td>"+(op.diameter||"—")+"</td><td>"+(op.depth||"—")+"</td></tr>"));
   target.innerHTML="<b>Операции ЧПУ</b><table><thead><tr><th>№</th><th>№ оп.</th><th>Тип</th><th>Операция</th><th>Ø</th><th>Глубина</th></tr></thead><tbody>"+rows.join("")+"</tbody></table>";
 }
 setTimeout(renderCncOperations, 0);
@@ -3049,7 +3055,7 @@ function resolveCncCuttingParameters(op, tool, material, thickness) {
     passDepth,
     passes:Math.max(1,Math.ceil(depth/passDepth)),
     safeZ:Number(readCncMachineSetup().safeZ)||5,
-    materialFamily:family||"UNKNOWN"
+    materialFamily:family||"НЕИЗВЕСТНО"
   };
 }
 
@@ -3154,7 +3160,7 @@ function offsetContourForToolRadius(contour, radius) {
 }
 
 function classifyContourSide(contour, path) {
-  if(!Array.isArray(contour)||contour.length<3) return "UNKNOWN";
+  if(!Array.isArray(contour)||contour.length<3) return "НЕИЗВЕСТНО";
   if(path?.compensationSide==="INSIDE" || path?.compensationSide==="OUTSIDE") return path.compensationSide;
   // Один замкнутый IFC-контур без вложенного контура считаем наружным.
   // Для внутренних карманов сторона должна быть задана технологической операцией.
