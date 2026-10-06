@@ -241,6 +241,50 @@ function constructionChecks(bodyFasteners, shelfSupportDrilling, secondaryFasten
   return [...new Set(issues)];
 }
 
+
+function buildDetailedProcessing(part) {
+  const u = part.userData;
+  const operations = [];
+  (u.drilling || []).forEach(h => operations.push({
+    type:"Сверление", operation:h.operation, diameter:h.diameter, depth:h.depth,
+    x:h.x, y:h.y, z:h.z, linkedHardware:h.linkedHardware || h.type || ""
+  }));
+  (u.bodyFasteners || []).forEach(h => operations.push({
+    type:"Сверление", operation:h.type, diameter:h.diameter, depth:h.depth,
+    x:h.x, y:h.y, z:h.z, linkedHardware:h.type
+  }));
+  (u.shelfSupportDrilling || []).forEach(h => operations.push({
+    type:"Сверление", operation:h.operation, diameter:h.diameter, depth:h.depth,
+    x:h.x, y:h.y, z:h.z, linkedHardware:h.type
+  }));
+  (u.secondaryFasteners || []).forEach(h => operations.push({
+    type:"Сверление", operation:h.type, diameter:h.diameter, depth:h.depth,
+    x:h.x, y:h.y, z:h.z, linkedHardware:h.type
+  }));
+  return operations;
+}
+
+function constructionChecksDetailed() {
+  const p = readParams();
+  const issues = [];
+  parts.forEach(part => {
+    const u = part.userData;
+    const minDrillEdge = 4;
+    (u.drilling || []).forEach(h => {
+      if (h.depth > Math.max(u.depth, u.width, u.height)) issues.push("Глубина отверстия превышает толщину/габарит детали: " + u.name);
+      if (Math.min(Math.abs(h.x), Math.abs(h.y), Math.abs(h.z)) < minDrillEdge) {
+        issues.push("Отверстие слишком близко к базовой грани: " + u.name + " / " + h.id);
+      }
+    });
+    if (u.kind === "Полка" && u.width < 100) issues.push("Полка слишком узкая: " + u.name);
+    if (u.kind === "Фасад" && (u.width < 100 || u.height < 200)) issues.push("Недопустимые габариты фасада: " + u.name);
+  });
+  if (p.doors > 1 && p.frontGapBetween < 2) issues.push("Зазор между соседними фасадами меньше 2 мм.");
+  if (p.frontGapTB < 1) issues.push("Верхний/нижний технологический зазор фасада меньше 1 мм.");
+  if (p.depth < 300 && p.shelves > 0) issues.push("Малая глубина корпуса: проверьте рабочую глубину полок и крепежа.");
+  return [...new Set(issues)];
+}
+
 function material() {
   const colors = {
     ldsp18: 0xc69b68,
@@ -381,6 +425,7 @@ function build() {
     part.userData.bodyFasteners = bodyFasteners.filter(h => h.linkedPart === part.userData.name);
     part.userData.shelfSupportDrilling = shelfSupportDrilling.filter(h => h.linkedPart === part.userData.name);
     part.userData.secondaryFasteners = secondaryFasteners.filter(h => h.linkedPart === part.userData.name);
+    part.userData.processing = buildDetailedProcessing(part);
   });
 
   exploded = false;
@@ -392,7 +437,7 @@ function build() {
   const drillingCount = parts.reduce((sum, part) => sum + (part.userData.drilling?.length || 0), 0);
   const bodyFastenerCount = bodyFasteners.length;
   const shelfSupportCount = shelfSupportDrilling.length;
-  const constructionIssues = constructionChecks(bodyFasteners, shelfSupportDrilling, secondaryFasteners);
+  const constructionIssues = [...constructionChecks(bodyFasteners, shelfSupportDrilling, secondaryFasteners), ...constructionChecksDetailed()];
   if ($("drillingSummary")) $("drillingSummary").textContent = drillingCount
     ? "Фасады: " + drillingCount + " отв. · корпус: " + bodyFastenerCount + " креплений · полкодержатели: " + shelfSupportCount
     : "Фасадное сверление не требуется. Корпус: " + bodyFastenerCount + " креплений.";
@@ -481,7 +526,9 @@ function exportExcel() {
     "Сверление": part.userData.drilling?.map(h => h.operation + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ")").join(" | ") || "",
     "Крепёж корпуса": part.userData.bodyFasteners?.map(h => h.type + " Ø" + h.diameter + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
     "Полкодержатели": part.userData.shelfSupportDrilling?.map(h => h.type + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
-    "Дюбели/эксцентрики": part.userData.secondaryFasteners?.map(h => h.type + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || ""
+    "Дюбели/эксцентрики": part.userData.secondaryFasteners?.map(h => h.type + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
+    "Обработка": part.userData.processing?.map(h => h.operation + " " + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
+    "Примечания": constructionChecksDetailed().filter(x => x.includes(part.userData.name)).join(" | ")
   }));
   const ws = XLSX.utils.json_to_sheet(rows); const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Деталировка");
