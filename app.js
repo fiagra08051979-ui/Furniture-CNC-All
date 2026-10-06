@@ -1269,6 +1269,9 @@ function rebuildDetailingPipeline() {
     if (u.source === "IFC" && (u.technology?.joints || []).some(j => j.status === "candidate")) {
       partIssues.push("есть неподтверждённое IFC-соединение; требуется ручное подтверждение технологии");
     }
+    if (u.source === "IFC" && (!Array.isArray(u.edges) || u.edges.length !== 4 || u.edges.some(edge => !String(edge || "").trim()))) {
+      partIssues.push("кромка IFC не определена; требуется ручное назначение/подтверждение");
+    }
     if (![u.width, u.height, u.depth].every(v => Number.isFinite(Number(v)) && Number(v) > 0)) {
       partIssues.push("некорректные габариты");
     }
