@@ -29,6 +29,7 @@ scene.add(grid);
 
 const root = new THREE.Group();
 scene.add(root);
+let interiorGroup = null;
 
 const parts = [];
 let exploded = false;
@@ -2373,12 +2374,76 @@ function frontView() {
   controls.update();
 }
 
+function clearInteriorView() {
+  if (!interiorGroup) return;
+  scene.remove(interiorGroup);
+  interiorGroup.traverse(obj => {
+    if (obj.geometry) obj.geometry.dispose();
+    if (obj.material) {
+      if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+      else obj.material.dispose();
+    }
+  });
+  interiorGroup = null;
+}
+
+function showInteriorView() {
+  clearInteriorView();
+  const box = new THREE.Box3().setFromObject(root);
+  if (box.isEmpty()) {
+    validate("Сначала постройте мебель.", "error");
+    return;
+  }
+
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const roomW = Math.max(size.x * 3.0, 4200);
+  const roomH = Math.max(size.y * 1.8, 3000);
+  const roomD = Math.max(size.z * 3.0, 3600);
+
+  interiorGroup = new THREE.Group();
+  interiorGroup.name = "Визуализация интерьера";
+
+  const floor = new THREE.Mesh(
+    new THREE.BoxGeometry(roomW, 40, roomD),
+    new THREE.MeshStandardMaterial({color:0xd2c7b8, roughness:0.85})
+  );
+  floor.position.set(center.x, -20, center.z);
+  interiorGroup.add(floor);
+
+  const backWall = new THREE.Mesh(
+    new THREE.BoxGeometry(roomW, roomH, 40),
+    new THREE.MeshStandardMaterial({color:0xe8e4dc, roughness:0.9})
+  );
+  backWall.position.set(center.x, roomH / 2, center.z - roomD / 2);
+  interiorGroup.add(backWall);
+
+  const sideWall = new THREE.Mesh(
+    new THREE.BoxGeometry(40, roomH, roomD),
+    new THREE.MeshStandardMaterial({color:0xe0dbd2, roughness:0.9})
+  );
+  sideWall.position.set(center.x - roomW / 2, roomH / 2, center.z);
+  interiorGroup.add(sideWall);
+
+  scene.add(interiorGroup);
+
+  controls.target.set(center.x, Math.max(size.y * 0.45, 700), center.z);
+  camera.position.set(
+    center.x + roomW * 0.42,
+    Math.max(size.y * 0.75, 1400),
+    center.z + roomD * 0.48
+  );
+  controls.update();
+  validate("Мебель вписана в интерьер.", "ok");
+}
+
 
 $("build")?.addEventListener("click", build);
 $("explode")?.addEventListener("click", () => setExplode(!exploded));
 $("resetExplode")?.addEventListener("click", () => setExplode(false));
 $("frontView")?.addEventListener("click", frontView);
 $("isoView")?.addEventListener("click", fitView);
+$("interiorView")?.addEventListener("click", showInteriorView);
 $("material")?.addEventListener("change", () => {
   syncMaterialAndThickness("material");
   parameters.material = $("material").value;
