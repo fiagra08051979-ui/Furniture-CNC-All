@@ -45,6 +45,8 @@ const required = [
   ["Release Gate отвергает устаревший QC", app.includes("modelRevision") && app.includes("другой ревизии модели") && app.includes("qc.modelRevision")],
   ["инвалидация Gate при пересборке", app.includes("let modelRevision = 0") && app.includes("window._constructionQC = null") && app.includes("window._releaseGate = null") && app.includes("report.modelRevision = modelRevision")],
   ["безопасное переключение IFC режима", app.includes("function build()") && app.includes("clearModel();\n  ifcMode = false;")],
+  ["IFC материал меняется без пересборки геометрии", app.includes("function refreshIfcTechnology()") && app.includes('if (ifcMode) {\n    refreshIfcTechnology();\n    return;\n  }') && app.includes("applyIfcMaterial()")],
+  ["IFC кромка меняется без пересборки геометрии", app.includes('$("edge"+i)?.addEventListener("change"') && app.includes("refreshIfcTechnology()") && app.includes("part.userData.edges = [...selectedEdges]")],
   ["сброс IFC при очистке модели", app.includes("function clearModel()") && app.includes("closeIfcModel();") && app.includes("ifcImportedParts = [];")],
   ["идемпотентная пересборка деталировки", app.includes("delete u.detailing;") && app.includes("delete u.detailingContinuity;") && app.includes("delete u.processing;") && app.includes("modelRevision")],
   ["контроль пересечения деталей на листе", app.includes("пересечение деталей") && app.includes("placement.x >= other.x + other.length + kerf")],
