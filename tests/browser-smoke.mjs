@@ -104,6 +104,35 @@ if (!cuttingStatus.includes("Карта раскроя показана из п�
   throw new Error("Release Gate не пропустил проверенную карту раскроя. Статус: " + cuttingStatus);
 }
 
+const gateInvalidationRevision = await page.evaluate(() => window._releaseGate?.modelRevision ?? null);
+if (!Number.isFinite(Number(gateInvalidationRevision))) throw new Error("Release Gate не сохранил ревизию проверенной модели.");
+await page.locator("#width").fill("2450");
+await page.locator("#build").click();
+await page.waitForTimeout(1000);
+const blockedRevision = await page.evaluate(() => window._releaseGate);
+if (blockedRevision !== null) throw new Error("После изменения модели старый Release Gate не был инвалидирован.");
+const blockedPdfPromise = page.waitForEvent("popup", {timeout:1500}).catch(() => null);
+await page.locator(".exportSheetLayout").first().click();
+const blockedPdf = await blockedPdfPromise;
+if (blockedPdf) { await blockedPdf.close(); throw new Error("PDF был открыт после изменения модели без нового Release Gate."); }
+const blockedStatus = await page.locator("#validation").textContent();
+if (!blockedStatus.includes("выпуск PDF заблокирован")) throw new Error("После изменения модели PDF не был заблокирован.");
+
+await page.locator("#width").fill("2400");
+await page.locator("#build").click();
+await page.waitForTimeout(1000);
+await page.locator("#sheetLength").fill("3000");
+await page.locator("#sheetWidth").fill("3000");
+await page.locator(".showCuttingMap").first().click();
+await page.waitForTimeout(300);
+const restoredCuttingStatus = await page.locator("#validation").textContent();
+if (!restoredCuttingStatus.includes("Карта раскроя показана из проверенной раскладки Release Gate")) {
+  throw new Error("После новой сборки Release Gate не восстановил выпуск: " + restoredCuttingStatus);
+}
+if (!cuttingStatus.includes("Карта раскроя показана из проверенной раскладки Release Gate")) {
+  throw new Error("Release Gate не пропустил проверенную карту раскроя. Статус: " + cuttingStatus);
+}
+
 const pdfPromise = page.waitForEvent("popup", {timeout:10000});
 await page.locator(".exportSheetLayout").first().click();
 const pdfPage = await pdfPromise;
