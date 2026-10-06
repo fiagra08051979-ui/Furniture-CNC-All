@@ -16,7 +16,8 @@ const required = [
   ["присадка и сверловка", app.includes("cuttingOperationList") && app.includes("drillingSchematic") && app.includes("shelfSupportDrilling") && app.includes("X, мм") && app.includes("Y, мм") && app.includes("Количество") && app.includes("Всего отверстий")],
   ["кнопка PDF карты раскроя", html.includes("exportSheetLayout") && html.includes("Сформировать карту раскроя PDF")],
   ["кнопки карты раскроя без дублирования id", !/<button[^>]+id="(?:exportSheetLayout|showCuttingMap)"/i.test(html) && app.includes('querySelectorAll(".exportSheetLayout")') && app.includes('querySelectorAll(".showCuttingMap")')],
-  ["координаты только в PDF", app.includes("x: Number.isFinite(Number(op.x))") && app.includes("X, мм") && app.includes("Y, мм")]
+  ["координаты только в PDF", app.includes("x: Number.isFinite(Number(op.x))") && app.includes("X, мм") && app.includes("Y, мм")],
+  ["геометрический контроль модели", app.includes("Геометрическая целостность параметрической модели") && app.includes("Полка выходит за пределы внутренней секции") && app.includes("Фасад выходит за габариты корпуса")]
 ];
 
 const forbidden = [
