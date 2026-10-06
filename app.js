@@ -3191,6 +3191,30 @@ function classifyCncGeometryOperation(op) {
   return op.type || "OTHER";
 }
 
+function buildPocketPasses(op, plan, part) {
+  const contour=part.userData?.ifcContour?.path;
+  if(!Array.isArray(contour)||contour.length<3) return [];
+  const pts=contour.map(p=>({x:Number(p.x)||0,y:Number(p.y)||0}));
+  const cx=pts.reduce((a,p)=>a+p.x,0)/pts.length, cy=pts.reduce((a,p)=>a+p.y,0)/pts.length;
+  const tool=Number(op.toolDiameter||op.diameter||6);
+  const step=Math.max(0.5,Math.min(tool*0.5,Math.min(Number(part.userData?.width||100),Number(part.userData?.height||100))/4));
+  const width=Math.max(1,Math.min(Number(part.userData?.width||100),Number(part.userData?.height||100)));
+  const levels=Math.max(1,Math.ceil(width/(2*step)));
+  const depth=Math.abs(Number(op.depth)||1);
+  const passes=Math.max(1,Math.ceil(depth/Math.max(1,tool*0.75)));
+  const result=[];
+  for(let z=1;z<=passes;z++){
+    const depthZ=-Math.min(depth,depth*z/passes);
+    for(let r=0;r<levels;r++){
+      const scale=Math.max(0.1,1-(r*step)/Math.max(width/2,1));
+      const path=pts.map(p=>({x:cx+(p.x-cx)*scale,y:cy+(p.y-cy)*scale,z:depthZ}));
+      path.push({...path[0]});
+      result.push({operationId:op.id,type:"POCKET",strategy:"CONCENTRIC",pass:z,level:r,stepOver:step,points:path,source:"IFC_POCKET"});
+    }
+  }
+  return result;
+}
+
 function buildPocketToolpath(op, plan, part) {
   const contour=part.userData?.ifcContour?.path;
   if(!Array.isArray(contour)||contour.length<3) return null;
@@ -3203,9 +3227,20 @@ function buildPocketToolpath(op, plan, part) {
 }
 
 function buildTypedCompensatedToolpaths(plan, part) {
-  return (plan.operations||[]).map(op=>{
+  const result=[];
+  (plan.operations||[]).forEach(op=>{
     const kind=classifyCncGeometryOperation(op);
-    if(kind==="POCKET") return buildPocketToolpath(op,plan,part);
+    if(kind==="POCKET") result.push(...buildPocketPasses(op,plan,part));
+    else if(kind==="INNER_CONTOUR" || kind==="OUTER_CONTOUR") {
+      const paths=buildCompensatedContourToolpath({...plan,operations:[{...op,compensationSide:kind==="INNER_CONTOUR"?"INSIDE":"OUTSIDE"}]},part);
+      result.push(...paths);
+    }
+  });
+  return result;
+}
+
+    const kind=classifyCncGeometryOperation(op);
+    if(kind==="POCKET") return buildPocketPasses(op,plan,part)[0] || null;
     if(kind==="INNER_CONTOUR") {
       const paths=buildCompensatedContourToolpath({...plan,operations:[{...op,compensationSide:"INSIDE"}]},part);
       return paths[0] || null;
