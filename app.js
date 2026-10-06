@@ -2019,9 +2019,10 @@ function buildCncJob(part) {
     partNumber:u.partNumber,
     material:u.material || "Не задан",
     thickness:Number(u.thickness || 0),
-    safeZ:5,
-    zeroPoint:"G54",
-    operations:buildCncToolPlan(part)
+    safeZ:readCncMachineSetup().safeZ,
+    zeroPoint:readCncMachineSetup().origin || "G54",
+    operations:buildCncToolPlan(part),
+    manufacturingIntegrity:validateIfcManufacturingIntegrity(part)
   };
 }
 
@@ -2137,13 +2138,47 @@ function validateIfcManufacturingIntegrity(part) {
   return issues;
 }
 
+function manufacturingPreflight(part) {
+  const u=part.userData;
+  const issues=[];
+  const ops=optimizeCncOperationSequence(part);
+  const setup=readCncMachineSetup();
+  ops.forEach(op=>{
+    if(op.type==="CONTOUR_BLOCKED" || op.type==="TECH_BLOCKED") return;
+    const tool=selectCncTool(op,u.material || "Не задан");
+    if(!tool) {
+      issues.push({level:"error",operation:op.sequence,message:"Не найден совместимый инструмент для операции "+op.id});
+      return;
+    }
+    if(op.type==="DRILL") {
+      if(Number(op.diameter)<=0) issues.push({level:"error",operation:op.sequence,message:"Некорректный диаметр сверления"});
+      if(Number(op.depth)<=0) issues.push({level:"error",operation:op.sequence,message:"Некорректная глубина сверления"});
+      if(Number(op.depth)>Number(u.depth||0)+0.01)
+        issues.push({level:"error",operation:op.sequence,message:"Глубина сверления "+op.depth+" мм превышает толщину детали "+u.depth+" мм"});
+      if(Number(op.diameter)>Number(u.depth||0))
+        issues.push({level:"error",operation:op.sequence,message:"Диаметр сверла "+op.diameter+" мм превышает толщину детали"});
+      if(op.source==="IFC" && !op.localBasis)
+        issues.push({level:"error",operation:op.sequence,message:"IFC-сверление не содержит подтверждённой локальной базы"});
+    }
+    if((op.type==="MILL" || op.type==="POCKET" || op.type==="CONTOUR") && Number(op.depth||0)>Number(u.depth||0)+0.01)
+      issues.push({level:"error",operation:op.sequence,message:"Глубина обработки превышает толщину детали"});
+    if(op.type==="CONTOUR" && (!Array.isArray(op.path) || op.path.length<3))
+      issues.push({level:"error",operation:op.sequence,message:"Контур не содержит достаточного количества точек"});
+    if(op.toolId && op.toolId!=="TBD" && tool.id!==op.toolId)
+      issues.push({level:"error",operation:op.sequence,message:"Несоответствие назначенного инструмента библиотеке CNC"});
+  });
+  if(setup.safeZ<=0) issues.push({level:"error",operation:"SETUP",message:"Safe Z должен быть больше 0"});
+  return issues;
+}
+
 function cncPreflight() {
   const result = [];
   parts.forEach(part => {
     const issues = [
       ...cncCollisionChecks(part),
       ...cncSequenceChecks(part).issues,
-      ...validateIfcManufacturingIntegrity(part)
+      ...validateIfcManufacturingIntegrity(part),
+      ...manufacturingPreflight(part)
     ];
     issues.forEach(issue => result.push({...issue,partNumber:part.userData.partNumber}));
   });
