@@ -1503,6 +1503,8 @@ function buildSheetLayout(sheetLength, sheetWidth, kerf, margin) {
       y: placement ? Math.round(placement.y) : margin,
       length: item.length,
       width: item.width,
+      thickness: item.thickness,
+      material: item.material,
       overflow: !placement,
       edges: [...item.edges]
     });
