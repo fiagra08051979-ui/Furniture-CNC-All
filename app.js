@@ -2560,11 +2560,15 @@ function exportExcel() {
     "Угол открывания": part.userData.frontTechnology?.openingAngle || "",
     "Петель": part.userData.hardware?.quantity || "",
     "Позиции петель, мм": part.userData.hardware?.mountingPositionsFromBottom?.join("; ") || "",
-    "Сверление": part.userData.drilling?.map(h => h.operation + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ")").join(" | ") || "",
+    "Сверление": [...(part.userData.drilling || []), ...(part.userData.source === "IFC" ? (part.userData.technology?.drilling || []) : [])]
+      .map(h => h.operation + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ") [" + (h.status || "ready") + "]").join(" | ") || "",
     "Крепёж корпуса": part.userData.bodyFasteners?.map(h => h.type + " Ø" + h.diameter + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
     "Полкодержатели": part.userData.shelfSupportDrilling?.map(h => h.type + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
     "Дюбели/эксцентрики": part.userData.secondaryFasteners?.map(h => h.type + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
     "Обработка": part.userData.detailing?.processing?.map(h => h.operation + " " + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
+    "IFC-контур": part.userData.source === "IFC" ? (part.userData.ifcContour?.ready ? "подтверждён" : "заблокирован") : "",
+    "IFC-база сверления": part.userData.source === "IFC" ? (part.userData.technology?.drillingStatus || "нет") : "",
+    "IFC-сопряжения": part.userData.source === "IFC" ? (part.userData.technology?.jointCount || 0) : "",
     "Примечания": constructionChecksDetailed().filter(x => x.includes(part.userData.name)).join(" | ")
   }));
   const ws = XLSX.utils.json_to_sheet(rows); const wb = XLSX.utils.book_new();
