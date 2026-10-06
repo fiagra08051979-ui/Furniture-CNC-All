@@ -407,6 +407,47 @@ function buildIfcTechnologyState() {
   return { ready, review };
 }
 
+function buildIfcDrillingPlan() {
+  if (!ifcImportedParts.length) return { candidates:0, blocked:0 };
+
+  let candidates=0, blocked=0;
+  ifcImportedParts.forEach(part=>{
+    const u=part.userData;
+    u.technology.drilling=[];
+    (u.technology.joints||[]).forEach(j=>{
+      const role=u.recognizedKind||u.kind;
+      const contact=j.contactCenter;
+      const thickness=Number(u.technology.thicknessEstimate)||0;
+
+      // База выбирается только из фактической геометрии. Пока не подтверждена
+      // ориентация локальной системы IFC, координата считается кандидатом,
+      // а не готовой CNC-присадкой.
+      const candidate={
+        id:"IFC-D-"+String(u.technology.drilling.length+1).padStart(3,"0"),
+        type:"Сверление соединения",
+        status:"review",
+        diameter:/полки/i.test(j.type) ? 5 : 7,
+        depth:/полки/i.test(j.type) ? Math.min(12,Math.max(1,thickness-2)) : Math.min(35,Math.max(1,thickness-2)),
+        x:Number(contact.x.toFixed(2)),
+        y:Number(contact.y.toFixed(2)),
+        z:Number(contact.z.toFixed(2)),
+        contactAxis:j.contactAxis,
+        linkedPart:j.partB === (u.partNumber||u.name) ? j.partA : j.partB,
+        source:"IFC contact geometry",
+        needsReference:true,
+        note:"Требуется подтверждение базовой поверхности и направления сверления перед передачей в CNC."
+      };
+      u.technology.drilling.push(candidate);
+      candidates++;
+      blocked++;
+    });
+
+    u.technology.drillingStatus=u.technology.drilling.length ? "review" : "none";
+  });
+
+  return { candidates, blocked };
+}
+
 function buildIfcHardwareSchedule() {
   const schedule = [];
   if (!ifcImportedParts.length) return schedule;
@@ -808,6 +849,8 @@ async function importIfcIntoFurnitureCore(file) {
     assignPartNumbers();
     const ifcTechnologyOps = buildIfcTechnologyOperations();
     const ifcHardwareSchedule = buildIfcHardwareSchedule();
+    const ifcDrillingPlan = buildIfcDrillingPlan();
+    ifcImportedParts.forEach(part => { part.userData.processing = buildDetailedProcessing(part); });
     const cncReadiness = updateIfcCncReadiness();
     renderPartsTable();
     fitView();
@@ -1071,6 +1114,26 @@ function constructionChecks(bodyFasteners, shelfSupportDrilling, secondaryFasten
 function buildDetailedProcessing(part) {
   const u = part.userData;
   const operations = [];
+  if (u.source === "IFC") {
+    (u.technology?.edgeOperations || []).forEach(op => operations.push({
+      type:"Кромление", operation:"Кромление",
+      edge:op.edge, material:op.material, status:op.status, source:"IFC"
+    }));
+    (u.technology?.drilling || []).forEach(op => operations.push({
+      type:op.type, operation:"Кандидат сверления",
+      diameter:op.diameter, depth:op.depth,
+      x:op.x, y:op.y, z:op.z,
+      linkedHardware:op.linkedPart || "",
+      status:op.status, source:op.source, needsReference:op.needsReference
+    }));
+    (u.technology?.operations || []).filter(op=>op.type==="Соединение").forEach(op => operations.push({
+      type:"Соединение", operation:op.operation,
+      status:op.status, linkedPart:op.linkedPart,
+      contactCenter:op.contactCenter, contactAxis:op.contactAxis,
+      hardwareRecommendation:op.hardwareRecommendation, source:"IFC"
+    }));
+    return operations;
+  }
   (u.drilling || []).forEach(h => operations.push({
     type:"Сверление", operation:h.operation, diameter:h.diameter, depth:h.depth,
     x:h.x, y:h.y, z:h.z, linkedHardware:h.linkedHardware || h.type || ""
