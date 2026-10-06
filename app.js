@@ -611,6 +611,46 @@ function clearModel() {
   parts.length = 0;
 }
 
+function parseIfcFurniture(text) {
+  const source=String(text||"");
+  const objects=[];
+  const re=/#(\\d+)\\s*=\\s*(IFCFURNISHINGELEMENT|IFCBUILDINGELEMENTPROXY)\\s*\\((.*)\\);/g;
+  let m;
+  while((m=re.exec(source))!==null){
+    const attrs=m[3];
+    const quoted=[...attrs.matchAll(/'([^']*)'/g)].map(x=>x[1]).filter(Boolean);
+    const name=quoted[0] || "IFC-объект";
+    objects.push({id:m[1],type:m[2],name});
+  }
+  return {
+    format:"IFC",
+    furniture:objects.filter(o=>o.type==="IFCFURNISHINGELEMENT"),
+    proxies:objects.filter(o=>o.type==="IFCBUILDINGELEMENTPROXY"),
+    total:objects.length
+  };
+}
+
+function renderIfcResult(result){
+  const target=$("ifcRecognition");
+  if(!target) return;
+  const furniture=result.furniture||[];
+  target.innerHTML="<b>IFC распознан.</b><div>Мебельных объектов: "+furniture.length+"</div>"+
+    (furniture.length ? "<ul>"+furniture.map(o=>"<li>#"+o.id+" — "+o.name+"</li>").join("")+"</ul>" :
+    "<div class='status'>IFC содержит объекты, но мебель IFC не обнаружена.</div>");
+  window._ifcResult=result;
+}
+
+function importIfcFile(file){
+  if(!file) return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    const result=parseIfcFurniture(reader.result);
+    renderIfcResult(result);
+    validate("IFC импортирован: найдено объектов "+result.total+", мебельных "+result.furniture.length+".","ok");
+  };
+  reader.readAsText(file);
+}
+
 function analyzeFurnitureImageMetadata(file) {
   if (!file) return null;
   const result = {fileName:file.name,type:file.type||"unknown",recognized:[],params:{},confidence:"низкая"};
