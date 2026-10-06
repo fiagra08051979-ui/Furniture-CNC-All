@@ -131,6 +131,23 @@ const restoredCuttingStatus = await page.locator("#validation").textContent();
 if (!restoredCuttingStatus.includes("Карта раскроя показана из проверенной раскладки Release Gate")) {
   throw new Error("После новой сборки Release Gate не восстановил выпуск: " + restoredCuttingStatus);
 }
+await page.locator("#sheetLength").fill("100");
+await page.locator("#sheetWidth").fill("100");
+await page.locator(".showCuttingMap").first().click();
+await page.waitForTimeout(300);
+const blockedLayoutStatus = await page.locator("#validation").textContent();
+if (!blockedLayoutStatus.includes("просмотр карты раскроя заблокирован")) {
+  throw new Error("Release Gate не заблокировал раскрой при недопустимом размере листа.");
+}
+await page.locator("#sheetLength").fill("3000");
+await page.locator("#sheetWidth").fill("3000");
+await page.locator(".showCuttingMap").first().click();
+await page.waitForTimeout(300);
+const restoredLayoutStatus = await page.locator("#validation").textContent();
+if (!restoredLayoutStatus.includes("Карта раскроя показана из проверенной раскладки Release Gate")) {
+  throw new Error("После восстановления размеров листа Release Gate не восстановил выпуск.");
+}
+
 const pdfPromise = page.waitForEvent("popup", {timeout:10000});
 await page.locator(".exportSheetLayout").first().click();
 const pdfPage = await pdfPromise;
