@@ -231,6 +231,9 @@ function evaluateReleaseGateState({ qc, partsCount, partStates, cuttingGroups, s
 
     (sheetLayout?.sheets || []).forEach(sheet => {
       (sheet.placements || []).forEach(placement => {
+        if (String(placement.sheetNumber || "") !== String(sheet.sheetNumber || "")) {
+          issues.push("Лист " + sheet.sheetNumber + ": размещение содержит неверный номер листа.");
+        }
         const key = placement.groupNumber + "::" + placement.partNumber;
         actual.set(key, (actual.get(key) || 0) + 1);
         const expectedDetail = expectedDetailByKey.get(key);
