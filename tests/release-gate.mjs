@@ -28,6 +28,7 @@ const required = [
   ["низкая уверенность IFC требует ручной проверки", app.includes('u.source === "IFC" && u.recognitionConfidence === "low"') && app.includes("требуется ручная проверка")],
   ["кандидатные IFC-соединения требуют подтверждения", app.includes('u.source === "IFC" && (u.technology?.joints || []).some(j => j.status === "candidate")') && app.includes("неподтверждённое IFC-соединение")],
   ["IFC-фурнитура остаётся кандидатной", app.includes('add("Петля с доводчиком"') && app.includes('"candidate"') && app.includes('add("Крепёж корпуса"') && app.includes('source:"IFC topology"')],
+  ["IFC-кандидат не переводится автоматически в ready", app.includes('status:"candidate"') && app.includes('status === "candidate"') && !app.includes('status = "ready"')],
   ["Release Gate runtime", app.includes("function runReleaseGate()") && app.includes("evaluateReleaseGateState") && app.includes("window._releaseGate") && app.includes("выпуск PDF заблокирован")],
   ["Release Gate отвергает устаревший QC", app.includes("modelRevision") && app.includes("другой ревизии модели") && app.includes("qc.modelRevision")],
   ["инвалидация Gate при пересборке", app.includes("let modelRevision = 0") && app.includes("window._constructionQC = null") && app.includes("window._releaseGate = null") && app.includes("report.modelRevision = modelRevision")],
