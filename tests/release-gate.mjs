@@ -58,6 +58,11 @@ const gateContract = [
     partStates:[{number:"001",detailing:{number:"001",status:"ready",cutting:{length:600,width:400,thickness:18},holes:[]}}],
     cuttingGroups:[], sheetLayout:null
   }, false],
+  ["BLOCKED: рассогласованный источник геометрии", {
+    qc:{status:"PASS"}, partsCount:1,
+    partStates:[{number:"001",sourceGeometry:"IFC",geometryLocked:true,detailing:{number:"001",status:"ready",construction:{source:"Furniture Core"},cutting:{length:600,width:400,thickness:18},holes:[]}}],
+    cuttingGroups:[], sheetLayout:null
+  }, false],
   ["BLOCKED: устаревшая деталировка", {
     qc:{status:"PASS"}, partsCount:1, modelRevision:2,
     partStates:[{number:"001",detailing:{number:"001",status:"ready",modelRevision:1,cutting:{length:600,width:400,thickness:18},holes:[]}}],
@@ -86,7 +91,8 @@ const contractChecks = [
   ["Release Gate учитывает overflow", app.includes("validateSheetLayout(sheetLayout)")],
   ["Release Gate сверяет состав деталей", app.includes("Количество состояний деталей не соответствует количеству деталей проекта")],
   ["Release Gate требует полный состав Construction QC", app.includes("Construction QC не содержит полный состав деталей проекта")],
-  ["Release Gate отвергает устаревшую деталировку", app.includes("detailing относится к другой ревизии модели")]
+  ["Release Gate отвергает устаревшую деталировку", app.includes("detailing относится к другой ревизии модели")],
+  ["Release Gate проверяет источник геометрии деталировки", app.includes("источник геометрии деталировки не соответствует источнику модели")]
 ];
 
 const forbidden = [
