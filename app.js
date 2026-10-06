@@ -337,6 +337,55 @@ function assignPartNumbers() {
   });
 }
 
+function createPartLabel(part) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 256; canvas.height = 96;
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "rgba(255,255,255,0.92)";
+  ctx.strokeStyle = "rgba(30,40,50,0.9)";
+  ctx.lineWidth = 4;
+  ctx.roundRect(4, 4, 248, 88, 14);
+  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = "#111820";
+  ctx.font = "bold 48px Arial";
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(part.userData.partNumber, 128, 48);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({map: texture, transparent: true, depthTest: false}));
+  const scale = Math.max(part.userData.width, part.userData.height, part.userData.depth) * 0.11;
+  sprite.scale.set(scale * 2.0, scale * 0.75, 1);
+  sprite.position.copy(part.position).add(new THREE.Vector3(0, Math.max(part.userData.height, 80) * 0.6, 0));
+  sprite.renderOrder = 1000;
+  sprite.userData.isPartLabel = true;
+  sprite.userData.partNumber = part.userData.partNumber;
+  sprite.userData.part = part;
+  root.add(sprite);
+  part.userData.label = sprite;
+}
+
+function rebuildPartLabels() {
+  root.children.filter(o => o.userData?.isPartLabel).forEach(label => {
+    root.remove(label);
+    label.material.map?.dispose();
+    label.material.dispose();
+  });
+  parts.forEach(part => createPartLabel(part));
+}
+
+function syncPartLabels() {
+  parts.forEach(part => {
+    const label = part.userData.label;
+    if (!label) return;
+    label.position.copy(part.position).add(new THREE.Vector3(
+      0,
+      Math.max(part.userData.height, 80) * 0.6,
+      0
+    ));
+  });
+}
+
 function clearModel() {
   while (root.children.length) {
     const object = root.children.pop();
@@ -452,6 +501,7 @@ function build() {
   });
 
   assignPartNumbers();
+  rebuildPartLabels();
   exploded = false;
   $("explode").textContent = "Взрыв";
   $("partsCount").textContent = parts.length;
@@ -521,6 +571,7 @@ function setExplode(on) {
     part.position.copy(part.userData.base);
     if (on) part.position.add(direction.multiplyScalar(distance));
   });
+  syncPartLabels();
 
   $("explode").textContent = on ? "Свернуть" : "Взрыв";
 }
