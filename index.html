@@ -68,6 +68,12 @@
       </section>
 
       <section>
+        <h2>Лист раскроя</h2>
+        <label>Длина листа, мм<input id="sheetLength" type="number" min="500" value="2800"></label>
+        <label>Ширина листа, мм<input id="sheetWidth" type="number" min="500" value="2070"></label>
+        <label>Пропил, мм<input id="cutKerf" type="number" min="0" step="0.5" value="4"></label>
+        <label>Отступ от края листа, мм<input id="sheetMargin" type="number" min="0" step="1" value="10"></label>
+        <div class="row"><button id="exportSheetLayout">Карта раскроя</button></div>
         <h2>Крепление корпуса</h2>
         <label>Основной способ<select id="fastenerType"><option value="комбинированный">Конфирматы + стяжки</option><option value="конфирматы">Только конфирматы</option><option value="стяжки">Только стяжки</option></select></label>
         <label>Диаметр конфирмата, мм<input id="confirmatDiameter" type="number" min="5" max="8" step="0.5" value="7"></label>
