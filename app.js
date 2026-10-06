@@ -1646,6 +1646,7 @@ function buildCuttingPdfHtml(layout, gatedParts = parts) {
       '<div class="detail-meta"><b>Размер:</b> '+d.length+' × '+d.width+' × '+d.thickness+' мм · '+
       '<b>Материал:</b> '+d.material+' · <b>Количество:</b> '+(d.quantity || 1)+'</div>' +
       '<div class="detail-meta"><b>Кромка:</b> '+edgeSummary(d.edges)+'</div>' +
+      '<div class="detail-meta"><b>Источник геометрии:</b> '+(u.source || "Furniture Core")+'</div>' +
       '<div class="detail-meta"><b>Операций присадки:</b> '+ops.length+' · <b>Всего отверстий:</b> '+ops.reduce((sum, op) => sum + (op.quantity || 1), 0)+'</div>' +
       (ops.length ? drillingSchematic(part) : '<div class="no-drilling">Присадка и сверловка отсутствуют.</div>') +
       '<table><thead><tr><th>№</th><th>Операция</th><th>X, мм</th><th>Y, мм</th><th>Ø, мм</th><th>Глубина, мм</th><th>Количество</th><th>Фурнитура / назначение</th></tr></thead><tbody>'+
