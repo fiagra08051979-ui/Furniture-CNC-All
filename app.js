@@ -3307,25 +3307,59 @@ function buildTypedCompensatedToolpaths(plan, part) {
   return result;
 }
 
+function lineIntersection(a,b,c,d){
+  const r={x:b.x-a.x,y:b.y-a.y}, q={x:d.x-c.x,y:d.y-c.y};
+  const den=r.x*q.y-r.y*q.x;
+  if(Math.abs(den)<1e-9) return null;
+  const t=((c.x-a.x)*q.y-(c.y-a.y)*q.x)/den;
+  return {x:a.x+t*r.x,y:a.y+t*r.y};
+}
+function buildOffsetContour(points,distance,side){
+  if(!Array.isArray(points)||points.length<3) return null;
+  let pts=points.map(p=>({x:Number(p.x)||0,y:Number(p.y)||0}));
+  if(pts.length>1 && pts[0].x===pts[pts.length-1].x && pts[0].y===pts[pts.length-1].y) pts=pts.slice(0,-1);
+  const area=polygonSignedArea(pts);
+  if(Math.abs(area)<1e-8) return null;
+  const ccw=area>0;
+  const outwardSign=ccw ? 1 : -1;
+  const sign=side==="INSIDE" ? -1 : 1;
+  const lines=[];
+  for(let i=0;i<pts.length;i++){
+    const a=pts[i],b=pts[(i+1)%pts.length],dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy)||1;
+    const nx=outwardSign*dy/len, ny=outwardSign*-dx/len;
+    lines.push({a:{x:a.x+nx*distance*sign,y:a.y+ny*distance*sign},b:{x:b.x+nx*distance*sign,y:b.y+ny*distance*sign}});
+  }
+  const out=[];
+  for(let i=0;i<lines.length;i++){
+    const hit=lineIntersection(lines[(i+pts.length-1)%pts.length].a,lines[(i+pts.length-1)%pts.length].b,lines[i].a,lines[i].b);
+    if(!hit) return null;
+    out.push(hit);
+  }
+  out.push({...out[0]});
+  return out;
+}
 function buildCompensatedContourToolpath(plan, part) {
   const contour=part.userData?.ifcContour?.path;
   if(!Array.isArray(contour)||contour.length<3) return [];
   const points=contour.map(p=>({x:Number(p.x)||0,y:Number(p.y)||0}));
-  return (plan.operations||[]).filter(op=>op.type==="CONTOUR").map(op=>{
+  return (plan.operations||[]).filter(op=>op.type==="CONTOUR").flatMap(op=>{
     const radius=Number(op.toolDiameter||op.diameter||6)/2;
-    const side=op.compensationSide || classifyContourSide(points, points);
-    const center=points.reduce((a,p)=>({x:a.x+p.x,y:a.y+p.y}),{x:0,y:0});
-    center.x/=points.length; center.y/=points.length;
-    const compensated=points.map(p=>{
-      const dx=p.x-center.x,dy=p.y-center.y,len=Math.hypot(dx,dy)||1;
-      const direction=side==="INSIDE" ? 1 : -1;
-      return {x:p.x+direction*dx/len*radius,y:p.y+direction*dy/len*radius,z:0};
-    });
-    if(compensated.length) compensated.push({...compensated[0]});
-    return {operationId:op.id,side,radius,points:compensated,source:"IFC_COMPENSATED"};
+    const side=op.compensationSide || classifyContourSide(points,op);
+    const offset=buildOffsetContour(points,radius,side);
+    if(!offset) return [];
+    return [{operationId:op.id,side,radius,points:offset,closed:true,source:"IFC_COMPENSATED_NORMAL_OFFSET"}];
   });
 }
-
+function validateContourSelfIntersections(points){
+  const issues=[];
+  if(!Array.isArray(points)||points.length<4) return issues;
+  for(let i=0;i<points.length-1;i++) for(let j=i+1;j<points.length-1;j++){
+    if(j===i+1 || (i===0&&j===points.length-2)) continue;
+    if(lineIntersection(points[i],points[i+1],points[j],points[j+1]))
+      issues.push({level:"error",code:"CONTOUR_SELF_INTERSECTION",message:"Компенсированный контур содержит самопересечение."});
+  }
+  return issues;
+}
 function validateToolpathClearance(plan, part) {
   const issues=[];
   const contour=part.userData?.ifcContour?.path;
@@ -3343,6 +3377,14 @@ function validateToolpathClearance(plan, part) {
   return issues;
 }
 
+function validateContourCompensationGeometry(plan,part){
+  const issues=[];
+  (plan.compensatedToolpaths||[]).filter(p=>p.type==="CONTOUR"||p.source==="IFC_COMPENSATED_NORMAL_OFFSET").forEach(path=>{
+    issues.push(...validateContourSelfIntersections(path.points).map(x=>({...x,operation:path.operationId})));
+    if(path.points.length<4 || !path.closed) issues.push({level:"error",code:"CONTOUR_NOT_CLOSED",message:"Компенсированный контур не замкнут.",operation:path.operationId});
+  });
+  return issues;
+}
 function validateToolRadiusCompensation(plan, part) {
   const issues=[];
   const contour=part.userData?.ifcContour?.path;
@@ -3626,9 +3668,9 @@ function getCompiledManufacturingPlan(part) {
   plan.segmentToolpathValidation=validateToolpathSegmentsAgainstGeometry(plan,part);
   plan.toolRadiusCompensation=validateToolRadiusCompensation(plan,part);
   plan.toolpathClearance=validateToolpathClearance(plan,part);
-  plan.typedToolpathValidation=validateTypedCompensatedToolpaths(plan);\n  plan.passPlanValidation=validateCncPassPlan(plan);\n  plan.pocketGeometryValidation=validatePocketGeometry(plan,part);
+  plan.typedToolpathValidation=validateTypedCompensatedToolpaths(plan);\n  plan.passPlanValidation=validateCncPassPlan(plan);\n  plan.pocketGeometryValidation=validatePocketGeometry(plan,part);\n  plan.contourCompensationValidation=validateContourCompensationGeometry(plan,part);
   plan.compensatedToolpaths=buildTypedCompensatedToolpaths(plan,part);\n  plan.toolpaths=buildCncToolpaths(plan);\n  plan.passPlanValidation=validateCncPassPlan(plan);
-  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance,...plan.typedToolpathValidation,...plan.passPlanValidation,...plan.pocketGeometryValidation];
+  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance,...plan.typedToolpathValidation,...plan.passPlanValidation,...plan.pocketGeometryValidation,...plan.contourCompensationValidation];
   plan.machineReady=plan.validation.every(x=>x.level!=="error") &&
     plan.status==="READY" &&
     plan.lifecycle.every(x=>x.valid) &&
