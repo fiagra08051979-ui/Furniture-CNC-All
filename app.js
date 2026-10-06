@@ -845,6 +845,44 @@ function buildCncToolPlan(part) {
   });
 }
 
+function buildCncJobManifest() {
+  const post = getPostprocessor();
+  const preflight = cncPreflight();
+  const jobs = parts.map(part => buildCncJob(part));
+  const tools = [];
+  jobs.forEach(job => (job.operations || []).forEach(op => {
+    if (op.toolId && !tools.some(t => t.id === op.toolId)) {
+      tools.push({id:op.toolId, number:op.toolNumber, name:op.toolName, diameter:op.toolDiameter});
+    }
+  }));
+  return {
+    format:"Furniture AI Designer CNC Job",
+    version:"2.7",
+    postprocessor:post.name,
+    postprocessorStatus: post.name === "Universal G-code" ? "generic" : "template-unvalidated",
+    units:"mm",
+    zeroPoint:"G54 / XY — по центру детали, Z0 — верх детали",
+    safeZ:post.safeZ,
+    parts:jobs,
+    tools,
+    preflight,
+    readyForMachine:preflight.filter(i => i.level === "error").length === 0
+  };
+}
+
+function exportCncJobManifest() {
+  const manifest = buildCncJobManifest();
+  const blob = new Blob([JSON.stringify(manifest,null,2)], {type:"application/json"});
+  const link=document.createElement("a");
+  link.href=URL.createObjectURL(blob);
+  link.download="cnc-job-manifest.json";
+  link.click();
+  URL.revokeObjectURL(link.href);
+  validate(manifest.readyForMachine ?
+    "CNC Job Manifest сформирован: критических ошибок нет." :
+    "CNC Job Manifest сформирован, но обнаружены ошибки Preflight.", manifest.readyForMachine ? "ok" : "error");
+}
+
 function buildCncJob(part) {
   const u = part.userData;
   return {
@@ -1365,6 +1403,7 @@ if ($("exportSheetLayout")) $("exportSheetLayout").addEventListener("click", exp
 if ($("exportDxf")) $("exportDxf").addEventListener("click", exportAllDxf);
 if ($("exportCnc")) $("exportCnc").addEventListener("click", exportAllCnc);
 if ($("exportCncTech")) $("exportCncTech").addEventListener("click", exportCncTechCards);
+if ($("exportCncManifest")) $("exportCncManifest").addEventListener("click", exportCncJobManifest);
 if ($("exportCnc")) $("exportCnc").addEventListener("click", renderCncPreflight);
 function renderCncOperations() {
   const target=$("cncOperationsTable");
