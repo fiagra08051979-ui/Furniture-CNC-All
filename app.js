@@ -2797,10 +2797,6 @@ function exportAllCnc() {
 }
 
 
-  parts.forEach(part => exportCncProgram(part));
-  validate("Программы ЧПУ подготовлены для " + parts.length + " деталей.", "ok");
-}
-
 function addMillingEntities(lines, part) {
   buildMillingGeometry(part).forEach(m => {
     lines.push("0","LWPOLYLINE","8","MILLING","90",m.path.length,"70",1);
