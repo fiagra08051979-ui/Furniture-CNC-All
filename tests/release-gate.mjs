@@ -10,6 +10,8 @@ const fixtures = JSON.parse(fs.readFileSync("tests/reference-projects.json", "ut
 
 const required = [
   ["Furniture AI Designer", app.includes("Furniture AI Designer") || readme.includes("Furniture AI Designer")],\n  ["версия интерфейса синхронизирована с v1.0.0", app.includes('projectVersion = "1.0.0"') && html.includes("Furniture AI Designer v1.0.0")],
+  ["дизайнер поддерживает материалы по отдельным деталям", app.includes("detail-material") && app.includes("applyPartMaterial(index, materialSelect.value)")],
+  ["дизайнер поддерживает полный набор материалов и толщин", html.includes("ЛДСП 35 мм") && html.includes("МДФ 16 мм") && html.includes("Фанера 22 мм") && html.includes("ABS 0.8 мм") && html.includes("PVC 1 мм") && html.includes("PP 2 мм")],
   ["AI текст", app.includes("recognizeFurnitureText") && app.includes("aiRecognize")],
   ["AI изображение", app.includes("analyzeFurnitureImageMetadata") && app.includes("aiImageAnalyze")],
   ["IFC", app.includes("web-ifc") && app.includes("importIfcIntoFurnitureCore")],
