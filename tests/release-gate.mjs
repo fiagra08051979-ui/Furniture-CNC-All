@@ -68,7 +68,7 @@ const required = [
   ["IFC открывается после очистки проекта", app.includes("clearModel();") && app.includes("api.OpenModel(data, { COORDINATE_TO_ORIGIN: true })") && app.includes("clearModel();")],
   ["цепочка Construction QC → Release Gate", app.includes("runConstructionQC(detailingPipeline)") && app.includes("runReleaseGate()")],
   ["PDF читает деталировку", app.includes("const detailing = part.userData?.detailing") && app.includes("Array.isArray(detailing?.holes)") && app.includes("d.length") && app.includes("d.material") && app.includes("d.edges")],
-  ["Release Gate проверяет раскладку листа", core.includes("function validateSheetLayout") && core.includes("placement.overflow") && app.includes("sheetLayoutChecked") && app.includes("buildSheetLayout(")],
+  ["Release Gate проверяет раскладку листа", core.includes("function validateSheetLayout") && core.includes("placement.overflow") && core.includes("sheetLayoutChecked") && app.includes("buildSheetLayout(")],
   ["PDF не пересобирает раскладку после Release Gate", app.includes("const layout = releaseGate.sheetLayout;") && app.includes("отсутствует проверенная раскладка листа")],
   ["PDF использует проверенную раскладку", app.includes("const layout = releaseGate.sheetLayout;") && !app.includes("releaseGate.sheetLayout || buildSheetLayout")],
   ["PDF лист использует detailing", app.includes("sheet.placements.map(p =>") && app.includes("(p.material || sheet.material)") && app.includes("edgeSummary(p.edges)") && app.includes("p.thickness")]
