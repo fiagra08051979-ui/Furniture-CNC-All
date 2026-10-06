@@ -2019,6 +2019,11 @@ function buildCncJobManifest() {
       partNumber:plan.partNumber,
       groups:plan.toolTechnology || []
     })),
+    toolpathClearance: plans.map(plan => ({
+      partNumber:plan.partNumber,
+      status:(plan.toolpathClearance||[]).some(i=>i.level==="error") ? "BLOCKED" : "READY",
+      issues:plan.toolpathClearance || []
+    })),
     toolRadiusCompensation: plans.map(plan => ({
       partNumber:plan.partNumber,
       status:(plan.toolRadiusCompensation||[]).some(i=>i.level==="error") ? "BLOCKED" : "READY",
@@ -3158,6 +3163,23 @@ function offsetContourForToolRadius(contour, radius) {
   });
 }
 
+function validateToolpathClearance(plan, part) {
+  const issues=[];
+  const contour=part.userData?.ifcContour?.path;
+  if(!Array.isArray(contour)||contour.length<3) return issues;
+  const polygon=contour.map(p=>({x:Number(p.x)||0,y:Number(p.y)||0}));
+  (plan.toolpaths||[]).forEach(path=>{
+    if(path.type!=="CONTOUR") return;
+    const op=(plan.operations||[]).find(o=>o.id===path.operationId);
+    const radius=Number(op?.toolDiameter||op?.diameter||6)/2;
+    path.points.forEach((p,i)=>{
+      const edge=Math.min(...polygon.map((a,j)=>distancePointToSegment2D({x:p.x,y:p.y},a,polygon[(j+1)%polygon.length])));
+      if(edge<radius-0.01) issues.push({level:"error",code:"TOOL_CLEARANCE",message:"Недостаточный боковой зазор инструмента до края детали.",operation:path.operationId,point:i});
+    });
+  });
+  return issues;
+}
+
 function validateToolRadiusCompensation(plan, part) {
   const issues=[];
   const contour=part.userData?.ifcContour?.path;
@@ -3376,7 +3398,8 @@ function getCompiledManufacturingPlan(part) {
   plan.geometryToolpathValidation=validateToolpathAgainstGeometry(plan,part);
   plan.segmentToolpathValidation=validateToolpathSegmentsAgainstGeometry(plan,part);
   plan.toolRadiusCompensation=validateToolRadiusCompensation(plan,part);
-  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation];
+  plan.toolpathClearance=validateToolpathClearance(plan,part);
+  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance];
   plan.machineReady=plan.validation.every(x=>x.level!=="error") &&
     plan.status==="READY" &&
     plan.lifecycle.every(x=>x.valid) &&
