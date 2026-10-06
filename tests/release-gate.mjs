@@ -53,6 +53,19 @@ const gateContract = [
     partStates:[{number:"001",detailing:{number:"001",status:"review",cutting:{length:600,width:400,thickness:18},holes:[]}}],
     cuttingGroups:[], sheetLayout:null
   }, false],
+  ["BLOCKED: неполный состав partStates", {
+    qc:{status:"PASS"}, partsCount:2,
+    partStates:[{number:"001",detailing:{number:"001",status:"ready",cutting:{length:600,width:400,thickness:18},holes:[]}}],
+    cuttingGroups:[], sheetLayout:null
+  }, false],
+  ["BLOCKED: неполный состав QC details", {
+    qc:{status:"PASS",details:[{number:"001"}]}, partsCount:2,
+    partStates:[
+      {number:"001",detailing:{number:"001",status:"ready",cutting:{length:600,width:400,thickness:18},holes:[]}},
+      {number:"002",detailing:{number:"002",status:"ready",cutting:{length:500,width:300,thickness:18},holes:[]}}
+    ],
+    cuttingGroups:[], sheetLayout:null
+  }, false],
   ["BLOCKED: overflow", {
     qc:{status:"PASS"}, partsCount:1,
     partStates:[{number:"001",detailing:{number:"001",status:"ready",cutting:{length:600,width:400,thickness:18},holes:[]}}],
@@ -65,7 +78,9 @@ const contractChecks = [
   ["Release Gate имеет детерминированный evaluator", app.includes("function evaluateReleaseGateState")],
   ["Release Gate различает PASS/BLOCKED", app.includes('status: issues.length ? "BLOCKED" : "PASS"')],
   ["Release Gate учитывает REVIEW", app.includes('qc.status !== "PASS"')],
-  ["Release Gate учитывает overflow", app.includes("validateSheetLayout(sheetLayout)")]
+  ["Release Gate учитывает overflow", app.includes("validateSheetLayout(sheetLayout)")],
+  ["Release Gate сверяет состав деталей", app.includes("Количество состояний деталей не соответствует количеству деталей проекта")],
+  ["Release Gate требует полный состав Construction QC", app.includes("Construction QC не содержит полный состав деталей проекта")]
 ];
 
 const forbidden = [
