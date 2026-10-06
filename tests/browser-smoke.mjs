@@ -44,6 +44,9 @@ await page.locator("#aiImageAnalyze").click();
 await page.waitForSelector("#aiImageApply",{timeout:10000});
 await page.locator("#aiImageApply").click();
 await page.waitForTimeout(1000);
+const aiImageStatus = await page.locator("#validation").textContent();
+if (!aiImageStatus.includes("AI-распознавание изображения применено")) throw new Error("AI image не применил распознанную конструкцию.");
+
 await page.locator("#ifcFile").setInputFiles("tests/fixtures/tableX.ifc");
 await page.locator("#ifcImport").click();
 await page.waitForTimeout(3000);
@@ -52,8 +55,6 @@ if (!ifcStatus.includes("Реальная IFC-геометрия")) throw new Er
 const ifcObjects = await page.locator("#ifcProjectObjects").textContent();
 if (!ifcObjects.includes("Распознано:")) throw new Error("IFC runtime не завершил распознавание деталей.");
 
-const aiImageStatus = await page.locator("#validation").textContent();
-if (!aiImageStatus.includes("AI-распознавание изображения применено")) throw new Error("AI image не применил распознанную конструкцию.");
 await page.locator("#material").selectOption("mdf18");
 await page.waitForTimeout(300);
 await page.locator("#edge1").selectOption({label:"ABS 2 мм"});
