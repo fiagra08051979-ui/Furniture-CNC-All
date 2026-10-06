@@ -2086,7 +2086,7 @@ async function analyzeFurnitureImageMetadata(file) {
     confidence:"низкая",
     source:"AI image"
   };
-  if (!/^image\\//.test(file.type || "")) {
+  if (!/^image\//.test(file.type || "")) {
     result.confirmation = "Файл не является изображением.";
     return result;
   }
