@@ -459,6 +459,49 @@ function buildSheetLayout(sheetLength, sheetWidth, kerf, margin, allowRotation, 
   return {sheetLength, sheetWidth, kerf, margin, allowRotation:canRotate, grainMode, sheets};
 }
 
+function showCuttingMap() {
+  const layout = buildSheetLayout(
+    Number($("sheetLength")?.value || 2800),
+    Number($("sheetWidth")?.value || 2070),
+    Number($("cutKerf")?.value || 4),
+    Number($("sheetMargin")?.value || 10),
+    Boolean($("allowRotation")?.checked),
+    $("grainMode")?.value || "нет"
+  );
+  const panel = $("cuttingMap");
+  if (!panel) return;
+  panel.innerHTML = "";
+  layout.sheets.forEach((sheet, index) => {
+    const card = document.createElement("div");
+    card.className = "cutting-sheet";
+    const title = document.createElement("div");
+    title.className = "cutting-sheet-title";
+    title.textContent = "Лист " + sheet.sheetNumber + " · " + sheet.material + " · " + sheet.length + " × " + sheet.width + " мм";
+    card.appendChild(title);
+    const canvas = document.createElement("canvas");
+    canvas.width = 900; canvas.height = Math.max(300, Math.round(900 * sheet.width / sheet.length));
+    canvas.className = "cutting-canvas";
+    const ctx = canvas.getContext("2d");
+    const sx = canvas.width / sheet.length, sy = canvas.height / sheet.width;
+    ctx.strokeStyle = "#334155"; ctx.lineWidth = 3; ctx.strokeRect(1,1,canvas.width-2,canvas.height-2);
+    sheet.placements.forEach(p => {
+      const x=p.x*sx, y=p.y*sy, w=p.length*sx, h=p.width*sy;
+      ctx.fillStyle = p.overflow ? "#fecaca" : "#dbeafe";
+      ctx.fillRect(x,y,w,h); ctx.strokeRect(x,y,w,h);
+      ctx.fillStyle = "#111827"; ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.font = Math.max(11, Math.min(24, Math.min(w,h)*0.18)) + "px Arial";
+      ctx.fillText(p.partNumber, x+w/2, y+h/2);
+      ctx.font = "11px Arial";
+      ctx.fillText(Math.round(p.length)+"×"+Math.round(p.width), x+w/2, y+h/2+16);
+      if (p.rotated) { ctx.font="10px Arial"; ctx.fillText("90°",x+w/2,y+h/2-16); }
+      if (p.overflow) { ctx.fillStyle="#991b1b"; ctx.fillText("ВНЕ ЛИСТА",x+w/2,y+h/2+31); }
+    });
+    card.appendChild(canvas);
+    panel.appendChild(card);
+  });
+  panel.hidden = false;
+}
+
 function exportSheetLayout() {
   if (!window.XLSX) { validate("Модуль Excel недоступен.", "error"); return; }
   const sheetLength = Number($("sheetLength")?.value || 2800);
@@ -815,6 +858,7 @@ $("material").addEventListener("change", build);
 $("exportExcel").addEventListener("click", exportExcel);
 if ($("exportCutting")) $("exportCutting").addEventListener("click", exportCuttingStructure);
 if ($("exportSheetLayout")) $("exportSheetLayout").addEventListener("click", exportSheetLayout);
+if ($("showCuttingMap")) $("showCuttingMap").addEventListener("click", showCuttingMap);
 $("exportPdf").addEventListener("click", exportPdf);
 
 $("newProject").addEventListener("click", () => {
