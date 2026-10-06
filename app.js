@@ -856,8 +856,23 @@ function readCncMachineSetup() {
   };
 }
 
+function validateCncMachineSetup(setup = readCncMachineSetup()) {
+  const issues = [];
+  if (setup.safeZ <= 0) issues.push({level:"error",message:"Safe Z должен быть больше 0 мм."});
+  if (setup.defaultFeed <= 0) issues.push({level:"error",message:"Подача должна быть больше 0 мм/мин."});
+  if (setup.spindle <= 0) issues.push({level:"error",message:"Обороты шпинделя должны быть больше 0 об/мин."});
+  if (setup.workZ > 0) issues.push({level:"warning",message:"Рабочий Z выше нулевой плоскости детали."});
+  if (setup.safeZ <= Math.abs(setup.workZ)) issues.push({level:"error",message:"Safe Z должен быть выше рабочей глубины."});
+  return issues;
+}
+
 function applyCncMachineSetup() {
   const setup = readCncMachineSetup();
+  const setupIssues = validateCncMachineSetup(setup);
+  if (setupIssues.some(i => i.level === "error")) {
+    validate(setupIssues.map(i => i.message).join(" "), "error");
+    return setup;
+  }
   CNC_POSTPROCESSORS.generic.safeZ = setup.safeZ;
   CNC_POSTPROCESSORS.generic.drillFeed = setup.defaultFeed;
   validate("Настройки CNC применены: Safe Z " + setup.safeZ + " мм, подача " + setup.defaultFeed + " мм/мин.", "ok");
@@ -1426,6 +1441,19 @@ if ($("exportCnc")) $("exportCnc").addEventListener("click", exportAllCnc);
 if ($("exportCncTech")) $("exportCncTech").addEventListener("click", exportCncTechCards);
 if ($("exportCncManifest")) $("exportCncManifest").addEventListener("click", exportCncJobManifest);
 if ($("exportCnc")) $("exportCnc").addEventListener("click", renderCncPreflight);
+function renderCncSetupValidation() {
+  const target=$("cncSetupValidation");
+  if(!target) return;
+  const issues=validateCncMachineSetup();
+  target.innerHTML="<b>Проверка настроек станка</b>"+(issues.length ?
+    issues.map(i=>"<div class='status "+i.level+"'>"+i.message+"</div>").join("") :
+    "<div class='status ok'>Настройки CNC корректны.</div>");
+}
+["cncSafeZ","cncWorkZ","cncFeed","cncSpindle"].forEach(id=>{
+  const el=$(id);
+  if(el) el.addEventListener("input",renderCncSetupValidation);
+});
+renderCncSetupValidation();
 function renderCncOperations() {
   const target=$("cncOperationsTable");
   if(!target || !parts.length) return;
