@@ -27,7 +27,16 @@ jobs:
       - name: Запустить локальный сервер
         run: |
           npx --yes serve . -l 5173 > /tmp/furniture-server.log 2>&1 &
-          sleep 3
+          for i in $(seq 1 20); do
+            if curl -fsS http://127.0.0.1:5173/ > /dev/null; then
+              break
+            fi
+            if [ "$i" -eq 20 ]; then
+              cat /tmp/furniture-server.log
+              exit 1
+            fi
+            sleep 1
+          done
 
       - name: Выполнить браузерный smoke-test
         run: node tests/browser-smoke.mjs
