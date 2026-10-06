@@ -30,6 +30,7 @@ const required = [
   ["IFC-фурнитура остаётся кандидатной", app.includes('add("Петля с доводчиком"') && app.includes('"candidate"') && app.includes('add("Крепёж корпуса"') && app.includes('source:"IFC topology"')],
   ["IFC-кандидат не переводится автоматически в ready", app.includes('status:"candidate"') && app.includes('status === "candidate"') && !app.includes('status = "ready"')],
   ["IFC-технология получает REVIEW при неподтверждённом соединении", app.includes('const hasUnconfirmedJoint = u.technology.joints.some(j=>j.status !== "ready");') && app.includes('if (hasUnconfirmedJoint) u.technology.status = "review";')],
+  ["Construction QC блокирует IFC-соединение без подтверждения", app.includes('u.technology?.joints || []') && app.includes('IFC-соединение требует подтверждения')],
   ["IFC-порядок гарантирует QC после деталировки", app.indexOf("const detailingPipeline = rebuildDetailingPipeline();") < app.indexOf("const constructionQC = runConstructionQC(detailingPipeline);") && app.indexOf("const constructionQC = runConstructionQC(detailingPipeline);") < app.indexOf("const releaseGate = runReleaseGate();")],
   ["Release Gate runtime", app.includes("function runReleaseGate()") && app.includes("evaluateReleaseGateState") && app.includes("window._releaseGate") && app.includes("выпуск PDF заблокирован")],
   ["Release Gate отвергает устаревший QC", app.includes("modelRevision") && app.includes("другой ревизии модели") && app.includes("qc.modelRevision")],
