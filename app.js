@@ -2350,6 +2350,38 @@ function cncOperationWithTool(op, material) {
   };
 }
 
+function buildCncOperationJournal(part) {
+  const u=part.userData;
+  const packet=u.source==="IFC" ? (u.productionPacket || buildIfcProductionPacket(part)) : null;
+  const ops=optimizeCncOperationSequence(part);
+  return ops.map(op=>{
+    const tool=selectCncTool(op,u.material || "Не задан");
+    const issues=[
+      ...validateIfcManufacturingIntegrity(part),
+      ...manufacturingPreflight(part)
+    ].filter(i=>String(i.operation)===String(op.sequence) || String(i.operation)===String(op.id));
+    const sourceOp=packet?.drilling?.find(d=>d.id===op.id) || packet?.operations?.find(o=>o.id===op.id) || null;
+    return {
+      id:op.id,
+      sequence:op.sequence,
+      type:op.type,
+      operation:op.operation,
+      source:op.source || (u.source==="IFC" ? "IFC" : "Furniture Core"),
+      expressId:u.source==="IFC" ? u.expressId : null,
+      technologyStatus:op.technologyStatus || (sourceOp?.status || "ready"),
+      coordinates:{x:op.x ?? null,y:op.y ?? null,z:op.z ?? null},
+      depth:op.depth ?? null,
+      diameter:op.diameter ?? null,
+      basis:op.localBasis || sourceOp?.localBasis || packet?.basis || null,
+      linkedPart:op.linkedPart || sourceOp?.linkedPart || null,
+      tool:tool ? {id:tool.id,name:tool.name,diameter:tool.diameter} : null,
+      checks:op.checks || sourceOp?.checks || null,
+      preflightStatus:issues.some(i=>i.level==="error") ? "ERROR" : issues.some(i=>i.level==="warning") ? "WARNING" : "OK",
+      preflightIssues:issues.map(i=>({level:i.level,operation:i.operation,message:i.message}))
+    };
+  });
+}
+
 function buildCncTechCard(part) {
   const u = part.userData;
   const material = u.material || "Не задан";
@@ -2369,7 +2401,8 @@ function buildCncTechCard(part) {
     spindle: "TBD — назначается технологом",
     feed: post.drillFeed,
     operations: ops,
-    productionPacket: buildIfcProductionPacket(part)
+    productionPacket: buildIfcProductionPacket(part),
+    operationJournal: buildCncOperationJournal(part)
   };
 }
 
