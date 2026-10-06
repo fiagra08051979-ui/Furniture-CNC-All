@@ -1975,6 +1975,7 @@ function buildCncJobManifest() {
   const post = getPostprocessor();
   const machineSetup = applyCncMachineSetup();
   const preflight = cncPreflight();
+  const integrity = parts.flatMap(part => validateIfcManufacturingIntegrity(part).map(issue => ({...issue,partNumber:part.userData.partNumber})));
   const jobs = parts.map(part => buildCncJob(part));
   const tools = [];
   jobs.forEach(job => (job.operations || []).forEach(op => {
@@ -1994,6 +1995,7 @@ function buildCncJobManifest() {
     parts:jobs,
     tools,
     preflight,
+    manufacturingIntegrity: integrity,
     readyForMachine:preflight.filter(i => i.level === "error").length === 0
   };
 }
@@ -2111,10 +2113,38 @@ function cncCollisionChecks(part) {
   return issues;
 }
 
+function validateIfcManufacturingIntegrity(part) {
+  const u=part.userData;
+  if(u.source!=="IFC") return [];
+  const packet=u.productionPacket || buildIfcProductionPacket(part);
+  const cnc=buildIfcManufacturingOperations(part);
+  const issues=[];
+  const ids=new Set();
+  cnc.forEach(op=>{
+    if(!op.id) issues.push({level:"error",operation:op.sequence,message:"IFC CNC-операция не имеет стабильного ID"});
+    else if(ids.has(op.id)) issues.push({level:"error",operation:op.sequence,message:"Дублирование IFC CNC operation ID: "+op.id});
+    else ids.add(op.id);
+  });
+  const packetReady=(packet?.contour?.ready ? 1 : 0) + (packet?.drilling||[]).filter(d=>d.status==="ready").length +
+    (packet?.operations||[]).filter(o=>o.status==="ready" && (o.type==="MILL" || o.type==="POCKET")).length;
+  if(packetReady !== cnc.length)
+    issues.push({level:"error",operation:"MANUFACTURING",message:"Несоответствие Manufacturing Plan и CNC: "+packetReady+" подтверждённых операций против "+cnc.length+" CNC-операций"});
+  const expectedDrills=(packet?.drilling||[]).filter(d=>d.status==="ready").map(d=>d.id).filter(Boolean);
+  const cncDrills=cnc.filter(o=>o.type==="DRILL").map(o=>o.id);
+  expectedDrills.forEach(id=>{
+    if(!cncDrills.includes(id)) issues.push({level:"error",operation:id,message:"Подтверждённое IFC-сверление потеряно при передаче в CNC"});
+  });
+  return issues;
+}
+
 function cncPreflight() {
   const result = [];
   parts.forEach(part => {
-    const issues = [...cncCollisionChecks(part), ...cncSequenceChecks(part).issues];
+    const issues = [
+      ...cncCollisionChecks(part),
+      ...cncSequenceChecks(part).issues,
+      ...validateIfcManufacturingIntegrity(part)
+    ];
     issues.forEach(issue => result.push({...issue,partNumber:part.userData.partNumber}));
   });
   return result;
