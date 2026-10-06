@@ -1408,6 +1408,7 @@ function buildSheetLayout(sheetLength, sheetWidth, kerf, margin) {
         material: group.material,
         length: group.length,
         width: group.width,
+        thickness: group.thickness,
         edges: group.edges
       });
     }
@@ -1633,9 +1634,8 @@ function buildCuttingPdfHtml(layout) {
       '<svg viewBox="0 0 760 510" class="sheet-svg"><rect x="0" y="0" width="760" height="510" fill="white" stroke="#111827" stroke-width="3"/>'+rects+'</svg>' +
       '<table><thead><tr><th>№ детали</th><th>Размер</th><th>Материал</th><th>Кромка</th></tr></thead><tbody>'+
       sheet.placements.map(p => {
-        const part = parts.find(x => x.userData.partNumber === p.partNumber);
-        return '<tr><td>'+p.partNumber+'</td><td>'+Math.round(p.length)+' × '+Math.round(p.width)+' × '+Math.round(part ? getSheetSpec(part).thickness : 0)+' мм</td><td>'+
-          (part?.userData?.material || sheet.material)+'</td><td>'+edgeSummary(part?.userData?.edges || p.edges)+'</td></tr>';
+        return '<tr><td>'+p.partNumber+'</td><td>'+Math.round(p.length)+' × '+Math.round(p.width)+' × '+Math.round(p.thickness || 0)+' мм</td><td>'+
+          (p.material || sheet.material)+'</td><td>'+edgeSummary(p.edges)+'</td></tr>';
       }).join("")+'</tbody></table></section>';
   }).join("");
 
