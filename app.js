@@ -2187,15 +2187,34 @@ function cncPreflight() {
   return result;
 }
 
+function cncIssueStage(issue) {
+  const text=String(issue.message || "").toLowerCase();
+  if(issue.operation==="SETUP" || text.includes("safe z") || text.includes("подач") || text.includes("шпиндел")) return "СТАНОК";
+  if(text.includes("контур") || text.includes("точек контура") || text.includes("геометр")) return "ГЕОМЕТРИЯ";
+  if(text.includes("баз") || text.includes("localbasis") || text.includes("локальной")) return "БАЗА";
+  if(text.includes("отверст") || text.includes("сверл") || text.includes("диаметр") || text.includes("глубин")) return "ОБРАБОТКА";
+  if(text.includes("инструмент") || text.includes("сверло") || text.includes("фрез")) return "ИНСТРУМЕНТ";
+  if(text.includes("последователь") || text.includes("холостой")) return "ПОСЛЕДОВАТЕЛЬНОСТЬ";
+  if(text.includes("postprocessor") || text.includes("постпроцесс")) return "ПОСТПРОЦЕССОР";
+  if(text.includes("manufacturing") || text.includes("ifc cnc") || text.includes("потерян") || text.includes("дублирован")) return "СВЯЗНОСТЬ";
+  return "ПРОИЗВОДСТВО";
+}
+
 function renderCncPreflight() {
   const target = $("cncPreflight");
   if (!target) return;
   const issues = cncPreflight();
+  const stageOrder=["ГЕОМЕТРИЯ","БАЗА","ОБРАБОТКА","ИНСТРУМЕНТ","ПОСЛЕДОВАТЕЛЬНОСТЬ","СТАНОК","СВЯЗНОСТЬ","ПОСТПРОЦЕССОР","ПРОИЗВОДСТВО"];
+  const grouped={};
+  issues.forEach(i=>{ const stage=cncIssueStage(i); (grouped[stage] ||= []).push(i); });
+  const stageHtml=stageOrder.filter(stage=>grouped[stage]?.length).map(stage=>{
+    const list=grouped[stage];
+    return "<div class='cnc-preflight-stage'><b>"+stage+" · "+list.length+"</b>"+
+      list.map(i=>"<div class='status "+i.level+"'>Деталь "+i.partNumber+
+      ", операция "+i.operation+": "+i.message+"</div>").join("")+"</div>";
+  }).join("");
   target.innerHTML = "<b>Проверка CNC перед экспортом</b>" +
-    (issues.length ? "<div>" + issues.map(i =>
-      "<div class='status " + i.level + "'>Деталь " + i.partNumber +
-      ", операция " + i.operation + ": " + i.message + "</div>").join("") + "</div>" :
-      "<div class='status ok'>Ошибок и предупреждений не обнаружено.</div>");
+    (issues.length ? stageHtml : "<div class='status ok'>Все звенья производственной цепочки прошли проверку.</div>");
   return issues;
 }
 
