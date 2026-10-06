@@ -2010,7 +2010,10 @@ function buildCncJobManifest() {
     preflight,
     manufacturingIntegrity: integrity,
     readyForMachine:preflight.filter(i => i.level === "error").length === 0,
-    manufacturingPreflight: preflight.some(i => i.level === "error") ? "ERROR" : "OK"
+    manufacturingPreflight: preflight.some(i => i.level === "error") ? "ERROR" : "OK",
+    compiledPlanValidation: plans.flatMap(plan => (plan.validation || []).map(issue => ({...issue,partNumber:plan.partNumber}))),
+    machineReady: plans.every(plan => plan.machineReady),
+    readinessStatus: plans.every(plan => plan.machineReady) ? "MACHINE_READY" : "BLOCKED"
   };
 }
 
@@ -2422,13 +2425,6 @@ function compileManufacturingPlan(part) {
     lifecycle,
     status:errors.length ? "BLOCKED" : lifecycle.some(x=>x.status==="REVIEW") ? "REVIEW" : "READY"
   };
-}
-
-function getCompiledManufacturingPlan(part) {
-  if(!part.userData) part.userData={};
-  const plan=compileManufacturingPlan(part);
-  part.userData.manufacturingPlan=plan;
-  return plan;
 }
 
 function buildCncOperationJournal(part) {
@@ -3019,3 +3015,44 @@ function animate() {
 }
 animate();
 build();
+function validateCompiledManufacturingPlan(plan) {
+  const issues=[];
+  const ops=plan.operations || [];
+  const journal=plan.operationJournal || [];
+  const seen=new Set();
+  ops.forEach((op,i)=>{
+    if(!op.id) issues.push({level:"error",code:"PLAN_OP_ID",message:"Операция без ID.",operation:i+1});
+    else if(seen.has(op.id)) issues.push({level:"error",code:"PLAN_DUPLICATE_ID",message:"Дублируется ID операции "+op.id,operation:op.id});
+    else seen.add(op.id);
+  });
+  const journalIds=new Set(journal.map(x=>x.id));
+  ops.forEach(op=>{
+    if(!journalIds.has(op.id)) issues.push({level:"error",code:"PLAN_JOURNAL_LINK",message:"Операция отсутствует в Journal: "+op.id,operation:op.id});
+  });
+  journal.forEach(op=>{
+    if(!seen.has(op.id)) issues.push({level:"error",code:"PLAN_ORPHAN_JOURNAL",message:"Journal содержит неизвестную операцию: "+op.id,operation:op.id});
+    if(op.tool && op.tool.id && !op.tool.name) issues.push({level:"error",code:"PLAN_TOOL_META",message:"У инструмента нет имени: "+op.tool.id,operation:op.id});
+  });
+  const lifecycle=plan.lifecycle || [];
+  lifecycle.forEach(item=>{
+    if(!seen.has(item.operationId)) issues.push({level:"error",code:"PLAN_LIFECYCLE_LINK",message:"Lifecycle не связан с операцией: "+item.operationId,operation:item.operationId});
+  });
+  if(plan.status==="READY" && issues.some(x=>x.level==="error")) {
+    issues.push({level:"error",code:"PLAN_STATUS_CONFLICT",message:"Plan помечен READY, но содержит ошибки."});
+  }
+  return issues;
+}
+
+function getCompiledManufacturingPlan(part) {
+  if(!part.userData) part.userData={};
+  const plan=compileManufacturingPlan(part);
+  plan.compiledAt=new Date().toISOString();
+  plan.validation=validateCompiledManufacturingPlan(plan);
+  plan.machineReady=plan.validation.every(x=>x.level!=="error") &&
+    plan.status==="READY" &&
+    plan.lifecycle.every(x=>x.valid);
+  plan.status=plan.machineReady ? "MACHINE_READY" : (plan.status==="BLOCKED" ? "BLOCKED" : "REVIEW");
+  part.userData.manufacturingPlan=plan;
+  return plan;
+}
+
