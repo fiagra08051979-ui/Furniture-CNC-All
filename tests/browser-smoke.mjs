@@ -106,11 +106,11 @@ if (!cuttingStatus.includes("Карта раскроя показана из п�
 
 const gateInvalidationRevision = await page.evaluate(() => window._releaseGate?.modelRevision ?? null);
 if (!Number.isFinite(Number(gateInvalidationRevision))) throw new Error("Release Gate не сохранил ревизию проверенной модели.");
-await page.locator("#width").fill("2450");
+await page.locator("#width").fill("0");
 await page.locator("#build").click();
 await page.waitForTimeout(1000);
-const blockedRevision = await page.evaluate(() => window._releaseGate);
-if (blockedRevision !== null) throw new Error("После изменения модели старый Release Gate не был инвалидирован.");
+const blockedGate = await page.evaluate(() => window._releaseGate);
+if (!blockedGate || Number(blockedGate.modelRevision) === Number(gateInvalidationRevision) || blockedGate.passed) throw new Error("После изменения модели старый Release Gate не был заменён новым заблокированным Gate.");
 const blockedPdfPromise = page.waitForEvent("popup", {timeout:1500}).catch(() => null);
 await page.locator(".exportSheetLayout").first().click();
 const blockedPdf = await blockedPdfPromise;
