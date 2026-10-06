@@ -2476,12 +2476,12 @@ function compileManufacturingPlan(part) {
     thickness:Number(part.userData.thickness || 0),
     machineSetup:readCncMachineSetup(),
     operations,
-    toolTechnology,
+    toolTechnology,\n    technologyGroups:buildCncTechnologyGroups({operations,material:part.userData.material,thickness:part.userData.thickness}),
     operationJournal:journal,
     manufacturingIntegrity:integrity,
     preflight,
     toolChangeSequence:buildCncToolChangeSequence({toolTechnology}),
-    toolChangeValidation:validateToolChangeSequence({toolTechnology}),
+    toolChangeValidation:validateToolChangeSequence({toolTechnology}),\n    technologyGroupValidation:validateCncTechnologyGroups({technologyGroups:buildCncTechnologyGroups({operations,material:part.userData.material,thickness:part.userData.thickness})}),
     lifecycle,
     status:errors.length ? "BLOCKED" : lifecycle.some(x=>x.status==="REVIEW") ? "REVIEW" : "READY"
   };
@@ -3059,6 +3059,31 @@ function resolveCncCuttingParameters(op, tool, material, thickness) {
   };
 }
 
+function buildCncTechnologyGroups(plan){
+  const groups=[];
+  (plan.operations||[]).forEach(op=>{
+    const tool=CNC_TOOL_LIBRARY.find(t=>t.id===op.toolId);
+    const p=resolveCncCuttingParameters(op,tool,plan.material,plan.thickness);
+    const key=[op.toolId||"НЕТ",p.materialFamily,p.rpm,p.feed,p.plunge,p.passDepth].join("|");
+    let group=groups.find(g=>g.key===key);
+    if(!group){
+      group={key,toolId:op.toolId||null,toolName:tool?.name||"Инструмент не назначен",diameter:tool?.diameter||null,materialFamily:p.materialFamily,rpm:p.rpm,feed:p.feed,plunge:p.plunge,passDepth:p.passDepth,depth:p.depth,safeZ:p.safeZ,operations:[]};
+      groups.push(group);
+    }
+    group.operations.push(op.id);
+    group.depth=Math.max(group.depth,p.depth);
+  });
+  return groups;
+}
+function validateCncTechnologyGroups(plan){
+  const issues=[];
+  (plan.technologyGroups||[]).forEach(g=>{
+    if(!g.toolId) issues.push({level:"error",code:"TECH_TOOL_MISSING",message:"Не назначен инструмент для технологической группы.",operation:g.operations?.[0]});
+    if(g.rpm<=0||g.feed<=0||g.plunge<=0) issues.push({level:"error",code:"TECH_CUTTING_PARAMS",message:"Некорректные режимы резания.",operation:g.operations?.[0]});
+    if(g.passDepth<=0) issues.push({level:"error",code:"TECH_PASS_DEPTH",message:"Не задана глубина одного прохода.",operation:g.operations?.[0]});
+  });
+  return issues;
+}
 function buildCncToolChangeSequence(plan) {
   const groups=plan.toolTechnology || [];
   const order=[];
