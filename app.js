@@ -2132,81 +2132,52 @@ function renderCncPreflight() {
   return issues;
 }
 
-function buildCncOperations(part) {
-  const u = part.userData;
-  const ops = [];
-  const add = (type, operation, data={}) => ops.push({
-    sequence: ops.length + 1,
-    type, operation,
-    partNumber: u.partNumber,
-    ...data
+function buildIfcManufacturingOperations(part) {
+  const u=part.userData;
+  if(u.source!=="IFC") return [];
+  const packet=u.productionPacket || buildIfcProductionPacket(part);
+  const ops=[];
+  const add=(type,operation,data={})=>ops.push({
+    id:data.id || ("IFC-" + type + "-" + (ops.length+1)),
+    type, operation, partNumber:u.partNumber, source:"IFC",
+    technologyStatus:"ready", ...data
   });
-  if (u.source === "IFC") {
-    if (u.technology?.drillingStatus === "review") {
-      add("TECH_BLOCKED","Технологическая присадка IFC требует подтверждения базы",{
-        reason:"Направление сверления и базовая поверхность ещё не подтверждены",
-        source:"IFC technology"
-      });
+  if(packet?.contour?.ready && packet.contour.path?.length>=3)
+    add("CONTOUR","Контур детали по геометрии IFC",{id:"IFC-CONTOUR",path:packet.contour.path,width:Number(u.width)||0,height:Number(u.height)||0,depth:Number(u.thickness||u.depth)||0,toolId:"MILL-8",toolName:"Фреза Ø8 мм"});
+  packet?.drilling?.filter(d=>d.status==="ready").forEach(d=>add("DRILL","Сверление",{
+    id:d.id || ("IFC-DRILL-"+(ops.length+1)),x:Number(d.x)||0,y:Number(d.y)||0,z:Number(d.z)||0,
+    diameter:Number(d.diameter)||0,depth:Number(d.depth)||0,linkedPart:d.linkedPart,worldContact:d.worldContact,
+    localBasis:d.localBasis,checks:d.checks
+  }));
+  packet?.operations?.filter(o=>o.status==="ready" && (o.type==="MILL" || o.type==="POCKET")).forEach(o=>add(o.type,o.operation,{id:o.id,x:o.x,y:o.y,z:o.z,width:o.width,length:o.length,depth:o.depth,path:o.path}));
+  return ops;
+}
+
+function buildCncOperations(part) {
+  const u=part.userData;
+  const ops=[];
+  const add=(type,operation,data={})=>ops.push({id:data.id || ("CORE-"+type+"-"+(ops.length+1)),sequence:ops.length+1,type,operation,partNumber:u.partNumber,...data});
+  if(u.source==="IFC") {
+    const packet=u.productionPacket || buildIfcProductionPacket(part);
+    if(packet && !packet.cncReady) {
+      if(!packet.contour.ready) add("CONTOUR_BLOCKED","Контур детали IFC — требуется проверка геометрии",{reason:"IFC contour not ready",source:"IFC"});
+      if(packet.drilling.some(d=>d.status==="review")) add("TECH_BLOCKED","Технологическая присадка IFC требует подтверждения базы",{reason:"IFC drilling basis review",source:"IFC"});
     }
-    if (!u.geometryCncReady || !u.ifcContour?.path?.length) {
-      add("CONTOUR_BLOCKED","Контур детали IFC — требуется проверка геометрии",{
-        reason:u.ifcContour?.reason || "контур не подготовлен автоматически"
-      });
-    } else {
-      add("CONTOUR","Контур детали по геометрии IFC",{
-        width:Number(u.width)||0,
-        height:Number(u.height)||0,
-        depth:Number(u.thickness)||Number(u.depth)||0,
-        path:u.ifcContour.path,
-        toolId:"MILL-8",
-        toolName:"Фреза Ø8 мм",
-        source:"IFC"
-      });
-    }
-  } else {
-    add("CONTOUR","Контур детали",{
-      width:Number(u.width)||0,
-      height:Number(u.height)||0,
-      depth:Number(u.thickness)||Number(u.depth)||0,
-      path:[
-        [-Number(u.width||0)/2,-Number(u.height||0)/2],
-        [ Number(u.width||0)/2,-Number(u.height||0)/2],
-        [ Number(u.width||0)/2, Number(u.height||0)/2],
-        [-Number(u.width||0)/2, Number(u.height||0)/2]
-      ],
-      toolId:"MILL-8",
-      toolName:"Фреза Ø8 мм"
-    });
+    buildIfcManufacturingOperations(part).forEach(op=>ops.push({...op,sequence:ops.length+1}));
+    return ops;
   }
-  const ifcDrilling = u.source === "IFC" ? (u.technology?.drilling || []).filter(h => h.status === "ready") : [];
-  [...(u.drilling || []), ...ifcDrilling].forEach(h => add("DRILL","Сверление",{
-    x:Number(h.x)||0, y:Number(h.y)||0, z:Number(h.z)||0,
-    diameter:Number(h.diameter)||0, depth:Number(h.depth)||0,
-    linkedHardware:h.linkedHardware || h.type || "",
-    source:h.source || "Furniture Core"
-  }));
-  (u.bodyFasteners || []).forEach(h => add("DRILL","Крепёж корпуса",{
-    x:Number(h.x)||0,y:Number(h.y)||0,z:Number(h.z)||0,
-    diameter:Number(h.diameter)||0,depth:Number(h.depth)||0,linkedHardware:h.type
-  }));
-  (u.shelfSupportDrilling || []).forEach(h => add("DRILL","Полкодержатель",{
-    x:Number(h.x)||0,y:Number(h.y)||0,z:Number(h.z)||0,
-    diameter:Number(h.diameter)||0,depth:Number(h.depth)||0,linkedHardware:h.type
-  }));
-  (u.secondaryFasteners || []).forEach(h => add("DRILL","Соединитель",{
-    x:Number(h.x)||0,y:Number(h.y)||0,z:Number(h.z)||0,
-    diameter:Number(h.diameter)||0,depth:Number(h.depth)||0,linkedHardware:h.type
-  }));
-  buildMillingGeometry(part).forEach(m => add("POCKET",m.operation,{
-    x:m.x,y:m.y,z:m.z,width:m.width,length:m.length,depth:m.depth,
-    path:m.path,source:m.operation
-  }));
+  add("CONTOUR","Контур детали",{width:Number(u.width)||0,height:Number(u.height)||0,depth:Number(u.thickness||u.depth)||0,path:[[-Number(u.width||0)/2,-Number(u.height||0)/2],[Number(u.width||0)/2,-Number(u.height||0)/2],[Number(u.width||0)/2,Number(u.height||0)/2],[-Number(u.width||0)/2,Number(u.height||0)/2]],toolId:"MILL-8",toolName:"Фреза Ø8 мм"});
+  [...(u.drilling||[]),...(u.bodyFasteners||[]),...(u.shelfSupportDrilling||[]),...(u.secondaryFasteners||[])].forEach(h=>add("DRILL",h.operation||"Сверление",{x:Number(h.x)||0,y:Number(h.y)||0,z:Number(h.z)||0,diameter:Number(h.diameter)||0,depth:Number(h.depth)||0,linkedHardware:h.linkedHardware||h.type||"",source:h.source||"Furniture Core"}));
+  buildMillingGeometry(part).forEach(m=>add("POCKET",m.operation,{x:m.x,y:m.y,z:m.z,width:m.width,length:m.length,depth:m.depth,path:m.path,source:m.operation}));
   return ops;
 }
 
 function buildCncProgram(part) {
   const u = part.userData;
-  const ops = buildCncOperations(part).map(op => cncOperationWithTool(op, material));
+  const rawOps = buildCncOperations(part);
+  if (rawOps.some(op => op.type === "CONTOUR_BLOCKED" || op.type === "TECH_BLOCKED"))
+    throw new Error("CNC export blocked: IFC technology is not confirmed.");
+  const ops = rawOps.map(op => cncOperationWithTool(op, u.material));
   const lines = [
     "; Furniture AI Designer CNC",
     "; Detail: " + u.partNumber + " " + u.name,
@@ -2573,11 +2544,10 @@ function buildPartDxf(part) {
     addLine(-w/2,h/2,-w/2,-h/2);
   }
 
-  const ifcHoles = u.source === "IFC" ? (u.technology?.drilling || []).filter(h => h.status === "ready") : [];
-  const holes = [...(u.drilling || []), ...ifcHoles, ...(u.shelfSupportDrilling || []), ...(u.bodyFasteners || []), ...(u.secondaryFasteners || [])];
+  const manufacturing = u.source === "IFC" ? buildIfcManufacturingOperations(part) : [];
+  const holes = (u.source === "IFC" ? manufacturing.filter(op=>op.type==="DRILL") : [...(u.drilling||[]),...(u.shelfSupportDrilling||[]),...(u.bodyFasteners||[]),...(u.secondaryFasteners||[])]);
   holes.forEach(hole => {
-    const x = Number(hole.x) || 0, y = Number(hole.y) || 0;
-    const r = (Number(hole.diameter) || 5) / 2;
+    const x=Number(hole.x)||0, y=Number(hole.y)||0, r=(Number(hole.diameter)||5)/2;
     addCircle(x,y,r,"DRILLING");
   });
 
