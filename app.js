@@ -827,6 +827,36 @@ function buildMillingGeometry(part) {
   return ops;
 }
 
+function buildCncToolPlan(part) {
+  const material = part.userData.material || "Не задан";
+  return optimizeCncOperationSequence(part).map((op, i) => {
+    const enriched = cncOperationWithTool(op, material);
+    return {
+      ...enriched,
+      toolNumber: enriched.toolId === "TBD" ? 0 :
+        (enriched.toolId === "DRILL-5" ? 1 :
+        enriched.toolId === "DRILL-6" ? 2 :
+        enriched.toolId === "DRILL-35" ? 3 :
+        enriched.toolId === "MILL-6" ? 4 : 5),
+      toolChange: i === 0 || enriched.toolId !== cncOperationWithTool(
+        optimizeCncOperationSequence(part)[i-1], material
+      ).toolId
+    };
+  });
+}
+
+function buildCncJob(part) {
+  const u = part.userData;
+  return {
+    partNumber:u.partNumber,
+    material:u.material || "Не задан",
+    thickness:Number(u.thickness || 0),
+    safeZ:5,
+    zeroPoint:"G54",
+    operations:buildCncToolPlan(part)
+  };
+}
+
 function optimizeCncOperationSequence(part) {
   const ops = buildCncOperations(part).map(op => ({...op}));
   const priority = {CONTOUR: 30, POCKET: 20, MILL: 20, DRILL: 10};
@@ -1113,6 +1143,47 @@ function getPostprocessor() {
   return CNC_POSTPROCESSORS[$("cncPostprocessor")?.value || "generic"] || CNC_POSTPROCESSORS.generic;
 }
 
+function buildCncJobProgram(part) {
+  const job = buildCncJob(part);
+  const lines = [
+    "; Furniture AI Designer CNC JOB",
+    "; DETAIL " + job.partNumber,
+    "; MATERIAL " + job.material,
+    "; THICKNESS " + job.thickness,
+    "G21","G90","G17","G54"
+  ];
+  let currentTool = null;
+  job.operations.forEach(op => {
+    if (op.toolChange && op.toolNumber > 0) {
+      lines.push("; TOOL CHANGE T" + op.toolNumber + " " + op.toolName);
+      lines.push("M5");
+      lines.push("T" + op.toolNumber + " M6");
+      currentTool = op.toolNumber;
+    }
+    if (op.type === "DRILL") {
+      lines.push("; DRILL " + op.operation);
+      lines.push("G0 Z5.000");
+      lines.push("G0 X" + (op.x||0).toFixed(3) + " Y" + (op.y||0).toFixed(3));
+      lines.push("G1 Z-" + (Number(op.depth)||0).toFixed(3) + " F300");
+      lines.push("G0 Z5.000");
+    } else if (op.type === "POCKET") {
+      lines.push("; POCKET " + op.operation);
+      (op.path || []).forEach(([x,y],idx)=>{
+        lines.push((idx===0?"G0":"G1")+" X"+x.toFixed(3)+" Y"+y.toFixed(3)+(idx===0?"":" F600"));
+      });
+      lines.push("G0 Z5.000");
+    } else if (op.type === "CONTOUR") {
+      lines.push("; CONTOUR");
+      (op.path || []).forEach(([x,y],idx)=>{
+        lines.push((idx===0?"G0":"G1")+" X"+x.toFixed(3)+" Y"+y.toFixed(3)+(idx===0?"":" F600"));
+      });
+      lines.push("G0 Z5.000");
+    }
+  });
+  lines.push("M5","M30");
+  return lines.join("\n");
+}
+
 function buildPostprocessedProgram(part) {
   const post = getPostprocessor();
   const u = part.userData;
@@ -1142,6 +1213,19 @@ function buildPostprocessedProgram(part) {
 }
 
 function exportAllCnc() {
+  const post = getPostprocessor();
+  parts.forEach(part => {
+    const blob = new Blob([buildCncJobProgram(part)], {type:"text/plain"});
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "detail-" + part.userData.partNumber + post.extension;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  });
+  validate("CNC-файлы с управлением инструментом подготовлены: " + post.name, "ok");
+}
+
+function exportAllCncLegacy() {
   const post = getPostprocessor();
   parts.forEach(part => {
     const blob = new Blob([buildPostprocessedProgram(part)], {type:"text/plain"});
