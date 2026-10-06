@@ -20,7 +20,8 @@ const required = [
   ["геометрический контроль модели", app.includes("Геометрическая целостность параметрической модели") && app.includes("Полка выходит за пределы внутренней секции") && app.includes("Фасад выходит за габариты корпуса")],
   ["Construction QC Gate", app.includes("runConstructionQC") && app.includes("window._constructionQC")],
   ["Release Gate runtime", app.includes("runReleaseGate") && app.includes("window._releaseGate") && app.includes("выпуск PDF заблокирован")],
-  ["цепочка Construction QC → Release Gate", app.includes("runConstructionQC(detailingPipeline)") && app.includes("runReleaseGate()")]
+  ["цепочка Construction QC → Release Gate", app.includes("runConstructionQC(detailingPipeline)") && app.includes("runReleaseGate()")],
+  ["PDF читает деталировку", app.includes("const detailing = part.userData?.detailing") && app.includes("Array.isArray(detailing?.holes)") && app.includes("d.length") && app.includes("d.material") && app.includes("d.edges")]
 ];
 
 const forbidden = [
