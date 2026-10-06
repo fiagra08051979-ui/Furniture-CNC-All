@@ -3083,6 +3083,43 @@ function buildCncToolChangeSequence(plan) {
   return order;
 }
 
+function buildCncToolpaths(plan) {
+  return (plan.operations||[]).map(op=>{
+    const points=[];
+    if(op.type==="DRILL" || op.type==="MILL" || op.type==="POCKET") {
+      points.push({x:Number(op.x)||0,y:Number(op.y)||0,z:0});
+      if(Number.isFinite(Number(op.depth))) points.push({x:Number(op.x)||0,y:Number(op.y)||0,z:-Math.abs(Number(op.depth))});
+      points.push({x:Number(op.x)||0,y:Number(op.y)||0,z:Number(plan.machineSetup?.safeZ)||5});
+    } else if(op.type==="CONTOUR" && Array.isArray(op.path)) {
+      op.path.forEach(p=>points.push({x:Number(p.x)||0,y:Number(p.y)||0,z:0}));
+    }
+    return {operationId:op.id,type:op.type,toolId:op.toolId||null,points};
+  });
+}
+
+function validateCncToolpaths(plan) {
+  const issues=[];
+  const thickness=Number(plan.thickness)||0;
+  const safeZ=Number(plan.machineSetup?.safeZ);
+  buildCncToolpaths(plan).forEach(path=>{
+    if(!path.points.length) {
+      issues.push({level:"error",code:"TOOLPATH_EMPTY",message:"Пустая траектория.",operation:path.operationId});
+      return;
+    }
+    path.points.forEach((p,i)=>{
+      if(!Number.isFinite(p.x)||!Number.isFinite(p.y)||!Number.isFinite(p.z))
+        issues.push({level:"error",code:"TOOLPATH_COORD",message:"Некорректная координата траектории.",operation:path.operationId});
+      if(p.z>safeZ+0.001)
+        issues.push({level:"error",code:"TOOLPATH_SAFE_Z",message:"Точка траектории выше допустимого Safe Z.",operation:path.operationId});
+      if(p.z<-(thickness+0.001))
+        issues.push({level:"error",code:"TOOLPATH_DEPTH",message:"Траектория выходит за толщину детали.",operation:path.operationId});
+    });
+    if(path.type==="CONTOUR" && path.points.length<3)
+      issues.push({level:"error",code:"TOOLPATH_CONTOUR",message:"Контур содержит недостаточно точек.",operation:path.operationId});
+  });
+  return issues;
+}
+
 function validateCncMotionSafety(plan) {
   const issues=[];
   const safeZ=Number(plan.machineSetup?.safeZ ?? readCncMachineSetup().safeZ);
@@ -3198,7 +3235,9 @@ function getCompiledManufacturingPlan(part) {
   plan.validation=validateCompiledManufacturingPlan(plan);
   plan.machineCompatibility=validateMachineCompatibility(plan);
   plan.motionSafety=validateCncMotionSafety(plan);
-  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety];
+  plan.toolpaths=buildCncToolpaths(plan);
+  plan.toolpathValidation=validateCncToolpaths(plan);
+  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation];
   plan.machineReady=plan.validation.every(x=>x.level!=="error") &&
     plan.status==="READY" &&
     plan.lifecycle.every(x=>x.valid) &&
