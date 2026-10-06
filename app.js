@@ -1913,6 +1913,52 @@ function applyAiRecognition() {
   validate("AI-распознавание применено: параметрическая модель построена.", "ok");
 }
 
+function validateSheetLayout(layout) {
+  const issues = [];
+  if (!layout || !Array.isArray(layout.sheets)) {
+    issues.push("Не сформирована раскладка листов.");
+    return issues;
+  }
+
+  const sheetLength = Number(layout.sheetLength);
+  const sheetWidth = Number(layout.sheetWidth);
+  const margin = Number(layout.margin);
+  const kerf = Number(layout.kerf);
+
+  if (!(sheetLength > 0) || !(sheetWidth > 0) || !(margin >= 0) || !(kerf >= 0)) {
+    issues.push("Некорректные параметры листа/припуска/пропила.");
+    return issues;
+  }
+
+  layout.sheets.forEach(sheet => {
+    (sheet.placements || []).forEach(placement => {
+      if (placement.overflow) {
+        issues.push(
+          "Деталь " + (placement.partNumber || "без номера") +
+          " не помещается на лист " + sheet.sheetNumber + "."
+        );
+      }
+
+      const x = Number(placement.x);
+      const y = Number(placement.y);
+      const length = Number(placement.length);
+      const width = Number(placement.width);
+
+      if (!(length > 0) || !(width > 0) ||
+          x < margin || y < margin ||
+          x + length > sheetLength - margin ||
+          y + width > sheetWidth - margin) {
+        issues.push(
+          "Деталь " + (placement.partNumber || "без номера") +
+          " выходит за рабочую область листа " + sheet.sheetNumber + "."
+        );
+      }
+    });
+  });
+
+  return [...new Set(issues)];
+}
+
 function runReleaseGate() {
   const qc = window._constructionQC || null;
   const issues = [];
@@ -1949,6 +1995,7 @@ function runReleaseGate() {
   });
 
   let cuttingGroups = [];
+  let sheetLayout = null;
   if (!issues.length && typeof buildCuttingGroups === "function") {
     cuttingGroups = buildCuttingGroups();
     if (!Array.isArray(cuttingGroups) || !cuttingGroups.length) {
@@ -1964,6 +2011,16 @@ function runReleaseGate() {
         }
       });
     });
+
+    if (!issues.length && typeof buildSheetLayout === "function") {
+      sheetLayout = buildSheetLayout(
+        Number($("sheetLength")?.value || 2800),
+        Number($("sheetWidth")?.value || 2070),
+        Number($("cutKerf")?.value || 4),
+        Number($("sheetMargin")?.value || 10)
+      );
+      issues.push(...validateSheetLayout(sheetLayout));
+    }
   }
 
   const report = {
@@ -1983,7 +2040,9 @@ function runReleaseGate() {
     issueCount: issues.length,
     issues,
     details,
-    cuttingGroupsCount: cuttingGroups.length
+    cuttingGroupsCount: cuttingGroups.length,
+    sheetLayoutChecked: !!sheetLayout,
+    sheetCount: sheetLayout?.sheets?.length || 0
   };
 
   window._releaseGate = report;
