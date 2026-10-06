@@ -1959,49 +1959,46 @@ function validateSheetLayout(layout) {
   return [...new Set(issues)];
 }
 
-function runReleaseGate() {
-  const qc = window._constructionQC || null;
+function evaluateReleaseGateState({ qc, partsCount, partStates, cuttingGroups, sheetLayout }) {
   const issues = [];
   const details = Array.isArray(qc?.details) ? qc.details : [];
 
   if (!qc) issues.push("Construction QC не выполнен.");
   if (qc && qc.status !== "PASS") issues.push("Construction QC имеет статус REVIEW.");
-  if (!parts.length) issues.push("Нет деталей проекта.");
+  if (!(partsCount > 0)) issues.push("Нет деталей проекта.");
 
-  parts.forEach(part => {
-    const u = part.userData || {};
-    const d = u.detailing || null;
-    if (!d) {
-      issues.push("Деталь " + (u.partNumber || u.name || "без номера") + ": отсутствует detailing.");
+  (partStates || []).forEach(state => {
+    const id = state.number || state.name || "без номера";
+    if (!state.detailing) {
+      issues.push("Деталь " + id + ": отсутствует detailing.");
       return;
     }
-    if (d.status !== "ready") {
-      issues.push("Деталь " + (d.number || u.partNumber || u.name || "без номера") + ": detailing не готов.");
+    if (state.detailing.status !== "ready") {
+      issues.push("Деталь " + (state.detailing.number || id) + ": detailing не готов.");
     }
-    if (!d.cutting || !d.cutting.length || !d.cutting.width || !d.cutting.thickness) {
-      issues.push("Деталь " + (d.number || u.partNumber || u.name || "без номера") + ": отсутствуют данные раскроя.");
+    const c = state.detailing.cutting;
+    if (!c || !c.length || !c.width || !c.thickness) {
+      issues.push("Деталь " + (state.detailing.number || id) + ": отсутствуют данные раскроя.");
     }
-    (d.holes || []).forEach(hole => {
+    (state.detailing.holes || []).forEach(hole => {
       if (!Number.isFinite(Number(hole.diameter)) || Number(hole.diameter) <= 0) {
-        issues.push("Деталь " + (d.number || u.partNumber || u.name || "без номера") + ": некорректный диаметр отверстия.");
+        issues.push("Деталь " + (state.detailing.number || id) + ": некорректный диаметр отверстия.");
       }
       if (!Number.isFinite(Number(hole.depth)) || Number(hole.depth) <= 0) {
-        issues.push("Деталь " + (d.number || u.partNumber || u.name || "без номера") + ": некорректная глубина отверстия.");
+        issues.push("Деталь " + (state.detailing.number || id) + ": некорректная глубина отверстия.");
       }
     });
-    if (u.sourceGeometry === "IFC" && u.geometryLocked !== true) {
-      issues.push("Деталь " + (d.number || u.partNumber || u.name || "без номера") + ": IFC-геометрия не зафиксирована.");
+    if (state.sourceGeometry === "IFC" && state.geometryLocked !== true) {
+      issues.push("Деталь " + (state.detailing.number || id) + ": IFC-геометрия не зафиксирована.");
     }
   });
 
-  let cuttingGroups = [];
-  let sheetLayout = null;
-  if (!issues.length && typeof buildCuttingGroups === "function") {
-    cuttingGroups = buildCuttingGroups();
-    if (!Array.isArray(cuttingGroups) || !cuttingGroups.length) {
+  let groups = Array.isArray(cuttingGroups) ? cuttingGroups : [];
+  if (!issues.length) {
+    if (!groups.length) {
       issues.push("Не сформированы группы раскроя.");
     }
-    (cuttingGroups || []).forEach(group => {
+    groups.forEach(group => {
       if (!group.material || !group.thickness || !group.details?.length) {
         issues.push("Группа раскроя содержит неполные данные.");
       }
@@ -2011,40 +2008,64 @@ function runReleaseGate() {
         }
       });
     });
-
-    if (!issues.length && typeof buildSheetLayout === "function") {
-      sheetLayout = buildSheetLayout(
-        Number($("sheetLength")?.value || 2800),
-        Number($("sheetWidth")?.value || 2070),
-        Number($("cutKerf")?.value || 4),
-        Number($("sheetMargin")?.value || 10)
-      );
-      issues.push(...validateSheetLayout(sheetLayout));
-    }
   }
 
-  const report = {
+  if (!issues.length) {
+    issues.push(...validateSheetLayout(sheetLayout));
+  }
+
+  return {
     gate: "RELEASE",
     status: issues.length ? "BLOCKED" : "PASS",
     passed: issues.length === 0,
     constructionQC: qc?.status || "MISSING",
     checks: {
       constructionQC: !!qc && qc.status === "PASS",
-      detailing: parts.length > 0 && parts.every(part => part.userData?.detailing?.status === "ready"),
-      cuttingLink: cuttingGroups.length > 0 && cuttingGroups.every(group =>
+      detailing: partsCount > 0 && (partStates || []).every(state => state.detailing?.status === "ready"),
+      cuttingLink: groups.length > 0 && groups.every(group =>
         group.details?.every(detail => detail.number && detail.length && detail.width && detail.quantity)
       ),
-      ifcGeometryLocked: parts.filter(part => part.userData?.sourceGeometry === "IFC")
-        .every(part => part.userData.geometryLocked === true)
+      ifcGeometryLocked: (partStates || []).filter(state => state.sourceGeometry === "IFC")
+        .every(state => state.geometryLocked === true)
     },
     issueCount: issues.length,
     issues,
     details,
-    cuttingGroupsCount: cuttingGroups.length,
+    cuttingGroupsCount: groups.length,
     sheetLayoutChecked: !!sheetLayout,
-    sheetCount: sheetLayout?.sheets?.length || 0,
-    sheetLayout
+    sheetCount: sheetLayout?.sheets?.length || 0
   };
+}
+
+function runReleaseGate() {
+  const cuttingGroups = !window._constructionQC || window._constructionQC.status !== "PASS"
+    ? []
+    : (typeof buildCuttingGroups === "function" ? buildCuttingGroups() : []);
+
+  const sheetLayout = cuttingGroups.length && typeof buildSheetLayout === "function"
+    ? buildSheetLayout(
+        Number($("sheetLength")?.value || 2800),
+        Number($("sheetWidth")?.value || 2070),
+        Number($("cutKerf")?.value || 4),
+        Number($("sheetMargin")?.value || 10)
+      )
+    : null;
+
+  const partStates = parts.map(part => ({
+    number: part.userData?.partNumber,
+    name: part.userData?.name,
+    detailing: part.userData?.detailing,
+    sourceGeometry: part.userData?.sourceGeometry,
+    geometryLocked: part.userData?.geometryLocked
+  }));
+
+  const report = evaluateReleaseGateState({
+    qc: window._constructionQC || null,
+    partsCount: parts.length,
+    partStates,
+    cuttingGroups,
+    sheetLayout
+  });
 
   window._releaseGate = report;
   return report;
