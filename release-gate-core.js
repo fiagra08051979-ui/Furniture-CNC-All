@@ -153,6 +153,39 @@ function evaluateReleaseGateState({ qc, partsCount, partStates, cuttingGroups, s
   }
 
   if (!issues.length) {
+    const detailingByNumber = new Map();
+    (partStates || []).forEach(state => {
+      if (state.detailing?.number) detailingByNumber.set(String(state.detailing.number), state.detailing);
+    });
+    const cuttingByNumber = new Map();
+    groups.forEach(group => (group.details || []).forEach(detail => {
+      if (detail.number) cuttingByNumber.set(String(detail.number), detail);
+    }));
+
+    detailingByNumber.forEach((detail, number) => {
+      const cutting = cuttingByNumber.get(number);
+      if (!cutting) {
+        issues.push("Для детали " + number + " отсутствует запись в группах раскроя.");
+        return;
+      }
+      if (Number(cutting.length) !== Number(detail.cutting?.length) ||
+          Number(cutting.width) !== Number(detail.cutting?.width) ||
+          Number(cutting.thickness) !== Number(detail.cutting?.thickness) ||
+          String(cutting.material || "") !== String(detail.material || "") ||
+          Number(cutting.quantity) !== Number(detail.quantity) ||
+          JSON.stringify(cutting.edges || []) !== JSON.stringify(detail.edges || [])) {
+        issues.push("Группа раскроя не соответствует деталировке детали " + number + ".");
+      }
+    });
+
+    cuttingByNumber.forEach((cutting, number) => {
+      if (!detailingByNumber.has(number)) {
+        issues.push("В группах раскроя присутствует деталь без готовой деталировки " + number + ".");
+      }
+    });
+  }
+
+  if (!issues.length) {
     issues.push(...validateSheetLayout(sheetLayout));
 
     // Проверяем, что раскладка содержит ровно тот состав деталей,
