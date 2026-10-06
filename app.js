@@ -2054,7 +2054,26 @@ function cncCollisionChecks(part) {
   const u = part.userData;
   const issues = [];
   const w = Number(u.width)||0, h = Number(u.height)||0;
-  buildCncOperations(part).forEach(op => {
+  const operations = buildCncOperations(part);
+  const drills = operations.filter(op => op.type === "DRILL");
+  for (let i=0;i<drills.length;i++) {
+    for (let j=i+1;j<drills.length;j++) {
+      const a=drills[i], b=drills[j];
+      const dx=(Number(a.x)||0)-(Number(b.x)||0);
+      const dy=(Number(a.y)||0)-(Number(b.y)||0);
+      const distance=Math.hypot(dx,dy);
+      const required=(Number(a.diameter)||0+Number(b.diameter)||0)/2+2;
+      if (distance < required) {
+        issues.push({
+          level:"error",
+          operation:b.sequence,
+          message:"Столкновение отверстий: операции "+a.sequence+" и "+b.sequence+
+            " находятся ближе допустимого расстояния ("+distance.toFixed(1)+" мм)"
+        });
+      }
+    }
+  }
+  operations.forEach(op => {
     if (op.type === "CONTOUR_BLOCKED") {
       issues.push({level:"error",operation:op.sequence,message:"CNC-контур IFC не подтверждён: автоматический экспорт запрещён до проверки геометрии"});
       return;
@@ -2065,6 +2084,19 @@ function cncCollisionChecks(part) {
     }
     if (op.x !== undefined && (Math.abs(Number(op.x)) > w/2 || Math.abs(Number(op.y)||0) > h/2)) {
       issues.push({level:"error",operation:op.sequence,message:"Операция выходит за границы детали"});
+    }
+    if (op.type === "DRILL" && u.source === "IFC") {
+      const tech = (u.technology?.drilling || []).find(d =>
+        Math.abs((Number(d.x)||0)-(Number(op.x)||0)) < 0.01 &&
+        Math.abs((Number(d.y)||0)-(Number(op.y)||0)) < 0.01 &&
+        Math.abs((Number(d.depth)||0)-(Number(op.depth)||0)) < 0.01
+      );
+      if (!tech) {
+        issues.push({level:"error",operation:op.sequence,message:"IFC-сверление не имеет подтверждённой технологической записи"});
+      }
+      if (tech && tech.status !== "ready") {
+        issues.push({level:"error",operation:op.sequence,message:"IFC-сверление не подтверждено технологией"});
+      }
     }
     if (op.depth !== undefined && Number(op.depth) > Number(u.thickness || u.depth || 0)) {
       issues.push({level:"error",operation:op.sequence,message:"Глубина обработки превышает толщину детали"});
