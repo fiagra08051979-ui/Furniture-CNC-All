@@ -1,0 +1,19 @@
+name: Furniture AI Designer — release gate
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  release-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Получить исходный код
+        uses: actions/checkout@v4
+
+      - name: Проверить синтаксис JavaScript
+        run: node --check app.js
+
+      - name: Запустить автоматический контроль версии
+        run: node tests/release-gate.mjs
