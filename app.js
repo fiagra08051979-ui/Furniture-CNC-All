@@ -134,6 +134,168 @@ function classifyIfcType(typeName) {
   return "IFC элемент";
 }
 
+function normalizeIfcText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[_\-./]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function containsAny(text, words) {
+  return words.some(word => text.includes(word));
+}
+
+/*
+ * Распознавание детали выполняется поверх реальной IFC-геометрии.
+ * Приоритет:
+ * 1. явное имя/тип IFC;
+ * 2. ориентация и положение bounding box;
+ * 3. резервная классификация.
+ *
+ * Никакого изменения вершин/трансформаций исходной IFC-модели здесь нет.
+ */
+function recognizeIfcPart({ name, typeName, size, center, overallBox }) {
+  const text = normalizeIfcText(name + " " + typeName);
+  const overallSize = overallBox.getSize(new THREE.Vector3());
+  const overallMin = overallBox.min;
+  const overallMax = overallBox.max;
+
+  const maxX = Math.max(overallSize.x, 1);
+  const maxY = Math.max(overallSize.y, 1);
+  const maxZ = Math.max(overallSize.z, 1);
+
+  const sx = Math.max(size.x, 0.01);
+  const sy = Math.max(size.y, 0.01);
+  const sz = Math.max(size.z, 0.01);
+
+  const minDim = Math.min(sx, sy, sz);
+  const plateTol = Math.max(Math.min(maxX, maxY, maxZ) * 0.08, minDim * 1.35);
+
+  // 1. Наиболее надёжный источник — семантика IFC/имя объекта.
+  if (containsAny(text, ["фасад", "дверь", "дверца", "front", "door", "facade"])) {
+    return { kind:"Фасад", label:"Фасад", confidence:"high", reason:"имя/тип IFC" };
+  }
+  if (containsAny(text, ["задняя стенка", "задник", "задняя", "back panel", "back wall", "rear"])) {
+    return { kind:"Задняя стенка", label:"Задняя стенка", confidence:"high", reason:"имя/тип IFC" };
+  }
+  if (containsAny(text, ["боковина", "side panel", "side"])) {
+    return { kind:"Боковина", label:"Боковина", confidence:"high", reason:"имя/тип IFC" };
+  }
+  if (containsAny(text, ["крышка", "верх", "top", "lid"])) {
+    return { kind:"Крышка", label:"Крышка", confidence:"high", reason:"имя/тип IFC" };
+  }
+  if (containsAny(text, ["дно", "низ", "bottom", "base"])) {
+    return { kind:"Дно", label:"Дно", confidence:"high", reason:"имя/тип IFC" };
+  }
+  if (containsAny(text, ["полка", "shelf"])) {
+    return { kind:"Полка", label:"Полка", confidence:"high", reason:"имя/тип IFC" };
+  }
+  if (containsAny(text, ["горизонтальная перегород", "horizontal partition", "hpartition"])) {
+    return { kind:"Горизонтальная перегородка", label:"Горизонтальная перегородка", confidence:"high", reason:"имя/тип IFC" };
+  }
+  if (containsAny(text, ["вертикальная перегород", "vertical partition", "vpartition"])) {
+    return { kind:"Вертикальная перегородка", label:"Вертикальная перегородка", confidence:"high", reason:"имя/тип IFC" };
+  }
+  if (containsAny(text, ["ящик", "drawer", "выдвижн"])) {
+    return { kind:"Ящик", label:"Ящик", confidence:"high", reason:"имя/тип IFC" };
+  }
+  if (containsAny(text, ["ножка", "опора", "leg", "foot"])) {
+    return { kind:"Опора", label:"Опора", confidence:"high", reason:"имя/тип IFC" };
+  }
+
+  // 2. Геометрическая классификация для IFC без понятных имён.
+  const thinX = sx <= plateTol && sy > maxY * 0.45;
+  const thinY = sy <= plateTol && sx > maxX * 0.45;
+  const thinZ = sz <= plateTol && sx > maxX * 0.45 && sy > maxY * 0.35;
+
+  const nearLeft = Math.abs(center.x - overallMin.x) <= Math.max(sx * 0.8, maxX * 0.04);
+  const nearRight = Math.abs(overallMax.x - center.x) <= Math.max(sx * 0.8, maxX * 0.04);
+  const nearBottom = Math.abs(center.y - overallMin.y) <= Math.max(sy * 0.8, maxY * 0.04);
+  const nearTop = Math.abs(overallMax.y - center.y) <= Math.max(sy * 0.8, maxY * 0.04);
+  const nearFront = Math.abs(overallMax.z - center.z) <= Math.max(sz * 1.2, maxZ * 0.05);
+  const nearBack = Math.abs(center.z - overallMin.z) <= Math.max(sz * 1.2, maxZ * 0.05);
+
+  if (thinZ && nearFront) {
+    return { kind:"Фасад", label:"Фасад", confidence:"medium", reason:"геометрия + положение" };
+  }
+  if (thinZ && nearBack) {
+    return { kind:"Задняя стенка", label:"Задняя стенка", confidence:"medium", reason:"геометрия + положение" };
+  }
+  if (thinX && (nearLeft || nearRight)) {
+    return { kind:"Боковина", label:"Боковина", confidence:"medium", reason:"геометрия + край корпуса" };
+  }
+  if (thinX) {
+    return { kind:"Вертикальная перегородка", label:"Вертикальная перегородка", confidence:"medium", reason:"геометрия" };
+  }
+  if (thinY && nearBottom) {
+    return { kind:"Дно", label:"Дно", confidence:"medium", reason:"геометрия + нижняя граница" };
+  }
+  if (thinY && nearTop) {
+    return { kind:"Крышка", label:"Крышка", confidence:"medium", reason:"геометрия + верхняя граница" };
+  }
+  if (thinY) {
+    return { kind:"Полка", label:"Полка", confidence:"medium", reason:"горизонтальная геометрия" };
+  }
+
+  return { kind:"Нестандартная деталь", label:"Нестандартная деталь", confidence:"low", reason:"неоднозначная геометрия" };
+}
+
+function applyIfcRecognition() {
+  if (!ifcImportedParts.length) return { counts:{}, lowConfidence:0 };
+
+  const overallBox = new THREE.Box3();
+  ifcImportedParts.forEach(part => overallBox.union(new THREE.Box3().setFromObject(part)));
+
+  const counters = {};
+  let lowConfidence = 0;
+
+  ifcImportedParts.forEach((part, index) => {
+    const u = part.userData;
+    const box = new THREE.Box3().setFromObject(part);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+
+    const result = recognizeIfcPart({
+      name: u.sourceName || u.name,
+      typeName: u.ifcType,
+      size,
+      center,
+      overallBox
+    });
+
+    counters[result.kind] = (counters[result.kind] || 0) + 1;
+    if (result.confidence === "low") lowConfidence++;
+
+    u.kind = result.kind;
+    u.recognizedKind = result.kind;
+    u.recognitionConfidence = result.confidence;
+    u.recognitionReason = result.reason;
+    u.sourceName = u.sourceName || u.name;
+
+    const sourceName = normalizeIfcText(u.sourceName);
+    const genericSource = !sourceName ||
+      sourceName === ("ifc элемент " + u.expressId) ||
+      sourceName === "ifc element " + u.expressId;
+
+    // Только если имя IFC было техническим/неинформативным,
+    // заменяем отображаемое имя на технологическое.
+    if (genericSource) {
+      const sameKind = ifcImportedParts.filter(p => p.userData.recognizedKind === result.kind).indexOf(part) + 1;
+      u.name = result.label + " " + sameKind;
+    }
+
+    u.width = size.x;
+    u.height = size.y;
+    u.depth = size.z;
+    u.thickness = Math.min(size.x, size.y, size.z);
+    u.recognitionIndex = index + 1;
+  });
+
+  return { counts:counters, lowConfidence };
+}
+
 async function importIfcIntoFurnitureCore(file) {
   if (!file) return;
 
@@ -212,10 +374,15 @@ async function importIfcIntoFurnitureCore(file) {
         expressId,
         ifcType: typeName,
         kind: classifyIfcType(typeName),
+        recognizedKind: classifyIfcType(typeName),
+        recognitionConfidence: "pending",
+        recognitionReason: "ожидает геометрической классификации",
+        sourceName: name,
         name,
         width: size.x,
         height: size.y,
         depth: size.z,
+        thickness: Math.min(size.x, size.y, size.z),
         quantity: 1,
         material: $("material")?.value || "ldsp18",
         edges: edgeLabels(),
@@ -231,18 +398,24 @@ async function importIfcIntoFurnitureCore(file) {
 
     if (!rendered) throw new Error("В IFC не найдены элементы с геометрией.");
 
+    const recognition = applyIfcRecognition();
     assignPartNumbers();
     renderPartsTable();
     fitView();
 
+    const recognitionSummary = Object.entries(recognition.counts)
+      .map(([kind, count]) => kind + ": " + count)
+      .join(" · ");
+
     if (target) target.textContent =
-      "IFC импортирован: " + rendered + " геометрических элементов. Геометрия сохранена строго по IFC.";
+      "IFC импортирован: " + rendered + " элементов. Автораспознавание деталей завершено.";
 
     if (geometryStatus) geometryStatus.textContent =
-      "Реальная IFC-геометрия: " + rendered + " элементов.";
+      "Реальная IFC-геометрия: " + rendered + " элементов. Геометрия не изменялась.";
 
     if (objectsStatus) objectsStatus.textContent =
-      "Типы IFC: " + [...new Set(ifcImportedParts.map(p => p.userData.ifcType))].join(", ");
+      "Распознано: " + recognitionSummary +
+      (recognition.lowConfidence ? " · требуют проверки: " + recognition.lowConfidence : " · неоднозначных деталей нет");
 
     if ($("projectName")) $("projectName").textContent = file.name;
     if ($("status")) $("status").textContent = "IFC импортирован · геометрия является источником истины";
