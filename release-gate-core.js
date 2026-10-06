@@ -154,10 +154,29 @@ function evaluateReleaseGateState({ qc, partsCount, partStates, cuttingGroups, s
     });
 
     const actual = new Map();
+    const expectedDetailByKey = new Map();
+    groups.forEach(group => {
+      (group.details || []).forEach(detail => {
+        expectedDetailByKey.set(group.groupNumber + "::" + detail.number, detail);
+      });
+    });
+
     (sheetLayout?.sheets || []).forEach(sheet => {
       (sheet.placements || []).forEach(placement => {
         const key = placement.groupNumber + "::" + placement.partNumber;
         actual.set(key, (actual.get(key) || 0) + 1);
+        const expectedDetail = expectedDetailByKey.get(key);
+        if (!expectedDetail) return;
+
+        if (Number(placement.length) !== Number(expectedDetail.length) ||
+            Number(placement.width) !== Number(expectedDetail.width) ||
+            Number(placement.thickness || sheet.thickness) !== Number(expectedDetail.thickness)) {
+          issues.push("Раскладка содержит размеры детали, не соответствующие деталировке " + key + ".");
+        }
+        if (placement.material && expectedDetail.material &&
+            placement.material !== expectedDetail.material) {
+          issues.push("Раскладка содержит материал, не соответствующий деталировке " + key + ".");
+        }
       });
     });
 
