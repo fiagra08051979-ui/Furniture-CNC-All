@@ -2419,6 +2419,7 @@ function validateManufacturingLifecycle(part) {
 function compileManufacturingPlan(part) {
   const operations=buildCncToolPlan(part);
   const journal=buildCncOperationJournal(part);
+  const toolTechnology=buildCncToolTechnologyPlan({operations,material:part.userData.material,thickness:part.userData.thickness});
   const integrity=validateIfcManufacturingIntegrity(part);
   const preflight=manufacturingPreflight(part);
   const lifecycle=validateManufacturingLifecycle(part);
@@ -2434,12 +2435,12 @@ function compileManufacturingPlan(part) {
     thickness:Number(part.userData.thickness || 0),
     machineSetup:readCncMachineSetup(),
     operations,
-    toolTechnology:buildCncToolTechnologyPlan({operations,material:part.userData.material,thickness:part.userData.thickness}),
+    toolTechnology,
     operationJournal:journal,
     manufacturingIntegrity:integrity,
     preflight,
-    toolChangeSequence:buildCncToolChangeSequence({toolTechnology:buildCncToolTechnologyPlan({operations,material:part.userData.material,thickness:part.userData.thickness})}),
-    toolChangeValidation:validateToolChangeSequence({toolTechnology:buildCncToolTechnologyPlan({operations,material:part.userData.material,thickness:part.userData.thickness})}),
+    toolChangeSequence:buildCncToolChangeSequence({toolTechnology}),
+    toolChangeValidation:validateToolChangeSequence({toolTechnology}),
     lifecycle,
     status:errors.length ? "BLOCKED" : lifecycle.some(x=>x.status==="REVIEW") ? "REVIEW" : "READY"
   };
@@ -3163,7 +3164,7 @@ function getCompiledManufacturingPlan(part) {
   plan.compiledAt=new Date().toISOString();
   plan.validation=validateCompiledManufacturingPlan(plan);
   plan.machineCompatibility=validateMachineCompatibility(plan);
-  plan.validation=[...plan.validation,...plan.machineCompatibility.issues];
+  plan.validation=[...plan.validation,...plan.machineCompatibility.issues,...plan.toolChangeValidation];
   plan.machineReady=plan.validation.every(x=>x.level!=="error") &&
     plan.status==="READY" &&
     plan.lifecycle.every(x=>x.valid) &&
