@@ -839,7 +839,7 @@ function buildCncOperations(part) {
 
 function buildCncProgram(part) {
   const u = part.userData;
-  const ops = buildCncOperations(part);
+  const ops = buildCncOperations(part).map(op => cncOperationWithTool(op, material));
   const lines = [
     "; Furniture AI Designer CNC",
     "; Detail: " + u.partNumber + " " + u.name,
@@ -875,6 +875,38 @@ function exportCncProgram(part) {
   link.download = "detail-" + part.userData.partNumber + ".nc";
   link.click();
   URL.revokeObjectURL(link.href);
+}
+
+const CNC_TOOL_LIBRARY = {
+  drilling: [
+    {id:"DRILL-5",name:"Сверло Ø5 мм",diameter:5,kind:"drill",materials:["ЛДСП","МДФ","Фанера"]},
+    {id:"DRILL-6",name:"Сверло Ø6 мм",diameter:6,kind:"drill",materials:["ЛДСП","МДФ","Фанера"]},
+    {id:"DRILL-35",name:"Сверло чашечное Ø35 мм",diameter:35,kind:"drill",materials:["ЛДСП","МДФ","Фанера"]}
+  ],
+  milling: [
+    {id:"MILL-6",name:"Фреза Ø6 мм",diameter:6,kind:"mill",materials:["ЛДСП","МДФ","Фанера"]},
+    {id:"MILL-8",name:"Фреза Ø8 мм",diameter:8,kind:"mill",materials:["ЛДСП","МДФ","Фанера"]}
+  ]
+};
+
+function selectCncTool(op, material) {
+  const family = op.type === "DRILL" ? CNC_TOOL_LIBRARY.drilling : CNC_TOOL_LIBRARY.milling;
+  const candidates = family.filter(t => t.materials.includes(material));
+  if (op.diameter > 0) {
+    const exact = candidates.find(t => t.diameter === op.diameter);
+    if (exact) return exact;
+  }
+  return candidates[0] || family[0];
+}
+
+function cncOperationWithTool(op, material) {
+  const tool = selectCncTool(op, material);
+  return {
+    ...op,
+    toolId: tool ? tool.id : "TBD",
+    toolName: tool ? tool.name : "Инструмент не назначен",
+    toolDiameter: tool ? tool.diameter : 0
+  };
 }
 
 function buildCncTechCard(part) {
