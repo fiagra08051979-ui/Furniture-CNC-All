@@ -87,6 +87,17 @@ function evaluateReleaseGateState({ qc, partsCount, partStates, cuttingGroups, s
     issues.push("Construction QC не содержит полный состав деталей проекта.");
   }
 
+  const detailNumbers = new Set();
+  (partStates || []).forEach(state => {
+    const number = String(state.number || state.detailing?.number || "").trim();
+    if (number) {
+      if (detailNumbers.has(number)) {
+        issues.push("Дублируется номер детали " + number + ".");
+      }
+      detailNumbers.add(number);
+    }
+  });
+
   (partStates || []).forEach(state => {
     const id = state.number || state.name || "без номера";
     if (!state.detailing) {
