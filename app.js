@@ -706,6 +706,7 @@ async function importIfcIntoFurnitureCore(file) {
       );
     });
     const detailingPipeline = rebuildDetailingPipeline();
+    const constructionQC = runConstructionQC(detailingPipeline);
     renderPartsTable();
     fitView();
 
@@ -725,18 +726,17 @@ async function importIfcIntoFurnitureCore(file) {
       " · технология: готово " + technology.ready + ", на проверке " + technology.review +
       " · соединения-кандидаты: " + ifcTechnologyOps.joints.length +
       " · позиции крепежа-кандидаты: " + ifcHardwareSchedule.length +
-      " · деталировка: готово " + detailingPipeline.ready + ", на проверке " + detailingPipeline.review;
+      " · деталировка: готово " + detailingPipeline.ready + ", на проверке " + detailingPipeline.review +
+      " · Construction QC: " + constructionQC.status;
 
     if ($("projectName")) $("projectName").textContent = file.name;
     if ($("status")) $("status").textContent = "IFC импортирован · геометрия является источником истины";
 
     validate(
-      technology.review || detailingPipeline.review
-        ? "IFC импортирован. Проверка цепочки завершена: технология готова для " + technology.ready +
-          " деталей; " + technology.review + " требуют проверки роли; деталировка готова для " +
-          detailingPipeline.ready + ", на проверке " + detailingPipeline.review + "."
-        : "IFC импортирован. Цепочка конструкция → детали → присадка → деталировка → раскрой согласована. Геометрия не изменена.",
-      technology.review || detailingPipeline.review ? "error" : "ok"
+      technology.review || detailingPipeline.review || !constructionQC.passed
+        ? "IFC импортирован. Construction QC требует проверки: " + constructionQC.issueCount + " замечаний."
+        : "IFC импортирован. Construction QC PASS: цепочка конструкция → детали → присадка → деталировка согласована. Геометрия не изменена.",
+      technology.review || detailingPipeline.review || !constructionQC.passed ? "error" : "ok"
     );
   } catch (error) {
     console.error(error);
@@ -1093,6 +1093,91 @@ function constructionChecksDetailed() {
   if (p.frontGapTB < 1) issues.push("Верхний/нижний технологический зазор фасада меньше 1 мм.");
   if (p.depth < 300 && p.shelves > 0) issues.push("Малая глубина корпуса: проверьте рабочую глубину полок и крепежа.");
   return [...new Set(issues)];
+}
+
+/*
+ * Construction QC Gate
+ * Единая контрольная точка перед передачей деталировки в раскрой.
+ *
+ * Порядок:
+ * параметры → конструкция → детали → присадка → деталировка → QC → раскрой.
+ *
+ * QC ничего не исправляет автоматически и не меняет IFC-геометрию.
+ * Он только собирает результаты уже выполненных проверок в единый контракт.
+ */
+function runConstructionQC(pipelineResult = { ready:0, review:0, issues:[] }) {
+  const baseIssues = [
+    ...constructionChecks(
+      parts.flatMap(part => part.userData.bodyFasteners || []),
+      parts.flatMap(part => part.userData.shelfSupportDrilling || []),
+      parts.flatMap(part => part.userData.secondaryFasteners || [])
+    ),
+    ...constructionChecksDetailed(),
+    ...(pipelineResult.issues || [])
+  ];
+
+  const uniqueIssues = [...new Set(baseIssues.filter(Boolean))];
+  const detailStatuses = parts.map(part => ({
+    partNumber: part.userData.partNumber || "",
+    name: part.userData.name || "",
+    role: part.userData.recognizedKind || part.userData.kind || "",
+    status: part.userData.detailing?.status || "review",
+    processingCount: part.userData.detailing?.processing?.length || 0,
+    holesCount: part.userData.detailing?.holes?.length || 0,
+    cuttingEligible: Boolean(part.userData.detailing?.cutting?.eligible)
+  }));
+
+  const unresolvedDetails = detailStatuses.filter(item => item.status !== "ready");
+  const missingCuttingLink = detailStatuses.filter(item => !item.cuttingEligible);
+  const geometrySourceErrors = parts.filter(part =>
+    part.userData.source === "IFC" && part.userData.geometryLocked !== true
+  );
+
+  const checks = {
+    parameters: uniqueIssues.filter(x =>
+      /размер|зазор|угол|секци|глубин|толщин|объём/i.test(x)
+    ).length === 0,
+    construction: uniqueIssues.length === 0,
+    detailing: unresolvedDetails.length === 0,
+    cuttingLink: missingCuttingLink.length === 0,
+    ifcGeometryLocked: geometrySourceErrors.length === 0
+  };
+
+  const passed = Object.values(checks).every(Boolean);
+
+  const report = {
+    gate: "CONSTRUCTION_QC",
+    status: passed ? "PASS" : "REVIEW",
+    passed,
+    checks,
+    issueCount: uniqueIssues.length,
+    issues: uniqueIssues,
+    details: detailStatuses,
+    summary: {
+      parts: parts.length,
+      detailingReady: Number(pipelineResult.ready || 0),
+      detailingReview: Number(pipelineResult.review || 0),
+      unresolvedDetails: unresolvedDetails.length,
+      missingCuttingLink: missingCuttingLink.length,
+      geometrySourceErrors: geometrySourceErrors.length
+    }
+  };
+
+  parts.forEach(part => {
+    const number = part.userData.partNumber || "";
+    const item = detailStatuses.find(x => x.partNumber === number);
+    part.userData.constructionQC = {
+      status: item?.status === "ready" && passed ? "PASS" : "REVIEW",
+      sourceGeometry: part.userData.source === "IFC" ? "IFC" : "Furniture Core",
+      detailingReady: item?.status === "ready",
+      cuttingEligible: Boolean(item?.cuttingEligible),
+      processingCount: item?.processingCount || 0,
+      holesCount: item?.holesCount || 0
+    };
+  });
+
+  window._constructionQC = report;
+  return report;
 }
 
 function material() {
@@ -1934,6 +2019,7 @@ function build() {
 
   assignPartNumbers();
   const detailingPipeline = rebuildDetailingPipeline();
+  const constructionQC = runConstructionQC(detailingPipeline);
   rebuildPartLabels();
   exploded = false;
   $("explode").textContent = "Взрыв";
@@ -1944,11 +2030,7 @@ function build() {
   const drillingCount = parts.reduce((sum, part) => sum + (part.userData.drilling?.length || 0), 0);
   const bodyFastenerCount = bodyFasteners.length;
   const shelfSupportCount = shelfSupportDrilling.length;
-  const constructionIssues = [
-    ...constructionChecks(bodyFasteners, shelfSupportDrilling, secondaryFasteners),
-    ...constructionChecksDetailed(),
-    ...detailingPipeline.issues
-  ];
+  const constructionIssues = constructionQC.issues;
   if ($("drillingSummary")) $("drillingSummary").textContent = drillingCount
     ? "Фасады: " + drillingCount + " отв. · корпус: " + bodyFastenerCount + " креплений · полкодержатели: " + shelfSupportCount
     : "Фасадное сверление не требуется. Корпус: " + bodyFastenerCount + " креплений.";
