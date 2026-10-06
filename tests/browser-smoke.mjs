@@ -53,6 +53,8 @@ await page.waitForTimeout(300);
 const designCount = Number(await page.locator("#partsCount").textContent());
 if (!(designCount > 0)) throw new Error("Изменение материала/кромки разрушило параметрическую модель.");
 
+await page.locator("#sheetLength").fill("3000");
+await page.locator("#sheetWidth").fill("3000");
 await page.locator(".showCuttingMap").first().click();
 await page.waitForTimeout(300);
 const cuttingStatus = await page.locator("#validation").textContent();
