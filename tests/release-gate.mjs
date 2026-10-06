@@ -204,4 +204,11 @@ if (errors.length) {
 }
 
 console.log("RELEASE GATE: PASS");
+
+assertions.push([
+  "Release Gate требует точную ревизию деталировки",
+  core.includes("Number(state.detailing.modelRevision) !== Number(modelRevision)") &&
+  core.includes('Construction QC не содержит полный состав деталей проекта.') &&
+  core.includes("qc.details.length !== Number(partsCount)")
+]);
 console.log("Проверено: AI, IFC, распознавание, 3D, Construction QC, Release Gate, раскладка листа, PDF-карта раскроя, присадка/сверловка и отсутствие CNC/Excel-производственного слоя.");
