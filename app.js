@@ -2632,6 +2632,9 @@ function exportExcel() {
     "Дюбели/эксцентрики": part.userData.secondaryFasteners?.map(h => h.type + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
     "Обработка": part.userData.detailing?.processing?.map(h => h.operation + " " + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
     "IFC-контур": part.userData.source === "IFC" ? (part.userData.ifcContour?.ready ? "подтверждён" : "заблокирован") : "",
+    "IFC Manufacturing ID": part.userData.source === "IFC" ? (part.userData.productionPacket?.expressId || "") : "",
+    "IFC CNC-операции": part.userData.source === "IFC" ? buildIfcManufacturingOperations(part).map(op => op.id).join(" | ") : "",
+    "IFC Integrity": part.userData.source === "IFC" ? (validateIfcManufacturingIntegrity(part).length ? "ОШИБКА" : "OK") : "",
     "IFC-база сверления": part.userData.source === "IFC" ? (part.userData.technology?.drillingStatus || "нет") : "",
     "IFC-сопряжения": part.userData.source === "IFC" ? (part.userData.technology?.jointCount || 0) : "",
     "Примечания": constructionChecksDetailed().filter(x => x.includes(part.userData.name)).join(" | ")
