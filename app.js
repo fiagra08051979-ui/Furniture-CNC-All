@@ -3176,6 +3176,43 @@ function classifyContourSide(contour, path) {
   return "OUTSIDE";
 }
 
+function classifyCncGeometryOperation(op) {
+  const name=String(op.operation||op.name||"").toLowerCase();
+  if(op.type==="CONTOUR") {
+    if(op.compensationSide==="INSIDE" || name.includes("внутр") || name.includes("карман")) return "INNER_CONTOUR";
+    return "OUTER_CONTOUR";
+  }
+  if(op.type==="POCKET" || name.includes("карман") || name.includes("pocket")) return "POCKET";
+  return op.type || "OTHER";
+}
+
+function buildPocketToolpath(op, plan, part) {
+  const contour=part.userData?.ifcContour?.path;
+  if(!Array.isArray(contour)||contour.length<3) return null;
+  const pts=contour.map(p=>({x:Number(p.x)||0,y:Number(p.y)||0}));
+  const cx=pts.reduce((a,p)=>a+p.x,0)/pts.length, cy=pts.reduce((a,p)=>a+p.y,0)/pts.length;
+  const scale=Math.max(0.15,1-(Number(op.toolDiameter||op.diameter||6)/2)/Math.max(part.userData?.width||1,part.userData?.height||1));
+  const pocket=pts.map(p=>({x:cx+(p.x-cx)*scale,y:cy+(p.y-cy)*scale,z:-(Number(op.depth)||1)}));
+  pocket.push({...pocket[0]});
+  return {operationId:op.id,type:"POCKET",strategy:"OFFSET_CENTER",points:pocket,source:"IFC_POCKET"};
+}
+
+function buildTypedCompensatedToolpaths(plan, part) {
+  return (plan.operations||[]).map(op=>{
+    const kind=classifyCncGeometryOperation(op);
+    if(kind==="POCKET") return buildPocketToolpath(op,plan,part);
+    if(kind==="INNER_CONTOUR") {
+      const paths=buildCompensatedContourToolpath({...plan,operations:[{...op,compensationSide:"INSIDE"}]},part);
+      return paths[0] || null;
+    }
+    if(kind==="OUTER_CONTOUR") {
+      const paths=buildCompensatedContourToolpath({...plan,operations:[{...op,compensationSide:"OUTSIDE"}]},part);
+      return paths[0] || null;
+    }
+    return null;
+  }).filter(Boolean);
+}
+
 function buildCompensatedContourToolpath(plan, part) {
   const contour=part.userData?.ifcContour?.path;
   if(!Array.isArray(contour)||contour.length<3) return [];
@@ -3431,7 +3468,7 @@ function getCompiledManufacturingPlan(part) {
   plan.segmentToolpathValidation=validateToolpathSegmentsAgainstGeometry(plan,part);
   plan.toolRadiusCompensation=validateToolRadiusCompensation(plan,part);
   plan.toolpathClearance=validateToolpathClearance(plan,part);
-  plan.compensatedToolpaths=buildCompensatedContourToolpath(plan,part);
+  plan.compensatedToolpaths=buildTypedCompensatedToolpaths(plan,part);
   plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance];
   plan.machineReady=plan.validation.every(x=>x.level!=="error") &&
     plan.status==="READY" &&
