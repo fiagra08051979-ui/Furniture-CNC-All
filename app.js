@@ -1539,14 +1539,8 @@ function renderCuttingMap(layout) {
 }
 
 function cuttingOperationList(part) {
-  const u = part.userData;
-  const sources = [
-    ...(u.drilling || []),
-    ...(u.bodyFasteners || []),
-    ...(u.shelfSupportDrilling || []),
-    ...(u.secondaryFasteners || []),
-    ...((u.technology && u.technology.drilling) || [])
-  ];
+  const detailing = part.userData?.detailing;
+  const sources = Array.isArray(detailing?.holes) ? detailing.holes : [];
   return sources.map((op, index) => ({
     number: index + 1,
     type: op.operation || op.type || "Сверление",
@@ -1600,6 +1594,7 @@ function buildCuttingPdfHtml(layout) {
   const projectName = $("projectName")?.textContent || "Furniture AI Designer";
   const detailPages = parts.map(part => {
     const u = part.userData;
+    const d = u.detailing;
     const ops = cuttingOperationList(part);
     const rows = ops.length ? ops.map(op =>
       '<tr><td>'+op.number+'</td><td>'+op.type+'</td><td>'+
@@ -1610,9 +1605,9 @@ function buildCuttingPdfHtml(layout) {
 
     return '<section class="detail-page">' +
       '<h2>Деталь №'+u.partNumber+' — '+u.name+'</h2>' +
-      '<div class="detail-meta"><b>Размер:</b> '+Math.round(u.width)+' × '+Math.round(u.height)+' × '+Math.round(u.depth)+' мм · '+
-      '<b>Материал:</b> '+u.material+' · <b>Количество:</b> '+(u.quantity || 1)+'</div>' +
-      '<div class="detail-meta"><b>Кромка:</b> '+edgeSummary(u.edges)+'</div>' +
+      '<div class="detail-meta"><b>Размер:</b> '+d.length+' × '+d.width+' × '+d.thickness+' мм · '+
+      '<b>Материал:</b> '+d.material+' · <b>Количество:</b> '+(d.quantity || 1)+'</div>' +
+      '<div class="detail-meta"><b>Кромка:</b> '+edgeSummary(d.edges)+'</div>' +
       '<div class="detail-meta"><b>Операций присадки:</b> '+ops.length+' · <b>Всего отверстий:</b> '+ops.reduce((sum, op) => sum + (op.quantity || 1), 0)+'</div>' +
       (ops.length ? drillingSchematic(part) : '<div class="no-drilling">Присадка и сверловка отсутствуют.</div>') +
       '<table><thead><tr><th>№</th><th>Операция</th><th>X, мм</th><th>Y, мм</th><th>Ø, мм</th><th>Глубина, мм</th><th>Количество</th><th>Фурнитура / назначение</th></tr></thead><tbody>'+
