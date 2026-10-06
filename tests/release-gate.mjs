@@ -24,6 +24,7 @@ const required = [
   ["Construction QC требует связь каждой детали с раскроем", app.includes("missingCuttingLink") && app.includes("cuttingLink: missingCuttingLink.length === 0") && app.includes("cuttingEligible")],
   ["раскрой строится только из деталировки", app.includes("const d = u.detailing") && app.includes("d.cutting.thickness") && app.includes("d.cutting.length") && app.includes("d.cutting.width")],
   ["размеры деталировки совпадают со спецификацией листа", app.includes("length: spec.length") && app.includes("width: spec.width") && app.includes("thickness: spec.thickness")],
+  ["неподтвержденная IFC-толщина блокирует деталировку", app.includes("sheetSpecConfidence === \"review\"") && app.includes("толщина листа IFC не подтверждена")],
   ["Release Gate проверяет состав раскроя против деталировки", core.includes("expectedDetailByKey") && core.includes("Раскладка не соответствует количеству детали") && core.includes("Раскладка содержит размеры детали, не соответствующие деталировке")],
   ["Construction QC защищает геометрию IFC", app.includes("geometrySourceErrors") && app.includes("ifcGeometryLocked: geometrySourceErrors.length === 0")],
   ["низкая уверенность IFC требует ручной проверки", app.includes('u.source === "IFC" && u.recognitionConfidence === "low"') && app.includes("требуется ручная проверка")],
