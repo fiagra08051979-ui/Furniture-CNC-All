@@ -2234,6 +2234,20 @@ $("isoView")?.addEventListener("click", fitView);
 $("material")?.addEventListener("change", build);
 [1,2,3,4].forEach(i => $("edge"+i)?.addEventListener("change", build));
 
+const technologyBuildFields = [
+  "frontType","hingeType","hingeLimiter","openingAngle",
+  "fastenerType","confirmatDiameter","connectorDiameter",
+  "secondaryFastener","dowelDiameter","eccentricDiameter",
+  "shelfSupportType","shelfFrontOffset"
+];
+technologyBuildFields.forEach(id => $(id)?.addEventListener("change", () => {
+  if (ifcMode) {
+    validate("Для IFC технологические атрибуты задаются исходной моделью. Геометрия IFC не изменена.", "ok");
+    return;
+  }
+  build();
+}));
+
 $("aiRecognize")?.addEventListener("click", () => {
   const result = recognizeFurnitureText($("aiPrompt")?.value || "");
   renderAiRecognition(result);
