@@ -514,6 +514,37 @@ function syncIfcParametersFromRecognition() {
   }
 }
 
+function refreshIfcTechnology() {
+  if (!ifcMode || !ifcImportedParts.length) return;
+
+  modelRevision++;
+  window._modelRevision = modelRevision;
+  window._constructionQC = null;
+  window._releaseGate = null;
+
+  const selectedMaterial = $("material")?.value || "ldsp18";
+  const selectedEdges = edgeLabels();
+
+  ifcImportedParts.forEach(part => {
+    part.userData.material = selectedMaterial;
+    part.userData.edges = [...selectedEdges];
+  });
+
+  applyIfcMaterial();
+  buildIfcTechnologyState();
+  buildIfcTechnologyOperations();
+  buildIfcHardwareSchedule();
+  const detailingPipeline = rebuildDetailingPipeline();
+  const constructionQC = runConstructionQC(detailingPipeline);
+  const releaseGate = runReleaseGate();
+
+  renderPartsTable();
+  const status = releaseGate.passed
+    ? "IFC-технология обновлена без изменения геометрии."
+    : "IFC-технология обновлена; выпуск заблокирован Release Gate: " + releaseGate.issues.join(" ");
+  validate(status, releaseGate.passed ? "ok" : "error");
+}
+
 function applyIfcMaterial() {
   const selected = $("material")?.value || "ldsp18";
   const palette = {
@@ -2266,8 +2297,20 @@ $("explode")?.addEventListener("click", () => setExplode(!exploded));
 $("resetExplode")?.addEventListener("click", () => setExplode(false));
 $("frontView")?.addEventListener("click", frontView);
 $("isoView")?.addEventListener("click", fitView);
-$("material")?.addEventListener("change", build);
-[1,2,3,4].forEach(i => $("edge"+i)?.addEventListener("change", build));
+$("material")?.addEventListener("change", () => {
+  if (ifcMode) {
+    refreshIfcTechnology();
+    return;
+  }
+  build();
+});
+[1,2,3,4].forEach(i => $("edge"+i)?.addEventListener("change", () => {
+  if (ifcMode) {
+    refreshIfcTechnology();
+    return;
+  }
+  build();
+}));
 
 const technologyBuildFields = [
   "frontType","hingeType","hingeLimiter","openingAngle",
