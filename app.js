@@ -3128,6 +3128,15 @@ function distancePointToSegment2D(p,a,b) {
   return Math.hypot(p.x-(a.x+t*dx),p.y-(a.y+t*dy));
 }
 
+function buildToolpathGeometryEnvelope(plan, part) {
+  const contour=part.userData?.ifcContour?.path;
+  if(!Array.isArray(contour) || contour.length<3) return null;
+  const pts=contour.map(p=>({x:Number(p.x)||0,y:Number(p.y)||0}));
+  const minX=Math.min(...pts.map(p=>p.x)), maxX=Math.max(...pts.map(p=>p.x));
+  const minY=Math.min(...pts.map(p=>p.y)), maxY=Math.max(...pts.map(p=>p.y));
+  return {minX,maxX,minY,maxY,width:maxX-minX,height:maxY-minY,toolRadiusMax:Math.max(...(plan.operations||[]).map(o=>Number(o.toolDiameter||o.diameter||6)/2),0)};
+}
+
 function validateToolpathAgainstGeometry(plan, part) {
   const issues=[];
   const u=part.userData||{};
@@ -3295,6 +3304,7 @@ function getCompiledManufacturingPlan(part) {
   plan.motionSafety=validateCncMotionSafety(plan);
   plan.toolpaths=buildCncToolpaths(plan);
   plan.toolpathValidation=validateCncToolpaths(plan);
+  plan.toolpathGeometryEnvelope=buildToolpathGeometryEnvelope(plan,part);
   plan.geometryToolpathValidation=validateToolpathAgainstGeometry(plan,part);
   plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation];
   plan.machineReady=plan.validation.every(x=>x.level!=="error") &&
