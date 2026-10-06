@@ -96,6 +96,11 @@ function evaluateReleaseGateState({ qc, partsCount, partStates, cuttingGroups, s
     if (state.detailing.status !== "ready") {
       issues.push("Деталь " + (state.detailing.number || id) + ": detailing не готов.");
     }
+    if (Number.isFinite(Number(modelRevision)) &&
+        Number.isFinite(Number(state.detailing.modelRevision)) &&
+        Number(state.detailing.modelRevision) !== Number(modelRevision)) {
+      issues.push("Деталь " + (state.detailing.number || id) + ": detailing относится к другой ревизии модели.");
+    }
     const c = state.detailing.cutting;
     if (!c || !c.length || !c.width || !c.thickness) {
       issues.push("Деталь " + (state.detailing.number || id) + ": отсутствуют данные раскроя.");
