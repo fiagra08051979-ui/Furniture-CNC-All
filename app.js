@@ -337,6 +337,58 @@ function assignPartNumbers() {
   });
 }
 
+function buildCuttingGroups() {
+  const groups = new Map();
+  parts.forEach(part => {
+    const u = part.userData;
+    const key = [
+      u.material,
+      Math.round(u.depth),
+      u.edges.join("|"),
+      Math.round(u.width),
+      Math.round(u.height)
+    ].join("::");
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        material: u.material,
+        thickness: Math.round(u.depth),
+        length: Math.round(u.width),
+        width: Math.round(u.height),
+        edges: [...u.edges],
+        quantity: 0,
+        partNumbers: []
+      });
+    }
+    const g = groups.get(key);
+    g.quantity += Number(u.quantity || 1);
+    g.partNumbers.push(u.partNumber);
+  });
+  return [...groups.values()].map((g, index) => ({...g, groupNumber: String(index + 1).padStart(3, "0")}));
+}
+
+function exportCuttingStructure() {
+  if (!window.XLSX) { validate("Модуль Excel недоступен.", "error"); return; }
+  const groups = buildCuttingGroups();
+  const rows = groups.map(g => ({
+    "Группа раскроя": g.groupNumber,
+    "Материал": g.material,
+    "Толщина, мм": g.thickness,
+    "Длина, мм": g.length,
+    "Ширина, мм": g.width,
+    "Кромка 1": g.edges[0],
+    "Кромка 2": g.edges[1],
+    "Кромка 3": g.edges[2],
+    "Кромка 4": g.edges[3],
+    "Количество": g.quantity,
+    "№ деталей": g.partNumbers.join(", ")
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Раскрой");
+  XLSX.writeFile(wb, "furniture-ai-cutting.xlsx");
+}
+
 function createPartLabel(part) {
   const canvas = document.createElement("canvas");
   canvas.width = 256; canvas.height = 96;
@@ -640,6 +692,7 @@ $("isoView").addEventListener("click", fitView);
 $("material").addEventListener("change", build);
 [1, 2, 3, 4].forEach(i => $("edge" + i).addEventListener("change", build));
 $("exportExcel").addEventListener("click", exportExcel);
+if ($("exportCutting")) $("exportCutting").addEventListener("click", exportCuttingStructure);
 $("exportPdf").addEventListener("click", exportPdf);
 
 $("newProject").addEventListener("click", () => {
