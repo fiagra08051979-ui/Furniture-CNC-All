@@ -12,7 +12,7 @@ const required = [
   ["AI изображение", app.includes("analyzeFurnitureImageMetadata") && app.includes("aiImageAnalyze")],
   ["IFC", app.includes("web-ifc") && app.includes("importIfcIntoFurnitureCore")],
   ["распознавание деталей IFC", app.includes("recognizeIfcPart") && app.includes("applyIfcRecognition")],
-  ["карта раскроя PDF", app.includes("buildCuttingGroups") && app.includes("buildSheetLayout") && app.includes("buildCuttingPdfHtml") && app.includes("exportSheetLayout")],
+  ["карта раскроя PDF", app.includes("buildCuttingGroups") && app.includes("getSheetSpec") && app.includes("buildSheetLayout") && app.includes("buildCuttingPdfHtml") && app.includes("exportSheetLayout")],
   ["присадка и сверловка", app.includes("cuttingOperationList") && app.includes("drillingSchematic") && app.includes("shelfSupportDrilling") && app.includes("X, мм") && app.includes("Y, мм") && app.includes("Количество") && app.includes("Всего отверстий")],
   ["кнопка PDF карты раскроя", html.includes("exportSheetLayout") && html.includes("Сформировать карту раскроя PDF")],
   ["кнопки карты раскроя без дублирования id", !/<button[^>]+id="(?:exportSheetLayout|showCuttingMap)"/i.test(html) && app.includes('querySelectorAll(".exportSheetLayout")') && app.includes('querySelectorAll(".showCuttingMap")')],
