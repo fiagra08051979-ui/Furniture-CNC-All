@@ -40,7 +40,10 @@ function readParams() {
     thickness: Number($("thickness").value),
     sections: Math.max(1, Math.floor(Number($("sections").value))),
     shelves: Math.max(0, Math.floor(Number($("shelves").value))),
-    doors: Math.max(0, Math.floor(Number($("doors").value)))
+    doors: Math.max(0, Math.floor(Number($("doors").value))),
+    fixedPartitions: Math.max(0, Math.floor(Number($("fixedPartitions").value))),
+    frontGapTB: Math.max(0, Number($("frontGapTB").value)),
+    frontGapBetween: Math.max(0, Number($("frontGapBetween").value))
   };
 }
 
@@ -55,6 +58,7 @@ function validateParams(p) {
     return "Слишком много секций для заданной ширины.";
   }
   if (p.doors > 0 && p.doors > 12) return "Количество фасадов: максимум 12.";
+  if (p.doors > 0 && p.width - p.frontGapBetween * (p.doors - 1) <= 0) return "Зазоры фасадов превышают ширину корпуса.";
   return "";
 }
 
@@ -122,6 +126,12 @@ function build() {
   addPart("Крышка", "Крышка", innerW, p.thickness, p.depth,
     new THREE.Vector3(0, p.height - p.thickness / 2, 0));
 
+  for (let i = 0; i < p.fixedPartitions; i++) {
+    const y = p.thickness + innerH * (i + 1) / (p.fixedPartitions + 1);
+    addPart("Горизонтальная перегородка " + (i + 1), "Горизонтальная перегородка", innerW, p.thickness, p.depth,
+      new THREE.Vector3(0, y, 0));
+  }
+
   for (let i = 1; i < p.sections; i++) {
     addPart(
       "Вертикальная перегородка " + i,
@@ -154,17 +164,20 @@ function build() {
   }
 
   if (p.doors > 0) {
-    const doorW = p.width / p.doors;
-    const gap = Math.min(3, Math.max(1, doorW * 0.002));
+    const sideGap = p.frontGapTB;
+    const betweenGap = p.frontGapBetween;
+    const totalBetween = betweenGap * Math.max(0, p.doors - 1);
+    const doorW = (p.width - totalBetween) / p.doors;
+    const doorH = p.height - 2 * sideGap;
     for (let i = 0; i < p.doors; i++) {
       addPart(
         "Фасад " + (i + 1),
         "Фасад",
-        Math.max(doorW - gap, 1),
-        p.height - 2 * Math.max(gap, 1),
+        Math.max(doorW, 1),
+        Math.max(doorH, 1),
         p.thickness,
         new THREE.Vector3(
-          -p.width / 2 + doorW * (i + 0.5),
+          -p.width / 2 + doorW * (i + 0.5) + betweenGap * i,
           p.height / 2,
           p.depth / 2 + p.thickness / 2
         )
@@ -175,7 +188,7 @@ function build() {
   exploded = false;
   $("explode").textContent = "Взрыв";
   $("partsCount").textContent = parts.length;
-  $("summary").textContent = parts.length + " деталей · " + p.width + " × " + p.height + " × " + p.depth + " мм";
+  $("summary").textContent = parts.length + " деталей · " + p.width + " × " + p.height + " × " + p.depth + " мм · фасадные зазоры " + p.frontGapTB + "/" + p.frontGapBetween + " мм";
 
   renderPartsTable();
   validate("Модель построена: корпус, перегородки, полки и фасады.", "ok");
@@ -287,14 +300,14 @@ $("exportExcel").addEventListener("click", exportExcel);
 $("exportPdf").addEventListener("click", exportPdf);
 
 $("newProject").addEventListener("click", () => {
-  [2400, 2200, 600, 18, 3, 6, 3].forEach((value, i) => {
-    $("width height depth thickness sections shelves doors".split(" ")[i]).value = value;
+  [2400, 2200, 600, 18, 3, 6, 0, 3, 2, 3].forEach((value, i) => {
+    $("width height depth thickness sections shelves fixedPartitions doors frontGapTB frontGapBetween".split(" ")[i]).value = value;
   });
   build();
 });
 
 $("saveProject").addEventListener("click", () => {
-  const ids = ["width", "height", "depth", "thickness", "sections", "shelves", "doors"];
+  const ids = ["width", "height", "depth", "thickness", "sections", "shelves", "fixedPartitions", "doors", "frontGapTB", "frontGapBetween"];
   const parameters = Object.fromEntries(ids.map(id => [id, $(id).value]));
   parameters.material = $("material").value;
   parameters.edge = $("edge").value;
