@@ -2593,7 +2593,8 @@ function buildCncTechCard(part) {
     operations: ops,
     productionPacket: buildIfcProductionPacket(part),
     operationJournal: buildCncOperationJournal(part),
-    productionOperationPassport: buildProductionOperationPassport(part)
+    productionOperationPassport: buildProductionOperationPassport(part),
+    productionOperationLinks: buildProductionOperationLinks(part)
   };
 }
 
@@ -3043,6 +3044,33 @@ function exportExcel() {
   XLSX.writeFile(wb, "furniture-ai-parts.xlsx");
 }
 
+function buildProductionOperationLinks(part) {
+  const plan=getCompiledManufacturingPlan(part);
+  const journal=buildCncOperationJournal(part);
+  const traceProgram=buildValidatedCncProgram(part);
+  const trace=traceProgram.traceability||[];
+  const passport=buildProductionOperationPassport(part);
+  return passport.operations.map((op,index)=>{
+    const j=journal.find(x=>x.id===op.operationId)||{};
+    const t=trace.find(x=>x.operationId===op.operationId)||{};
+    return {
+      mapNumber:index+1,
+      operationId:op.operationId,
+      traceId:op.traceId,
+      expressId:op.expressId,
+      toolId:op.toolId||j.tool?.id||null,
+      toolName:op.toolName||j.tool?.name||null,
+      technologyGroupKey:op.technologyGroupKey||null,
+      lineStart:t.lineStart??null,
+      lineEnd:t.lineEnd??null,
+      gcodeLines:t.lineStart!=null && t.lineEnd!=null ? Math.max(0,t.lineEnd-t.lineStart+1) : 0,
+      lifecycle:op.lifecycle,
+      source:op.source,
+      pathPoints:op.pathPoints
+    };
+  });
+}
+
 function drawProductionGeometryA3(doc, part, x0, y0, maxW, maxH) {
   const u=part.userData||{};
   const contour=u.ifcContour?.ready ? u.ifcContour.path : null;
@@ -3137,6 +3165,7 @@ function exportProductionPdf() {
     if(index) doc.addPage("a3","landscape");
     const u=part.userData||{};
     const passport=buildProductionOperationPassport(part);
+    const operationLinks=buildProductionOperationLinks(part);
     doc.setFontSize(18);
     doc.text("ПРОИЗВОДСТВЕННАЯ КАРТА ДЕТАЛИ",14,16);
     doc.setFontSize(10);
@@ -3145,6 +3174,8 @@ function exportProductionPdf() {
     doc.text("Роль: "+(passport.role||"—")+"  Материал: "+(passport.material||"—")+"  Толщина: "+(passport.thickness||0)+" мм",14,36);
     doc.text("Размер: "+Math.round(u.width||0)+" × "+Math.round(u.height||0)+" × "+Math.round(u.depth||0)+" мм",14,42);
     doc.text("Готовность станка: "+(passport.machineReady?"ГОТОВО":"ЗАБЛОКИРОВАНО")+"  Операций: "+passport.operationCount,14,48);
+    doc.setFontSize(7);
+    doc.text("Связь операций с G-кодом: "+operationLinks.filter(x=>x.lineStart!=null).length+" из "+operationLinks.length,14,53);
     drawProductionGeometryA3(doc, part, 14, 58, 180, 120);
     doc.setFontSize(11); doc.text("Технологические операции",14,60);
     let y=67;
