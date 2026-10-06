@@ -99,7 +99,7 @@ await page.locator(".exportSheetLayout").first().click();
 const pdfPage = await pdfPromise;
 await pdfPage.waitForLoadState("domcontentloaded");
 const pdfHtml = await pdfPage.locator("body").innerHTML();
-if (!pdfHtml.includes("Карта раскроя") || !pdfHtml.includes("Детали")) {
+if (!pdfHtml.includes("Карта раскроя") || !pdfHtml.includes("Деталей:")) {
   throw new Error("PDF-карта раскроя не сформирована из проверенной раскладки Release Gate.");
 }
 await pdfPage.close();
