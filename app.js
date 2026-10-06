@@ -829,19 +829,18 @@ function buildMillingGeometry(part) {
 
 function buildCncToolPlan(part) {
   const material = part.userData.material || "Не задан";
-  return optimizeCncOperationSequence(part).map((op, i) => {
+  const ordered = optimizeCncOperationSequence(part);
+  let previousToolId = null;
+  return ordered.map((op, i) => {
     const enriched = cncOperationWithTool(op, material);
-    return {
-      ...enriched,
-      toolNumber: enriched.toolId === "TBD" ? 0 :
-        (enriched.toolId === "DRILL-5" ? 1 :
-        enriched.toolId === "DRILL-6" ? 2 :
-        enriched.toolId === "DRILL-35" ? 3 :
-        enriched.toolId === "MILL-6" ? 4 : 5),
-      toolChange: i === 0 || enriched.toolId !== cncOperationWithTool(
-        optimizeCncOperationSequence(part)[i-1], material
-      ).toolId
-    };
+    const toolNumber = enriched.toolId === "TBD" ? 0 :
+      (enriched.toolId === "DRILL-5" ? 1 :
+      enriched.toolId === "DRILL-6" ? 2 :
+      enriched.toolId === "DRILL-35" ? 3 :
+      enriched.toolId === "MILL-6" ? 4 : 5);
+    const toolChange = i === 0 || enriched.toolId !== previousToolId;
+    previousToolId = enriched.toolId;
+    return {...enriched, toolNumber, toolChange};
   });
 }
 
@@ -1287,6 +1286,15 @@ function buildPostprocessedProgram(part) {
 }
 
 function exportAllCnc() {
+  const setupIssues = validateCncMachineSetup();
+  const preflightIssues = cncPreflight();
+  const critical = [...setupIssues, ...preflightIssues].filter(i => i.level === "error");
+  if (critical.length) {
+    validate("CNC-экспорт заблокирован: обнаружены критические ошибки. Исправьте их в Preflight.", "error");
+    renderCncPreflight();
+    renderCncSetupValidation();
+    return;
+  }
   const post = getPostprocessor();
   parts.forEach(part => {
     const blob = new Blob([buildCncJobProgram(part)], {type:"text/plain"});
@@ -1296,23 +1304,10 @@ function exportAllCnc() {
     link.click();
     URL.revokeObjectURL(link.href);
   });
-  validate("CNC-файлы с управлением инструментом подготовлены: " + post.name, "ok");
+  validate("CNC-файлы подготовлены после успешного Preflight: " + post.name, "ok");
 }
 
-function exportAllCncLegacy() {
-  const post = getPostprocessor();
-  parts.forEach(part => {
-    const blob = new Blob([buildPostprocessedProgram(part)], {type:"text/plain"});
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = "detail-" + part.userData.partNumber + post.extension;
-    link.click();
-    URL.revokeObjectURL(link.href);
-  });
-  validate("CNC-файлы подготовлены: " + post.name, "ok");
-}
 
-function exportAllCnc() {
   parts.forEach(part => exportCncProgram(part));
   validate("CNC-программы подготовлены для " + parts.length + " деталей.", "ok");
 }
