@@ -1369,13 +1369,24 @@ function buildCuttingGroups() {
         edges: [...d.edges],
         quantity: 0,
         partNumbers: [],
+        details: [],
         detailingStatus: d.status
       });
     }
 
     const g = groups.get(key);
-    g.quantity += Number(d.quantity || 1);
+    const quantity = Number(d.quantity || 1);
+    g.quantity += quantity;
     g.partNumbers.push(d.number);
+    g.details.push({
+      number: d.number,
+      length: d.cutting.length,
+      width: d.cutting.width,
+      thickness: d.cutting.thickness,
+      quantity,
+      material: d.material,
+      edges: [...d.edges]
+    });
     if (d.status !== "ready") g.detailingStatus = "review";
   });
 
