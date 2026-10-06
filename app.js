@@ -707,6 +707,7 @@ async function importIfcIntoFurnitureCore(file) {
     });
     const detailingPipeline = rebuildDetailingPipeline();
     const constructionQC = runConstructionQC(detailingPipeline);
+  const releaseGate = runReleaseGate();
     renderPartsTable();
     fitView();
 
@@ -1649,6 +1650,11 @@ function buildCuttingPdfHtml(layout) {
 }
 
 function exportSheetLayout() {
+  const releaseGate = runReleaseGate();
+  if (!releaseGate.passed) {
+    validate("Release Gate: выпуск PDF заблокирован. " + releaseGate.issues.join(" "), "error");
+    return;
+  }
   const layout = buildSheetLayout(
     Number($("sheetLength")?.value || 2800),
     Number($("sheetWidth")?.value || 2070),
@@ -1911,6 +1917,83 @@ function applyAiRecognition() {
   validate("AI-распознавание применено: параметрическая модель построена.", "ok");
 }
 
+function runReleaseGate() {
+  const qc = window._constructionQC || null;
+  const issues = [];
+  const details = Array.isArray(qc?.details) ? qc.details : [];
+
+  if (!qc) issues.push("Construction QC не выполнен.");
+  if (qc && qc.status !== "PASS") issues.push("Construction QC имеет статус REVIEW.");
+  if (!parts.length) issues.push("Нет деталей проекта.");
+
+  parts.forEach(part => {
+    const u = part.userData || {};
+    const d = u.detailing || null;
+    if (!d) {
+      issues.push("Деталь " + (u.partNumber || u.name || "без номера") + ": отсутствует detailing.");
+      return;
+    }
+    if (d.status !== "ready") {
+      issues.push("Деталь " + (d.number || u.partNumber || u.name || "без номера") + ": detailing не готов.");
+    }
+    if (!d.cutting || !d.cutting.length || !d.cutting.width || !d.cutting.thickness) {
+      issues.push("Деталь " + (d.number || u.partNumber || u.name || "без номера") + ": отсутствуют данные раскроя.");
+    }
+    (d.holes || []).forEach(hole => {
+      if (!Number.isFinite(Number(hole.diameter)) || Number(hole.diameter) <= 0) {
+        issues.push("Деталь " + (d.number || u.partNumber || u.name || "без номера") + ": некорректный диаметр отверстия.");
+      }
+      if (!Number.isFinite(Number(hole.depth)) || Number(hole.depth) <= 0) {
+        issues.push("Деталь " + (d.number || u.partNumber || u.name || "без номера") + ": некорректная глубина отверстия.");
+      }
+    });
+    if (u.sourceGeometry === "IFC" && u.geometryLocked !== true) {
+      issues.push("Деталь " + (d.number || u.partNumber || u.name || "без номера") + ": IFC-геометрия не зафиксирована.");
+    }
+  });
+
+  let cuttingGroups = [];
+  if (!issues.length && typeof buildCuttingGroups === "function") {
+    cuttingGroups = buildCuttingGroups();
+    if (!Array.isArray(cuttingGroups) || !cuttingGroups.length) {
+      issues.push("Не сформированы группы раскроя.");
+    }
+    (cuttingGroups || []).forEach(group => {
+      if (!group.material || !group.thickness || !group.details?.length) {
+        issues.push("Группа раскроя содержит неполные данные.");
+      }
+      (group.details || []).forEach(detail => {
+        if (!detail.number || !detail.length || !detail.width || !detail.quantity) {
+          issues.push("В группе раскроя есть деталь без полного состава данных.");
+        }
+      });
+    });
+  }
+
+  const report = {
+    gate: "RELEASE",
+    status: issues.length ? "BLOCKED" : "PASS",
+    passed: issues.length === 0,
+    constructionQC: qc?.status || "MISSING",
+    checks: {
+      constructionQC: !!qc && qc.status === "PASS",
+      detailing: parts.length > 0 && parts.every(part => part.userData?.detailing?.status === "ready"),
+      cuttingLink: cuttingGroups.length > 0 && cuttingGroups.every(group =>
+        group.details?.every(detail => detail.number && detail.length && detail.width && detail.quantity)
+      ),
+      ifcGeometryLocked: parts.filter(part => part.userData?.sourceGeometry === "IFC")
+        .every(part => part.userData.geometryLocked === true)
+    },
+    issueCount: issues.length,
+    issues,
+    details,
+    cuttingGroupsCount: cuttingGroups.length
+  };
+
+  window._releaseGate = report;
+  return report;
+}
+
 function build() {
   ifcMode = false;
   const p = readParams();
@@ -2020,6 +2103,7 @@ function build() {
   assignPartNumbers();
   const detailingPipeline = rebuildDetailingPipeline();
   const constructionQC = runConstructionQC(detailingPipeline);
+  const releaseGate = runReleaseGate();
   rebuildPartLabels();
   exploded = false;
   $("explode").textContent = "Взрыв";
@@ -2031,6 +2115,7 @@ function build() {
   const bodyFastenerCount = bodyFasteners.length;
   const shelfSupportCount = shelfSupportDrilling.length;
   const constructionIssues = constructionQC.issues;
+  if (!releaseGate.passed) validate("Release Gate: " + releaseGate.issues.join(" "), "error");
   if ($("drillingSummary")) $("drillingSummary").textContent = drillingCount
     ? "Фасады: " + drillingCount + " отв. · корпус: " + bodyFastenerCount + " креплений · полкодержатели: " + shelfSupportCount
     : "Фасадное сверление не требуется. Корпус: " + bodyFastenerCount + " креплений.";
