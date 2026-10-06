@@ -2062,7 +2062,7 @@ function cncCollisionChecks(part) {
       const dx=(Number(a.x)||0)-(Number(b.x)||0);
       const dy=(Number(a.y)||0)-(Number(b.y)||0);
       const distance=Math.hypot(dx,dy);
-      const required=(Number(a.diameter)||0+Number(b.diameter)||0)/2+2;
+      const required=((Number(a.diameter)||0)+(Number(b.diameter)||0))/2+2;
       if (distance < required) {
         issues.push({
           level:"error",
