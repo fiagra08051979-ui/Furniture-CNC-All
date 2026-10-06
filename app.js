@@ -3177,22 +3177,23 @@ function exportProductionPdf() {
     doc.setFontSize(7);
     doc.text("Связь операций с G-кодом: "+operationLinks.filter(x=>x.lineStart!=null).length+" из "+operationLinks.length,14,53);
     drawProductionGeometryA3(doc, part, 14, 58, 180, 120);
-    doc.setFontSize(11); doc.text("Технологические операции",14,60);
+    const tableX=205;
+    doc.setFontSize(11); doc.text("Технологические операции",tableX,60);
     let y=67;
-    doc.setFontSize(8);
-    doc.text("№",14,y); doc.text("Операция",26,y); doc.text("Инструмент",85,y); doc.text("Обороты",145,y); doc.text("Подача",175,y); doc.text("Врезание",205,y); doc.text("Глубина",240,y); doc.text("ExpressID",275,y); doc.text("Трассировка",315,y);
+    doc.setFontSize(7);
+    doc.text("№",tableX,y); doc.text("Операция",tableX+10,y); doc.text("Инстр.",tableX+58,y); doc.text("S",tableX+92,y); doc.text("F",tableX+108,y); doc.text("Z",tableX+124,y); doc.text("ExpressID",tableX+142,y); doc.text("G-код",tableX+172,y);
     y+=6;
-    passport.operations.forEach((op,i)=>{
+    operationLinks.forEach((link)=>{
       if(y>275){ doc.addPage("a3","landscape"); y=18; }
-      doc.text(String(i+1),14,y);
-      doc.text(String(op.operationId||"").slice(0,24),26,y);
-      doc.text(String(op.toolName||"—").slice(0,22),85,y);
-      doc.text(String(op.rpm??"—"),145,y);
-      doc.text(String(op.feed??"—"),175,y);
-      doc.text(String(op.plunge??"—"),205,y);
-      doc.text(String(op.depth??0),240,y);
-      doc.text(String(op.expressId??"—"),275,y);
-      doc.text(String(op.traceId||"—"),315,y);
+      const op=passport.operations.find(x=>x.operationId===link.operationId)||{};
+      doc.text(String(link.mapNumber),tableX,y);
+      doc.text(String(link.operationId||"").slice(0,20),tableX+10,y);
+      doc.text(String(link.toolName||"—").slice(0,15),tableX+58,y);
+      doc.text(String(op.rpm??"—"),tableX+92,y);
+      doc.text(String(op.feed??"—"),tableX+108,y);
+      doc.text(String(op.depth??0),tableX+124,y);
+      doc.text(String(link.expressId??"—").slice(0,12),tableX+142,y);
+      doc.text(link.lineStart!=null ? (link.lineStart+"-"+link.lineEnd) : "—",tableX+172,y);
       y+=5;
     });
     doc.setFontSize(9);
