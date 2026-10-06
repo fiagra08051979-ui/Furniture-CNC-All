@@ -3169,12 +3169,11 @@ function offsetContourForToolRadius(contour, radius) {
 }
 
 function classifyContourSide(contour, path) {
-  if(!Array.isArray(contour)||contour.length<3||!Array.isArray(path)||path.length<2) return "UNKNOWN";
-  const area=polygonArea2D(contour.map(p=>({x:Number(p.x)||0,y:Number(p.y)||0})));
-  const sign=area>=0 ? 1 : -1;
-  const a=path[0],b=path[1];
-  const cross=(b.x-a.x)*(a.y-((a.y+b.y)/2))-(b.y-a.y)*(a.x-((a.x+b.x)/2));
-  return sign>=0 ? (cross>=0 ? "OUTSIDE" : "INSIDE") : (cross>=0 ? "INSIDE" : "OUTSIDE");
+  if(!Array.isArray(contour)||contour.length<3) return "UNKNOWN";
+  if(path?.compensationSide==="INSIDE" || path?.compensationSide==="OUTSIDE") return path.compensationSide;
+  // Один замкнутый IFC-контур без вложенного контура считаем наружным.
+  // Для внутренних карманов сторона должна быть задана технологической операцией.
+  return "OUTSIDE";
 }
 
 function buildCompensatedContourToolpath(plan, part) {
