@@ -126,6 +126,35 @@ function evaluateReleaseGateState({ qc, partsCount, partStates, cuttingGroups, s
 
   if (!issues.length) {
     issues.push(...validateSheetLayout(sheetLayout));
+
+    // Проверяем, что раскладка содержит ровно тот состав деталей,
+    // который был сформирован из согласованной деталировки.
+    const expected = new Map();
+    groups.forEach(group => {
+      (group.details || []).forEach(detail => {
+        const key = group.groupNumber + "::" + detail.number;
+        expected.set(key, (expected.get(key) || 0) + Math.max(1, Number(detail.quantity || 1)));
+      });
+    });
+
+    const actual = new Map();
+    (sheetLayout?.sheets || []).forEach(sheet => {
+      (sheet.placements || []).forEach(placement => {
+        const key = placement.groupNumber + "::" + placement.partNumber;
+        actual.set(key, (actual.get(key) || 0) + 1);
+      });
+    });
+
+    expected.forEach((count, key) => {
+      if ((actual.get(key) || 0) !== count) {
+        issues.push("Раскладка не соответствует количеству детали " + key + ".");
+      }
+    });
+    actual.forEach((count, key) => {
+      if (!expected.has(key)) {
+        issues.push("В раскладке присутствует лишняя деталь " + key + ".");
+      }
+    });
   }
 
   return {
