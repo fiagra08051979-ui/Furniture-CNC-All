@@ -823,6 +823,8 @@ function readParams() {
     secondaryFastener: $("secondaryFastener").value,
     dowelDiameter: Number($("dowelDiameter").value),
     eccentricDiameter: Number($("eccentricDiameter").value),
+    shelfSupportType: $("shelfSupportType").value,
+    shelfFrontOffset: Number($("shelfFrontOffset").value),
     lightingEnabled: $("lightingEnabled").value,
     lightingMount: $("lightingMount").value,
     shelfLighting: $("shelfLighting").value,
