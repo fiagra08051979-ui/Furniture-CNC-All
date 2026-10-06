@@ -845,8 +845,28 @@ function buildCncToolPlan(part) {
   });
 }
 
+function readCncMachineSetup() {
+  return {
+    units: $("cncUnits")?.value || "mm",
+    origin: $("cncOrigin")?.value || "top-center",
+    safeZ: Number($("cncSafeZ")?.value || 5),
+    workZ: Number($("cncWorkZ")?.value || 0),
+    defaultFeed: Number($("cncFeed")?.value || 300),
+    spindle: Number($("cncSpindle")?.value || 18000)
+  };
+}
+
+function applyCncMachineSetup() {
+  const setup = readCncMachineSetup();
+  CNC_POSTPROCESSORS.generic.safeZ = setup.safeZ;
+  CNC_POSTPROCESSORS.generic.drillFeed = setup.defaultFeed;
+  validate("Настройки CNC применены: Safe Z " + setup.safeZ + " мм, подача " + setup.defaultFeed + " мм/мин.", "ok");
+  return setup;
+}
+
 function buildCncJobManifest() {
   const post = getPostprocessor();
+  const machineSetup = applyCncMachineSetup();
   const preflight = cncPreflight();
   const jobs = parts.map(part => buildCncJob(part));
   const tools = [];
@@ -863,6 +883,7 @@ function buildCncJobManifest() {
     units:"mm",
     zeroPoint:"G54 / XY — по центру детали, Z0 — верх детали",
     safeZ:post.safeZ,
+    machineSetup,
     parts:jobs,
     tools,
     preflight,
