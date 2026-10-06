@@ -318,7 +318,22 @@ function addPart(name, kind, width, height, depth, position, quantity = 1, edges
 
 function assignPartNumbers() {
   parts.forEach((part, index) => {
-    part.userData.partNumber = String(index + 1).padStart(3, "0");
+    const u = part.userData;
+    u.partNumber = String(index + 1).padStart(3, "0");
+    u.detailing = {
+      number: u.partNumber,
+      name: u.name,
+      length: Math.round(u.width),
+      width: Math.round(u.height),
+      thickness: Math.round(u.depth),
+      quantity: u.quantity,
+      material: u.material,
+      edges: [...u.edges],
+      processing: [...(u.processing || [])],
+      holes: [...(u.drilling || []), ...(u.shelfSupportDrilling || [])],
+      milling: (u.processing || []).filter(op => /фрез|паз|выбор/i.test(op.operation || "")),
+      notes: []
+    };
   });
 }
 
@@ -524,6 +539,11 @@ function exportExcel() {
     "Тип": part.userData.kind, "Количество": part.userData.quantity,
     "Длина": Math.round(part.userData.width), "Ширина": Math.round(part.userData.height),
     "Глубина": Math.round(part.userData.depth), "Материал": part.userData.material,
+    "Деталировка L×W×T": part.userData.detailing ? part.userData.detailing.length + " × " + part.userData.detailing.width + " × " + part.userData.detailing.thickness : "",
+    "Обработка": part.userData.detailing?.processing?.map(h => h.operation + " Ø" + h.diameter + "×" + h.depth).join(" | ") || "",
+    "Отверстия": part.userData.detailing?.holes?.map(h => h.operation + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
+    "Фрезеровка": part.userData.detailing?.milling?.map(h => h.operation).join(" | ") || "",
+    "Примечания деталировки": part.userData.detailing?.notes?.join(" | ") || "",
     "Кромка 1": part.userData.edges[0], "Кромка 2": part.userData.edges[1],
     "Кромка 3": part.userData.edges[2], "Кромка 4": part.userData.edges[3],
     "Тип фасада": part.userData.frontTechnology?.type || "",
@@ -536,7 +556,7 @@ function exportExcel() {
     "Крепёж корпуса": part.userData.bodyFasteners?.map(h => h.type + " Ø" + h.diameter + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
     "Полкодержатели": part.userData.shelfSupportDrilling?.map(h => h.type + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
     "Дюбели/эксцентрики": part.userData.secondaryFasteners?.map(h => h.type + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
-    "Обработка": part.userData.processing?.map(h => h.operation + " " + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
+    "Обработка": part.userData.detailing?.processing?.map(h => h.operation + " " + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
     "Примечания": constructionChecksDetailed().filter(x => x.includes(part.userData.name)).join(" | ")
   }));
   const ws = XLSX.utils.json_to_sheet(rows); const wb = XLSX.utils.book_new();
