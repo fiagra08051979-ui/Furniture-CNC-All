@@ -177,6 +177,11 @@ function evaluateReleaseGateState({ qc, partsCount, partStates, cuttingGroups, s
             placement.material !== expectedDetail.material) {
           issues.push("Раскладка содержит материал, не соответствующий деталировке " + key + ".");
         }
+        const expectedEdges = Array.isArray(expectedDetail.edges) ? expectedDetail.edges : [];
+        const actualEdges = Array.isArray(placement.edges) ? placement.edges : [];
+        if (JSON.stringify(actualEdges) !== JSON.stringify(expectedEdges)) {
+          issues.push("Раскладка содержит кромку, не соответствующую деталировке " + key + ".");
+        }
       });
     });
 
