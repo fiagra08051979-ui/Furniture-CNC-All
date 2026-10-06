@@ -858,9 +858,9 @@ async function importIfcIntoFurnitureCore(file) {
     assignPartNumbers();
     const ifcTechnologyOps = buildIfcTechnologyOperations();
     const ifcHardwareSchedule = buildIfcHardwareSchedule();
+    const cncReadiness = updateIfcCncReadiness();
     const ifcDrillingPlan = buildIfcDrillingPlan();
     ifcImportedParts.forEach(part => { part.userData.processing = buildDetailedProcessing(part); });
-    const cncReadiness = updateIfcCncReadiness();
     renderPartsTable();
     fitView();
 
