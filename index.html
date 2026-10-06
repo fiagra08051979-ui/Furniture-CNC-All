@@ -13,7 +13,7 @@
   <header class="topbar">
     <div class="brand"><div class="logo">F</div><div><strong>Furniture AI Designer</strong><small>Проектирование корпусной мебели</small></div></div>
     <div class="toolbar">
-      <button id="newProject">Новый проект</button><button class="exportSheetLayout">Сформировать карту раскроя PDF</button><button class="showCuttingMap">Показать карту раскроя</button>
+      <button id="newProject">Новый проект</button>
       <button id="saveProject">Сохранить JSON</button>
       <label class="file-button">Загрузить JSON<input id="loadProject" type="file" accept=".json"></label>
     </div>
@@ -52,10 +52,15 @@
       <section>
         <h2>Материал</h2>
         <select id="material">
-          <option value="ldsp18">ЛДСП 18 мм</option>
           <option value="ldsp16">ЛДСП 16 мм</option>
+          <option value="ldsp18">ЛДСП 18 мм</option>
+          <option value="ldsp22">ЛДСП 22 мм</option>
+          <option value="ldsp35">ЛДСП 35 мм</option>
+          <option value="mdf16">МДФ 16 мм</option>
           <option value="mdf18">МДФ 18 мм</option>
+          <option value="ply15">Фанера 15 мм</option>
           <option value="ply18">Фанера 18 мм</option>
+          <option value="ply22">Фанера 22 мм</option>
         </select>
         <h2>Технология фасадов</h2>
         <label>Тип фасада<select id="frontType"><option value="накладной">Накладной</option><option value="вкладной">Вкладной</option></select></label>
@@ -64,7 +69,7 @@
         <label>Угол открывания<select id="openingAngle"><option value="110">110°</option><option value="95">95°</option><option value="180">180°</option></select></label>
         <h2>Кромка по сторонам детали</h2>
         <div class="edge-grid">
-          <label>Сторона 1<select id="edge1"><option>ABS 2 мм</option><option>ABS 1 мм</option><option>PVC 2 мм</option><option>PP 1 мм</option><option>Без кромки</option></select></label>
+          <label>Сторона 1<select id="edge1"><option>ABS 0.8 мм</option><option>ABS 1 мм</option><option>ABS 2 мм</option><option>PVC 1 мм</option><option>PVC 2 мм</option><option>PP 1 мм</option><option>PP 2 мм</option><option>Без кромки</option></select></label>
           <label>Сторона 2<select id="edge2"><option>ABS 2 мм</option><option>ABS 1 мм</option><option>PVC 2 мм</option><option>PP 1 мм</option><option>Без кромки</option></select></label>
           <label>Сторона 3<select id="edge3"><option>ABS 2 мм</option><option>ABS 1 мм</option><option>PVC 2 мм</option><option>PP 1 мм</option><option>Без кромки</option></select></label>
           <label>Сторона 4<select id="edge4"><option>ABS 2 мм</option><option>ABS 1 мм</option><option>PVC 2 мм</option><option>PP 1 мм</option><option>Без кромки</option></select></label>
@@ -77,8 +82,8 @@
         <label>Ширина листа, мм<input id="sheetWidth" type="number" min="500" value="2070"></label>
         <label>Пропил, мм<input id="cutKerf" type="number" min="0" step="0.5" value="4"></label>
         <label>Отступ от края листа, мм<input id="sheetMargin" type="number" min="0" step="1" value="10"></label>
-        <div class="row"><button class="exportSheetLayout">Сформировать PDF</button><button class="showCuttingMap">Показать карту</button></div>
-        <div class="status">PDF содержит листы раскроя, детали, кромку, присадку и сверловку. Координаты отверстий в документ не выводятся.</div>
+        <div class="row"><button class="exportSheetLayout">Сформировать карту раскроя PDF</button><button class="showCuttingMap">Показать карту</button></div>
+        <div class="status">Финальный производственный документ для изготовителя. ЧПУ-программа и управление станком выполняются вне Furniture AI Designer.</div>
         <div id="cuttingMap" class="cutting-map" hidden></div>
         <h2>Крепление корпуса</h2>
         <label>Основной способ<select id="fastenerType"><option value="комбинированный">Конфирматы + стяжки</option><option value="конфирматы">Только конфирматы</option><option value="стяжки">Только стяжки</option></select></label>
