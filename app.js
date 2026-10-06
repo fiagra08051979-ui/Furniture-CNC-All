@@ -801,6 +801,87 @@ function frontView() {
 
 function dxfPair(code, value) { return code + "\n" + value + "\n"; }
 
+function buildCncOperations(part) {
+  const u = part.userData;
+  const ops = [];
+  const add = (type, operation, data={}) => ops.push({
+    sequence: ops.length + 1,
+    type, operation,
+    partNumber: u.partNumber,
+    ...data
+  });
+  (u.drilling || []).forEach(h => add("DRILL","Сверление",{
+    x:Number(h.x)||0, y:Number(h.y)||0, z:Number(h.z)||0,
+    diameter:Number(h.diameter)||0, depth:Number(h.depth)||0,
+    linkedHardware:h.linkedHardware || h.type || ""
+  }));
+  (u.bodyFasteners || []).forEach(h => add("DRILL","Крепёж корпуса",{
+    x:Number(h.x)||0,y:Number(h.y)||0,z:Number(h.z)||0,
+    diameter:Number(h.diameter)||0,depth:Number(h.depth)||0,linkedHardware:h.type
+  }));
+  (u.shelfSupportDrilling || []).forEach(h => add("DRILL","Полкодержатель",{
+    x:Number(h.x)||0,y:Number(h.y)||0,z:Number(h.z)||0,
+    diameter:Number(h.diameter)||0,depth:Number(h.depth)||0,linkedHardware:h.type
+  }));
+  (u.secondaryFasteners || []).forEach(h => add("DRILL","Соединитель",{
+    x:Number(h.x)||0,y:Number(h.y)||0,z:Number(h.z)||0,
+    diameter:Number(h.diameter)||0,depth:Number(h.depth)||0,linkedHardware:h.type
+  }));
+  (u.processing || []).filter(op => /паз|фрез|выбор|карман/i.test(op.operation || "")).forEach(op =>
+    add("MILL","Фрезеровка",{
+      x:Number(op.x)||0,y:Number(op.y)||0,z:Number(op.z)||0,
+      diameter:Number(op.diameter)||0,depth:Number(op.depth)||0,
+      source:op.operation
+    })
+  );
+  return ops;
+}
+
+function buildCncProgram(part) {
+  const u = part.userData;
+  const ops = buildCncOperations(part);
+  const lines = [
+    "; Furniture AI Designer CNC",
+    "; Detail: " + u.partNumber + " " + u.name,
+    "; Size: " + Math.round(u.width) + " x " + Math.round(u.height) + " x " + Math.round(u.depth),
+    "G21",
+    "G90",
+    "G17",
+    "G54"
+  ];
+  ops.forEach(op => {
+    if (op.type === "DRILL") {
+      lines.push("; " + op.operation + " " + op.diameter + " x " + op.depth);
+      lines.push("G0 X" + op.x.toFixed(3) + " Y" + op.y.toFixed(3));
+      lines.push("G0 Z5.000");
+      lines.push("G1 Z-" + op.depth.toFixed(3) + " F300");
+      lines.push("G0 Z5.000");
+    } else if (op.type === "MILL") {
+      lines.push("; " + op.operation);
+      lines.push("G0 X" + op.x.toFixed(3) + " Y" + op.y.toFixed(3));
+      lines.push("G0 Z5.000");
+      lines.push("G1 Z-" + op.depth.toFixed(3) + " F300");
+      lines.push("G0 Z5.000");
+    }
+  });
+  lines.push("M5","M30");
+  return lines.join("\n");
+}
+
+function exportCncProgram(part) {
+  const blob = new Blob([buildCncProgram(part)], {type:"text/plain"});
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "detail-" + part.userData.partNumber + ".nc";
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function exportAllCnc() {
+  parts.forEach(part => exportCncProgram(part));
+  validate("CNC-программы подготовлены для " + parts.length + " деталей.", "ok");
+}
+
 function buildPartDxf(part) {
   const u = part.userData;
   const w = Number(u.width), h = Number(u.height);
@@ -913,6 +994,7 @@ $("exportExcel").addEventListener("click", exportExcel);
 if ($("exportCutting")) $("exportCutting").addEventListener("click", exportCuttingStructure);
 if ($("exportSheetLayout")) $("exportSheetLayout").addEventListener("click", exportSheetLayout);
 if ($("exportDxf")) $("exportDxf").addEventListener("click", exportAllDxf);
+if ($("exportCnc")) $("exportCnc").addEventListener("click", exportAllCnc);
 if ($("showCuttingMap")) $("showCuttingMap").addEventListener("click", showCuttingMap);
 $("exportPdf").addEventListener("click", exportPdf);
 
