@@ -58,6 +58,7 @@ if (!ifcObjects.includes("Распознано:")) throw new Error("IFC runtime 
 const ifcValidation = await page.locator("#validation").textContent();
 if (!ifcValidation.includes("IFC импортирован")) throw new Error("IFC runtime не завершил импорт: " + ifcValidation);
 
+await page.locator("#frontGapBetween").fill("2");
 await page.locator("#width").fill("2400");
 await page.locator("#height").fill("2200");
 await page.locator("#depth").fill("600");
@@ -106,7 +107,7 @@ if (!cuttingStatus.includes("Карта раскроя показана из п�
 
 const gateInvalidationRevision = await page.evaluate(() => window._releaseGate?.modelRevision ?? null);
 if (!Number.isFinite(Number(gateInvalidationRevision))) throw new Error("Release Gate не сохранил ревизию проверенной модели.");
-await page.locator("#width").fill("0");
+await page.locator("#frontGapBetween").fill("0");
 await page.locator("#build").click();
 await page.waitForTimeout(1000);
 const blockedGate = await page.evaluate(() => window._releaseGate);
