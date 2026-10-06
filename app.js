@@ -1403,6 +1403,7 @@ if ($("exportSheetLayout")) $("exportSheetLayout").addEventListener("click", exp
 if ($("exportDxf")) $("exportDxf").addEventListener("click", exportAllDxf);
 if ($("exportCnc")) $("exportCnc").addEventListener("click", exportAllCnc);
 if ($("exportCncTech")) $("exportCncTech").addEventListener("click", exportCncTechCards);
+if ($("exportCncManifest")) $("exportCncManifest").addEventListener("click", exportCncJobManifest);
 if ($("exportCnc")) $("exportCnc").addEventListener("click", renderCncPreflight);
 function renderCncOperations() {
   const target=$("cncOperationsTable");
