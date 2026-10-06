@@ -1986,6 +1986,8 @@ function buildCncJobManifest() {
     operations:plan.operations,
     operationJournal:plan.operationJournal,
     toolTechnology:plan.toolTechnology,
+    technologyGroups:plan.technologyGroups || [],
+    technologyGroupValidation:plan.technologyGroupValidation || [],
     manufacturingLifecycle:plan.lifecycle,
     manufacturingIntegrity:plan.manufacturingIntegrity,
     preflight:plan.preflight,
@@ -2023,6 +2025,11 @@ function buildCncJobManifest() {
       partNumber:plan.partNumber,
       status:(plan.typedToolpathValidation||[]).some(i=>i.level==="error") ? "BLOCKED" : "READY",
       issues:plan.typedToolpathValidation || []
+    })),
+    generatedProgramTraceability: plans.map(plan => ({
+      partNumber:plan.partNumber,
+      status:"Готово после постпроверки",
+      note:"Полная трассировка формируется при генерации управляющей программы."
     })),
     compensatedToolpaths: plans.map(plan => ({
       partNumber:plan.partNumber,
