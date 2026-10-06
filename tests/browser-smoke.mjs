@@ -85,6 +85,16 @@ if (!drillingSummary.includes("полкодержатели")) throw new Error("
 const validationAfterHardware = await page.locator("#validation").textContent();
 if (validationAfterHardware.includes("PAGEERROR")) throw new Error("Ошибка после пересчёта Hardware/Drilling: " + validationAfterHardware);
 
+const downloadPromise = page.waitForEvent("download");
+await page.locator("#saveProject").click();
+const projectDownload = await downloadPromise;
+const projectPath = await projectDownload.path();
+if (!projectPath) throw new Error("JSON-проект не был сохранён.");
+await page.locator("#loadProject").setInputFiles(projectPath);
+await page.waitForTimeout(1000);
+const restoredCount = Number(await page.locator("#partsCount").textContent());
+if (!(restoredCount > 0)) throw new Error("После загрузки JSON модель не восстановилась.");
+
 await page.locator("#sheetLength").fill("3000");
 await page.locator("#sheetWidth").fill("3000");
 await page.locator(".showCuttingMap").first().click();
