@@ -2019,6 +2019,11 @@ function buildCncJobManifest() {
       partNumber:plan.partNumber,
       groups:plan.toolTechnology || []
     })),
+    compensatedToolpaths: plans.map(plan => ({
+      partNumber:plan.partNumber,
+      count:(plan.compensatedToolpaths||[]).length,
+      paths:plan.compensatedToolpaths || []
+    })),
     toolpathClearance: plans.map(plan => ({
       partNumber:plan.partNumber,
       status:(plan.toolpathClearance||[]).some(i=>i.level==="error") ? "BLOCKED" : "READY",
@@ -3163,6 +3168,34 @@ function offsetContourForToolRadius(contour, radius) {
   });
 }
 
+function classifyContourSide(contour, path) {
+  if(!Array.isArray(contour)||contour.length<3||!Array.isArray(path)||path.length<2) return "UNKNOWN";
+  const area=polygonArea2D(contour.map(p=>({x:Number(p.x)||0,y:Number(p.y)||0})));
+  const sign=area>=0 ? 1 : -1;
+  const a=path[0],b=path[1];
+  const cross=(b.x-a.x)*(a.y-((a.y+b.y)/2))-(b.y-a.y)*(a.x-((a.x+b.x)/2));
+  return sign>=0 ? (cross>=0 ? "OUTSIDE" : "INSIDE") : (cross>=0 ? "INSIDE" : "OUTSIDE");
+}
+
+function buildCompensatedContourToolpath(plan, part) {
+  const contour=part.userData?.ifcContour?.path;
+  if(!Array.isArray(contour)||contour.length<3) return [];
+  const points=contour.map(p=>({x:Number(p.x)||0,y:Number(p.y)||0}));
+  return (plan.operations||[]).filter(op=>op.type==="CONTOUR").map(op=>{
+    const radius=Number(op.toolDiameter||op.diameter||6)/2;
+    const side=op.compensationSide || classifyContourSide(points, points);
+    const center=points.reduce((a,p)=>({x:a.x+p.x,y:a.y+p.y}),{x:0,y:0});
+    center.x/=points.length; center.y/=points.length;
+    const compensated=points.map(p=>{
+      const dx=p.x-center.x,dy=p.y-center.y,len=Math.hypot(dx,dy)||1;
+      const direction=side==="INSIDE" ? 1 : -1;
+      return {x:p.x+direction*dx/len*radius,y:p.y+direction*dy/len*radius,z:0};
+    });
+    if(compensated.length) compensated.push({...compensated[0]});
+    return {operationId:op.id,side,radius,points:compensated,source:"IFC_COMPENSATED"};
+  });
+}
+
 function validateToolpathClearance(plan, part) {
   const issues=[];
   const contour=part.userData?.ifcContour?.path;
@@ -3399,6 +3432,7 @@ function getCompiledManufacturingPlan(part) {
   plan.segmentToolpathValidation=validateToolpathSegmentsAgainstGeometry(plan,part);
   plan.toolRadiusCompensation=validateToolRadiusCompensation(plan,part);
   plan.toolpathClearance=validateToolpathClearance(plan,part);
+  plan.compensatedToolpaths=buildCompensatedContourToolpath(plan,part);
   plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance];
   plan.machineReady=plan.validation.every(x=>x.level!=="error") &&
     plan.status==="READY" &&
