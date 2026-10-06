@@ -860,7 +860,10 @@ async function importIfcIntoFurnitureCore(file) {
     const ifcHardwareSchedule = buildIfcHardwareSchedule();
     const cncReadiness = updateIfcCncReadiness();
     const ifcDrillingPlan = buildIfcDrillingPlan();
-    ifcImportedParts.forEach(part => { part.userData.processing = buildDetailedProcessing(part); });
+    ifcImportedParts.forEach(part => {
+      part.userData.processing = buildDetailedProcessing(part);
+      refreshPartTechnologyRecord(part);
+    });
     renderPartsTable();
     fitView();
 
@@ -2372,13 +2375,76 @@ function getPostprocessor() {
   return CNC_POSTPROCESSORS[$("cncPostprocessor")?.value || "generic"] || CNC_POSTPROCESSORS.generic;
 }
 
+function buildIfcProductionPacket(part) {
+  const u=part.userData;
+  if (u.source !== "IFC") return null;
+  const tech=u.technology || {};
+  return {
+    source:"IFC",
+    expressId:u.expressId,
+    role:u.recognizedKind || u.kind,
+    recognition:{confidence:u.recognitionConfidence,reason:u.recognitionReason},
+    geometryLocked:Boolean(u.geometryLocked),
+    contour:{
+      ready:Boolean(u.ifcContour?.ready),
+      axis:u.ifcContour?.axis || "",
+      path:u.ifcContour?.path || []
+    },
+    basis:tech.drillingBasis || null,
+    joints:(tech.joints || []).map(j=>({
+      id:j.id,type:j.type,status:j.status,partA:j.partA,partB:j.partB,
+      contactAxis:j.contactAxis,contactCenter:j.contactCenter,
+      hardwareRecommendation:j.hardwareRecommendation
+    })),
+    drilling:(tech.drilling || []).map(d=>({
+      id:d.id,status:d.status,diameter:d.diameter,depth:d.depth,
+      x:d.x,y:d.y,z:d.z,worldContact:d.worldContact,
+      localBasis:d.localBasis,checks:d.checks,linkedPart:d.linkedPart
+    })),
+    operations:(tech.operations || []).map(o=>({...o})),
+    cncReady:Boolean(u.geometryCncReady && tech.drillingStatus !== "review")
+  };
+}
+
+function refreshPartTechnologyRecord(part) {
+  const u=part.userData;
+  u.detailing = {
+    ...(u.detailing || {}),
+    number:u.partNumber,
+    name:u.name,
+    length:Math.round(u.width),
+    width:Math.round(u.height),
+    thickness:Math.round(u.depth),
+    quantity:u.quantity,
+    material:u.material,
+    edges:[...(u.edges || [])],
+    processing:[...(u.processing || [])],
+    holes:[
+      ...(u.drilling || []),
+      ...(u.source === "IFC" ? (u.technology?.drilling || []).filter(h=>h.status==="ready") : []),
+      ...(u.shelfSupportDrilling || []),
+      ...(u.bodyFasteners || []),
+      ...(u.secondaryFasteners || [])
+    ],
+    milling:(u.processing || []).filter(op=>/фрез|паз|выбор/i.test(op.operation || "")),
+    notes:[]
+  };
+  u.productionPacket=buildIfcProductionPacket(part);
+  return u.detailing;
+}
+
 function buildCncJobProgram(part) {
   const job = buildCncJob(part);
+  const packet = buildIfcProductionPacket(part);
   const lines = [
     "; Furniture AI Designer CNC JOB",
     "; DETAIL " + job.partNumber,
     "; MATERIAL " + job.material,
     "; THICKNESS " + job.thickness,
+    packet ? "; IFC EXPRESS_ID " + packet.expressId : "",
+    packet ? "; IFC ROLE " + packet.role : "",
+    packet ? "; IFC CONTOUR " + (packet.contour.ready ? "READY" : "BLOCKED") : "",
+    packet ? "; IFC DRILLING " + (packet.drilling.length ? packet.drilling.map(d => d.id + ":" + d.status).join(",") : "NONE") : "",
     "G21","G90","G17","G54"
   ];
   let currentTool = null;
