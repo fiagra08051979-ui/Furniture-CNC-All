@@ -2019,6 +2019,11 @@ function buildCncJobManifest() {
       partNumber:plan.partNumber,
       groups:plan.toolTechnology || []
     })),
+    motionSafety: plans.map(plan => ({
+      partNumber:plan.partNumber,
+      status:(plan.motionSafety||[]).some(i=>i.level==="error") ? "BLOCKED" : "READY",
+      issues:plan.motionSafety || []
+    })),
     machineCompatibility: plans.map(plan => ({
       partNumber:plan.partNumber,
       postprocessor:plan.machineCompatibility?.postprocessor,
