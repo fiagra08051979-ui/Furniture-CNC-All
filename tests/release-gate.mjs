@@ -48,6 +48,7 @@ const required = [
   ["низкая уверенность IFC требует ручной проверки", app.includes('u.source === "IFC" && u.recognitionConfidence === "low"') && app.includes("требуется ручная проверка")],
   ["кандидатные IFC-соединения требуют подтверждения", app.includes('u.source === "IFC" && (u.technology?.joints || []).some(j => j.status === "candidate")') && app.includes("неподтверждённое IFC-соединение")],
   ["IFC-фурнитура остаётся кандидатной", app.includes('add("Петля с доводчиком"') && app.includes('"candidate"') && app.includes('add("Крепёж корпуса"') && app.includes('source:"IFC topology"')],
+  ["IFC-кандидат явно запрещает автогенерацию отверстий", app.includes("Отверстия не генерируются автоматически до подтверждения базы и направления сверления") && app.includes('status:"candidate"')],
   ["IFC-кандидат не переводится автоматически в ready", app.includes('status:"candidate"') && app.includes('status === "candidate"') && !app.includes('status = "ready"')],
   ["IFC-технология получает REVIEW при неподтверждённом соединении", app.includes('const hasUnconfirmedJoint = u.technology.joints.some(j=>j.status !== "ready");') && app.includes('if (hasUnconfirmedJoint) u.technology.status = "review";')],
   ["сводка IFC-технологии пересчитывается после соединений", app.includes("technology.ready = ifcImportedParts.filter(part => part.userData.technology?.status === \"ready\").length;") && app.includes("technology.review = ifcImportedParts.filter(part => part.userData.technology?.status !== \"ready\").length;")],
