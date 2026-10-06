@@ -243,6 +243,59 @@ function recognizeIfcPart({ name, typeName, size, center, overallBox }) {
   return { kind:"Нестандартная деталь", label:"Нестандартная деталь", confidence:"low", reason:"неоднозначная геометрия" };
 }
 
+function buildIfcTechnologyState() {
+  if (!ifcImportedParts.length) return { ready:0, review:0 };
+
+  const readyRoles = new Set([
+    "Боковина",
+    "Крышка",
+    "Дно",
+    "Полка",
+    "Горизонтальная перегородка",
+    "Вертикальная перегородка",
+    "Задняя стенка",
+    "Фасад",
+    "Ящик",
+    "Опора"
+  ]);
+
+  let ready = 0;
+  let review = 0;
+
+  ifcImportedParts.forEach(part => {
+    const u = part.userData;
+    const box = new THREE.Box3().setFromObject(part);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+
+    const thickness = Math.min(size.x, size.y, size.z);
+    const role = u.recognizedKind || u.kind;
+
+    u.geometryLocked = true;
+    u.sourceGeometry = "IFC";
+    u.technology = {
+      role,
+      status: readyRoles.has(role) && u.recognitionConfidence !== "low" ? "ready" : "review",
+      confidence: u.recognitionConfidence,
+      geometry: {
+        min: { x:box.min.x, y:box.min.y, z:box.min.z },
+        max: { x:box.max.x, y:box.max.y, z:box.max.z },
+        size: { x:size.x, y:size.y, z:size.z },
+        center: { x:center.x, y:center.y, z:center.z }
+      },
+      thicknessEstimate: Number(thickness.toFixed(2)),
+      thicknessSource: "минимальный габарит IFC",
+      editable: false,
+      note: "Технологические операции рассчитываются поверх исходной IFC-геометрии; вершины IFC не изменяются."
+    };
+
+    if (u.technology.status === "ready") ready++;
+    else review++;
+  });
+
+  return { ready, review };
+}
+
 function syncIfcParametersFromRecognition() {
   if (!ifcImportedParts.length) return;
 
@@ -464,6 +517,7 @@ async function importIfcIntoFurnitureCore(file) {
     ifcMode = true;
     syncIfcParametersFromRecognition();
     applyIfcMaterial();
+    const technology = buildIfcTechnologyState();
     assignPartNumbers();
     renderPartsTable();
     fitView();
@@ -480,14 +534,17 @@ async function importIfcIntoFurnitureCore(file) {
 
     if (objectsStatus) objectsStatus.textContent =
       "Распознано: " + recognitionSummary +
-      (recognition.lowConfidence ? " · требуют проверки: " + recognition.lowConfidence : " · неоднозначных деталей нет");
+      (recognition.lowConfidence ? " · требуют проверки: " + recognition.lowConfidence : " · неоднозначных деталей нет") +
+      " · технология: готово " + technology.ready + ", на проверке " + technology.review;
 
     if ($("projectName")) $("projectName").textContent = file.name;
     if ($("status")) $("status").textContent = "IFC импортирован · геометрия является источником истины";
 
     validate(
-      "IFC импортирован. Следующий расчёт выполняется поверх исходной геометрии, без её изменения.",
-      "ok"
+      technology.review
+        ? "IFC импортирован. Распознавание завершено. Технология готова для " + technology.ready + " деталей; " + technology.review + " требуют проверки роли."
+        : "IFC импортирован. Распознавание и технологическая привязка завершены для всех деталей. Геометрия не изменена.",
+      technology.review ? "error" : "ok"
     );
   } catch (error) {
     console.error(error);
