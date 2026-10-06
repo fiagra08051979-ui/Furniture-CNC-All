@@ -3774,6 +3774,39 @@ function optimizeCompiledToolpathSequence(program,plan){
   }
   return result;
 }
+function validateCompiledToolpathTravelSafety(plan){
+  const issues=[];
+  const seq=plan.compiledToolpathProgram||[];
+  const safeZ=Number(plan.machineSetup?.safeZ);
+  if(!(safeZ>0)) return [{level:"error",code:"TRAVEL_SAFE_Z_INVALID",message:"Безопасная высота Z должна быть положительной."}];
+  let previous=null;
+  seq.forEach((op,index)=>{
+    const pts=op.points||[];
+    if(!pts.length) return;
+    const first=pts[0], last=pts[pts.length-1];
+    if(Number(first.z)<safeZ-0.001)
+      issues.push({level:"error",code:"TRAVEL_APPROACH_NOT_SAFE",message:"Подход к операции начинается ниже Безопасная высота Z.",operation:op.operationId,sequence:index+1});
+    if(Number(last.z)<safeZ-0.001)
+      issues.push({level:"error",code:"TRAVEL_DEPARTURE_NOT_SAFE",message:"Отход от операции не возвращается на Безопасная высота Z.",operation:op.operationId,sequence:index+1});
+    if(previous){
+      const changedTool=previous.toolId!==op.toolId;
+      const a=previous.points?.[previous.points.length-1];
+      const b=first;
+      if(a && b && changedTool && (Number(a.z)<safeZ-0.001 || Number(b.z)<safeZ-0.001))
+        issues.push({level:"error",code:"TRAVEL_TOOLCHANGE_UNSAFE","message":"Между операциями со сменой инструмента отсутствует безопасный переход по Z.",operation:op.operationId,sequence:index+1});
+      if(a && b && !changedTool && (Number(a.z)<safeZ-0.001 || Number(b.z)<safeZ-0.001))
+        issues.push({level:"error",code:"TRAVEL_UNSAFE_LINK","message":"Холостой переход между операциями выполняется ниже Безопасная высота Z.",operation:op.operationId,sequence:index+1});
+    }
+    for(let i=0;i<pts.length;i++){
+      const p=pts[i];
+      if(Number(p.z)>safeZ+0.001)
+        issues.push({level:"error",code:"TRAVEL_ABOVE_SAFE_Z","message:"Точка траектории превышает заданную Безопасная высота Z.",operation:op.operationId,point:i+1});
+    }
+    previous=op;
+  });
+  return issues;
+}
+
 function validateCompiledToolpathSequence(plan){
   const issues=[];
   const seq=plan.compiledToolpathProgram||[];
@@ -4166,6 +4199,7 @@ function getCompiledManufacturingPlan(part) {
   plan.toolpaths=buildCncToolpaths(plan);
   plan.compiledToolpathProgram=buildCompiledToolpathProgram(plan,part);
   plan.compiledToolpathProgram=optimizeCompiledToolpathSequence(plan.compiledToolpathProgram,plan);\n  plan.toolpathSequenceValidation=validateCompiledToolpathSequence(plan);
+  plan.toolpathTravelSafety=validateCompiledToolpathTravelSafety(plan);
   plan.compiledToolpathTechnologyValidation=validateCompiledToolpathTechnology(plan);
   plan.toolpathValidation=validateCncToolpaths(plan);
   plan.toolpathGeometryEnvelope=buildToolpathGeometryEnvelope(plan,part);
@@ -4179,7 +4213,7 @@ function getCompiledManufacturingPlan(part) {
   plan.contourCompensationValidation=validateContourCompensationGeometry(plan,part);
   plan.contourWidthValidation=validateContourMinimumWidth(plan,part);
   plan.toolpathCollisionValidation=validateToolpathCollisions(plan,part);
-  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance,...plan.typedToolpathValidation,...plan.passPlanValidation,...plan.pocketGeometryValidation,...plan.contourCompensationValidation,...plan.contourWidthValidation,...plan.toolpathCollisionValidation,...plan.toolpathSequenceValidation,...plan.compiledToolpathTechnologyValidation,...plan.technologyGroupValidation];
+  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance,...plan.typedToolpathValidation,...plan.passPlanValidation,...plan.pocketGeometryValidation,...plan.contourCompensationValidation,...plan.contourWidthValidation,...plan.toolpathCollisionValidation,...plan.toolpathSequenceValidation,...plan.toolpathTravelSafety,...plan.compiledToolpathTechnologyValidation,...plan.technologyGroupValidation];
   plan.machineReady=plan.validation.every(x=>x.level!=="error") && plan.status==="READY" && plan.lifecycle.every(x=>x.valid) && plan.machineCompatibility.machineReady;
   plan.status=plan.machineReady ? "MACHINE_READY" : (plan.status==="BLOCKED" ? "BLOCKED" : "REVIEW");
   return plan;
