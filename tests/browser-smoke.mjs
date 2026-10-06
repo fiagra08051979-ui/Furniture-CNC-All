@@ -44,6 +44,14 @@ await page.locator("#aiImageAnalyze").click();
 await page.waitForSelector("#aiImageApply",{timeout:10000});
 await page.locator("#aiImageApply").click();
 await page.waitForTimeout(1000);
+await page.locator("#ifcFile").setInputFiles("tests/fixtures/tableX.ifc");
+await page.locator("#ifcImport").click();
+await page.waitForTimeout(3000);
+const ifcStatus = await page.locator("#ifcGeometry").textContent();
+if (!ifcStatus.includes("Реальная IFC-геометрия")) throw new Error("IFC runtime импорт не сформировал реальную геометрию: " + ifcStatus);
+const ifcObjects = await page.locator("#ifcProjectObjects").textContent();
+if (!ifcObjects.includes("Распознано:")) throw new Error("IFC runtime не завершил распознавание деталей.");
+
 const aiImageStatus = await page.locator("#validation").textContent();
 if (!aiImageStatus.includes("AI-распознавание изображения применено")) throw new Error("AI image не применил распознанную конструкцию.");
 await page.locator("#material").selectOption("mdf18");
