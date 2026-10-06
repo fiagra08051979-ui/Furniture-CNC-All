@@ -2019,6 +2019,11 @@ function buildCncJobManifest() {
       partNumber:plan.partNumber,
       groups:plan.toolTechnology || []
     })),
+    typedToolpathValidation: plans.map(plan => ({
+      partNumber:plan.partNumber,
+      status:(plan.typedToolpathValidation||[]).some(i=>i.level==="error") ? "BLOCKED" : "READY",
+      issues:plan.typedToolpathValidation || []
+    })),
     compensatedToolpaths: plans.map(plan => ({
       partNumber:plan.partNumber,
       count:(plan.compensatedToolpaths||[]).length,
@@ -3323,6 +3328,17 @@ function validateToolpathAgainstGeometry(plan, part) {
   return issues;
 }
 
+function validateTypedCompensatedToolpaths(plan) {
+  const issues=[];
+  (plan.compensatedToolpaths||[]).forEach(path=>{
+    if(path.type==="POCKET" && path.points.length<4)
+      issues.push({level:"error",code:"POCKET_PATH",message:"Pocket содержит недостаточно точек.",operation:path.operationId});
+    if((path.type==="CONTOUR" || path.type==="INNER_CONTOUR" || path.type==="OUTER_CONTOUR") && path.points.length<3)
+      issues.push({level:"error",code:"CONTOUR_PATH",message:"Контурная траектория содержит недостаточно точек.",operation:path.operationId});
+  });
+  return issues;
+}
+
 function validateCncToolpaths(plan) {
   const issues=[];
   const thickness=Number(plan.thickness)||0;
@@ -3468,8 +3484,9 @@ function getCompiledManufacturingPlan(part) {
   plan.segmentToolpathValidation=validateToolpathSegmentsAgainstGeometry(plan,part);
   plan.toolRadiusCompensation=validateToolRadiusCompensation(plan,part);
   plan.toolpathClearance=validateToolpathClearance(plan,part);
+  plan.typedToolpathValidation=validateTypedCompensatedToolpaths(plan);
   plan.compensatedToolpaths=buildTypedCompensatedToolpaths(plan,part);
-  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance];
+  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance,...plan.typedToolpathValidation];
   plan.machineReady=plan.validation.every(x=>x.level!=="error") &&
     plan.status==="READY" &&
     plan.lifecycle.every(x=>x.valid) &&
