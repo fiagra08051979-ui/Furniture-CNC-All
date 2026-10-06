@@ -76,7 +76,7 @@ function material() {
   });
 }
 
-function edgeLabel() { return $("edge").value; }
+function edgeLabels() { return [1, 2, 3, 4].map(i => $("edge" + i).value); }
 
 function addPart(name, kind, width, height, depth, position, quantity = 1, edges = null) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material());
@@ -84,7 +84,7 @@ function addPart(name, kind, width, height, depth, position, quantity = 1, edges
   mesh.userData = {
     name, kind, width, height, depth, quantity,
     material: $("material").value,
-    edges: edges || [edgeLabel(), edgeLabel(), edgeLabel(), edgeLabel()],
+    edges: edges || edgeLabels(),
     base: position.clone()
   };
   root.add(mesh);
@@ -295,7 +295,7 @@ $("resetExplode").addEventListener("click", () => setExplode(false));
 $("frontView").addEventListener("click", frontView);
 $("isoView").addEventListener("click", fitView);
 $("material").addEventListener("change", build);
-$("edge").addEventListener("change", build);
+[1, 2, 3, 4].forEach(i => $("edge" + i).addEventListener("change", build));
 $("exportExcel").addEventListener("click", exportExcel);
 $("exportPdf").addEventListener("click", exportPdf);
 
@@ -310,7 +310,7 @@ $("saveProject").addEventListener("click", () => {
   const ids = ["width", "height", "depth", "thickness", "sections", "shelves", "fixedPartitions", "doors", "frontGapTB", "frontGapBetween"];
   const parameters = Object.fromEntries(ids.map(id => [id, $(id).value]));
   parameters.material = $("material").value;
-  parameters.edge = $("edge").value;
+  parameters.edges = edgeLabels();
 
   const data = {
     version: projectVersion,
@@ -336,6 +336,13 @@ $("loadProject").addEventListener("change", (event) => {
       Object.entries(data.parameters || {}).forEach(([key, value]) => {
         if ($(key)) $(key).value = value;
       });
+      const savedEdges = data.parameters?.edges || [];
+      savedEdges.forEach((value, index) => {
+        if ($("edge" + (index + 1))) $("edge" + (index + 1)).value = value;
+      });
+      if (!savedEdges.length && data.parameters?.edge) {
+        [1, 2, 3, 4].forEach(i => $("edge" + i).value = data.parameters.edge);
+      }
       build();
     } catch {
       validate("Не удалось прочитать проект JSON.", "error");
