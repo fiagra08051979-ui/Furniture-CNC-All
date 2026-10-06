@@ -2013,7 +2013,13 @@ function buildCncJobManifest() {
     manufacturingPreflight: preflight.some(i => i.level === "error") ? "ERROR" : "OK",
     compiledPlanValidation: plans.flatMap(plan => (plan.validation || []).map(issue => ({...issue,partNumber:plan.partNumber}))),
     machineReady: plans.every(plan => plan.machineReady),
-    readinessStatus: plans.every(plan => plan.machineReady) ? "MACHINE_READY" : "BLOCKED"
+    readinessStatus: plans.every(plan => plan.machineReady) ? "MACHINE_READY" : "BLOCKED",
+    machineCompatibility: plans.map(plan => ({
+      partNumber:plan.partNumber,
+      postprocessor:plan.machineCompatibility?.postprocessor,
+      status:plan.machineCompatibility?.machineReady ? "READY" : "BLOCKED",
+      issues:plan.machineCompatibility?.issues || []
+    }))
   };
 }
 
