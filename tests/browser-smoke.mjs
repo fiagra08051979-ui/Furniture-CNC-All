@@ -94,6 +94,16 @@ if (!cuttingStatus.includes("Карта раскроя показана из п�
   throw new Error("Release Gate не пропустил проверенную карту раскроя. Статус: " + cuttingStatus);
 }
 
+const pdfPromise = page.waitForEvent("popup", {timeout:10000});
+await page.locator(".exportSheetLayout").first().click();
+const pdfPage = await pdfPromise;
+await pdfPage.waitForLoadState("domcontentloaded");
+const pdfHtml = await pdfPage.locator("body").innerHTML();
+if (!pdfHtml.includes("Карта раскроя") || !pdfHtml.includes("Детали")) {
+  throw new Error("PDF-карта раскроя не сформирована из проверенной раскладки Release Gate.");
+}
+await pdfPage.close();
+
 if (errors.length) throw new Error(errors.join("\n"));
 
 console.log("BROWSER SMOKE: PASS");
