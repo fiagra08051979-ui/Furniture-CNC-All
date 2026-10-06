@@ -2774,6 +2774,40 @@ function buildPostprocessedProgram(part) {
   lines.push("G0 Z"+Number(plan.machineSetup?.safeZ||5).toFixed(3),...post.footer);
   return lines.join("\n");
 }
+function validateGeneratedCncProgram(program,plan){
+  const issues=[];
+  const lines=String(program||"").split(/\\r?\\n/);
+  let currentTool=null,currentRpm=null,currentFeed=null,currentSafeZ=null;
+  const toolIds=new Set((plan.operations||[]).map(o=>o.toolId).filter(Boolean));
+  lines.forEach((line,index)=>{
+    const n=index+1, t=line.trim();
+    if(/^T\\S+\\s+M6/i.test(t)){
+      const m=t.match(/^T(\\S+)\\s+M6/i); currentTool=m?.[1]||null;
+      if(currentTool && !toolIds.has(currentTool)) issues.push({level:"error",code:"GCODE_TOOL_UNKNOWN",message:"В управляющей программе указан инструмент, отсутствующий в плане.",line:n});
+    }
+    const sm=t.match(/^S([0-9.]+)\\s+M3/i); if(sm) currentRpm=Number(sm[1]);
+    const fm=t.match(/\\sF([0-9.]+)/i); if(fm) currentFeed=Number(fm[1]);
+    const zm=t.match(/\\sZ(-?[0-9.]+)/i); if(zm){
+      const z=Number(zm[1]);
+      if(z>=0) currentSafeZ=Math.max(currentSafeZ??-Infinity,z);
+      if(z<0 && (!currentTool || !currentRpm || !currentFeed))
+        issues.push({level:"error",code:"GCODE_TECH_STATE","message:"Рабочее движение выполнено без полного технологического состояния.",line:n});
+      if(z<0 && Math.abs(z)>Number(plan.thickness||0)+0.001)
+        issues.push({level:"error",code:"GCODE_DEPTH","message:"Глубина управляющей программы превышает толщину детали.",line:n});
+    }
+    if(/^G0\\s/i.test(t) && /\\sZ-/.test(t))
+      issues.push({level:"error",code:"GCODE_RAPID_Z","message:"Быстрое перемещение G0 уходит ниже нулевой плоскости.",line:n});
+  });
+  if(!lines.some(l=>/^M30\\s*$/i.test(l.trim()))) issues.push({level:"error",code:"GCODE_END","message:"В управляющей программе отсутствует команда завершения M30."});
+  return issues;
+}
+function buildValidatedCncProgram(part){
+  const plan=getCompiledManufacturingPlan(part);
+  const program=buildCncJobProgram(part);
+  const validation=validateGeneratedCncProgram(program,plan);
+  if(validation.some(x=>x.level==="error")) throw new Error("ЧПУ заблокировано: проверка управляющей программы обнаружила ошибки.");
+  return {program,validation};
+}
 function exportAllCnc() {
   const setupIssues = validateCncMachineSetup();
   const preflightIssues = cncPreflight();
@@ -2786,7 +2820,7 @@ function exportAllCnc() {
   }
   const post = getPostprocessor();
   parts.forEach(part => {
-    const blob = new Blob([buildCncJobProgram(part)], {type:"text/plain"});
+    const generated=buildValidatedCncProgram(part);\n    const blob = new Blob([generated.program], {type:"text/plain"});
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
     link.download = "detail-" + part.userData.partNumber + post.extension;
