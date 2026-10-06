@@ -1976,7 +1976,20 @@ function buildCncJobManifest() {
   const machineSetup = applyCncMachineSetup();
   const preflight = cncPreflight();
   const integrity = parts.flatMap(part => validateIfcManufacturingIntegrity(part).map(issue => ({...issue,partNumber:part.userData.partNumber})));
-  const jobs = parts.map(part => buildCncJob(part));
+  const plans = parts.map(part => getCompiledManufacturingPlan(part));
+  const jobs = plans.map(plan => ({
+    partNumber:plan.partNumber,
+    material:plan.material,
+    thickness:plan.thickness,
+    safeZ:plan.machineSetup.safeZ,
+    zeroPoint:plan.machineSetup.origin || "top-center",
+    operations:plan.operations,
+    operationJournal:plan.operationJournal,
+    manufacturingLifecycle:plan.lifecycle,
+    manufacturingIntegrity:plan.manufacturingIntegrity,
+    preflight:plan.preflight,
+    manufacturingPlanStatus:plan.status
+  }));
   const tools = [];
   jobs.forEach(job => (job.operations || []).forEach(op => {
     if (op.toolId && !tools.some(t => t.id === op.toolId)) {
