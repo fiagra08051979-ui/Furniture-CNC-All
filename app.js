@@ -1272,6 +1272,9 @@ function rebuildDetailingPipeline() {
     if (![u.width, u.height, u.depth].every(v => Number.isFinite(Number(v)) && Number(v) > 0)) {
       partIssues.push("некорректные габариты");
     }
+    if (u.source === "IFC" && u.sheetSpecConfidence === "review") {
+      partIssues.push("толщина листа IFC не подтверждена выбранным материалом; требуется ручная проверка");
+    }
     processing.forEach((op, index) => {
       if (!op || !op.type) partIssues.push("операция №" + (index + 1) + " без типа");
       if (op.type === "Сверление" || /сверлен|отверст/i.test(op.operation || "")) {
@@ -1357,10 +1360,12 @@ function getSheetSpec(part) {
   u.sheetThickness = Math.round(thickness);
   u.sheetLength = remaining[0] || Math.round(u.width);
   u.sheetWidth = remaining[1] || Math.round(u.height);
+  u.sheetSpecConfidence = Math.abs(thickness - target) <= 2 ? "high" : "review";
   return {
     thickness: u.sheetThickness,
     length: u.sheetLength,
-    width: u.sheetWidth
+    width: u.sheetWidth,
+    confidence: u.sheetSpecConfidence
   };
 }
 
