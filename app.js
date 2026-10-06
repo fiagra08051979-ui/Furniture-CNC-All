@@ -2023,6 +2023,8 @@ function buildCncJob(part) {
     safeZ:readCncMachineSetup().safeZ,
     zeroPoint:readCncMachineSetup().origin || "top-center",
     operations:buildCncToolPlan(part),
+    operationJournal:buildCncOperationJournal(part),
+    manufacturingLifecycle:validateManufacturingLifecycle(part),
     manufacturingIntegrity:validateIfcManufacturingIntegrity(part),
     preflight:manufacturingPreflight(part)
   };
@@ -2350,6 +2352,29 @@ function cncOperationWithTool(op, material) {
   };
 }
 
+function resolveManufacturingLifecycleStatus(op, issues=[]) {
+  if (issues.some(i=>i.level==="error")) return "BLOCKED";
+  if (issues.some(i=>i.level==="warning")) return "REVIEW";
+  const tech=String(op.technologyStatus||"").toLowerCase();
+  if(tech==="candidate") return "CANDIDATE";
+  if(tech==="review") return "REVIEW";
+  if(tech==="validated" || tech==="ready") return "READY";
+  if(tech==="exported") return "EXPORTED";
+  return "READY";
+}
+
+function validateManufacturingLifecycle(part) {
+  return buildCncOperationJournal(part).map(op=>({
+    operationId:op.id,
+    sequence:op.sequence,
+    status:op.lifecycleStatus,
+    valid:["READY","EXPORTED"].includes(op.lifecycleStatus),
+    reason:op.lifecycleStatus==="BLOCKED" ? "Есть критическая ошибка Preflight." :
+      op.lifecycleStatus==="REVIEW" ? "Требуется проверка технологом." :
+      op.lifecycleStatus==="CANDIDATE" ? "Операция ещё не подтверждена." : "Операция прошла контроль."
+  }));
+}
+
 function buildCncOperationJournal(part) {
   const u=part.userData;
   const packet=u.source==="IFC" ? (u.productionPacket || buildIfcProductionPacket(part)) : null;
@@ -2377,6 +2402,7 @@ function buildCncOperationJournal(part) {
       tool:tool ? {id:tool.id,name:tool.name,diameter:tool.diameter} : null,
       checks:op.checks || sourceOp?.checks || null,
       preflightStatus:issues.some(i=>i.level==="error") ? "ERROR" : issues.some(i=>i.level==="warning") ? "WARNING" : "OK",
+      lifecycleStatus:resolveManufacturingLifecycleStatus(op,issues),
       preflightIssues:issues.map(i=>({level:i.level,operation:i.operation,message:i.message}))
     };
   });
