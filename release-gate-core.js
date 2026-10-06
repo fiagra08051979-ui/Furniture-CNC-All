@@ -16,7 +16,30 @@ function validateSheetLayout(layout) {
   }
 
   layout.sheets.forEach(sheet => {
-    (sheet.placements || []).forEach(placement => {
+    const placements = Array.isArray(sheet.placements) ? sheet.placements : [];
+    placements.forEach((placement, index) => {
+      if (sheet.thickness != null && Number(placement.thickness || sheet.thickness) !== Number(sheet.thickness)) {
+        issues.push(
+          "Лист " + sheet.sheetNumber + ": смешаны детали разной толщины."
+        );
+      }
+
+      for (let j = 0; j < index; j++) {
+        const other = placements[j];
+        const separated =
+          placement.x >= other.x + other.length + kerf ||
+          other.x >= placement.x + placement.length + kerf ||
+          placement.y >= other.y + other.width + kerf ||
+          other.y >= placement.y + placement.width + kerf;
+        if (!separated) {
+          issues.push(
+            "Лист " + sheet.sheetNumber + ": пересечение деталей " +
+            (other.partNumber || "без номера") + " и " +
+            (placement.partNumber || "без номера") + "."
+          );
+        }
+      }
+
       if (placement.overflow) {
         issues.push(
           "Деталь " + (placement.partNumber || "без номера") +
