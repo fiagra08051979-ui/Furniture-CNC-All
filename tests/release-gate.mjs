@@ -21,7 +21,8 @@ const required = [
   ["Construction QC Gate", app.includes("runConstructionQC") && app.includes("window._constructionQC")],
   ["Release Gate runtime", app.includes("runReleaseGate") && app.includes("window._releaseGate") && app.includes("выпуск PDF заблокирован")],
   ["цепочка Construction QC → Release Gate", app.includes("runConstructionQC(detailingPipeline)") && app.includes("runReleaseGate()")],
-  ["PDF читает деталировку", app.includes("const detailing = part.userData?.detailing") && app.includes("Array.isArray(detailing?.holes)") && app.includes("d.length") && app.includes("d.material") && app.includes("d.edges")]
+  ["PDF читает деталировку", app.includes("const detailing = part.userData?.detailing") && app.includes("Array.isArray(detailing?.holes)") && app.includes("d.length") && app.includes("d.material") && app.includes("d.edges")],
+  ["Release Gate проверяет раскладку листа", app.includes("function validateSheetLayout") && app.includes("placement.overflow") && app.includes("sheetLayoutChecked") && app.includes("buildSheetLayout(")]
 ];
 
 const forbidden = [
@@ -65,4 +66,4 @@ if (errors.length) {
 }
 
 console.log("RELEASE GATE: PASS");
-console.log("Проверено: AI, IFC, распознавание, 3D, PDF-карта раскроя, присадка/сверловка и отсутствие CNC/Excel-производственного слоя.");
+console.log("Проверено: AI, IFC, распознавание, 3D, Construction QC, Release Gate, раскладка листа, PDF-карта раскроя, присадка/сверловка и отсутствие CNC/Excel-производственного слоя.");
