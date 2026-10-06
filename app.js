@@ -1728,6 +1728,20 @@ function runReleaseGate() {
   return report;
 }
 
+function showCuttingMap() {
+  const releaseGate = runReleaseGate();
+  if (!releaseGate.passed) {
+    validate("Release Gate: просмотр карты раскроя заблокирован. " + releaseGate.issues.join(" "), "error");
+    return;
+  }
+  if (!releaseGate.sheetLayout) {
+    validate("Release Gate: отсутствует проверенная раскладка листа.", "error");
+    return;
+  }
+  renderCuttingMap(releaseGate.sheetLayout);
+  validate("Карта раскроя показана из проверенной раскладки Release Gate.", "ok");
+}
+
 function exportSheetLayout() {
   const releaseGate = runReleaseGate();
   if (!releaseGate.passed) {
