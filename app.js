@@ -34,6 +34,7 @@ const parts = [];
 let exploded = false;
 let projectVersion = "0.2";
 let ifcMode = false;
+let modelRevision = 0;
 
 /* =========================
    IFC → Furniture Core bridge
@@ -1179,6 +1180,7 @@ function runConstructionQC(pipelineResult = { ready:0, review:0, issues:[] }) {
     };
   });
 
+  report.modelRevision = modelRevision;
   window._constructionQC = report;
   return report;
 }
@@ -1735,12 +1737,19 @@ function syncPartLabels() {
 }
 
 function clearModel() {
+  modelRevision += 1;
+  window._modelRevision = modelRevision;
+  window._constructionQC = null;
+  window._releaseGate = null;
+
   while (root.children.length) {
     const object = root.children.pop();
-    object.geometry.dispose();
-    object.material.dispose();
+    if (object.geometry?.dispose) object.geometry.dispose();
+    if (object.material?.map?.dispose) object.material.map.dispose();
+    if (object.material?.dispose) object.material.dispose();
   }
   parts.length = 0;
+  ifcImportedParts = [];
 }
 
 function parseIfcGeometry(source) {
@@ -1926,7 +1935,6 @@ function applyAiRecognition() {
 }
 
 function build() {
-  ifcMode = false;
   const p = readParams();
   const error = validateParams(p);
   if (error) {
@@ -1935,6 +1943,7 @@ function build() {
   }
 
   clearModel();
+  ifcMode = false;
 
   const innerW = p.width - 2 * p.thickness;
   const innerH = p.height - 2 * p.thickness;
