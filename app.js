@@ -3120,17 +3120,41 @@ function buildCncToolChangeSequence(plan) {
 }
 
 function buildCncToolpaths(plan) {
-  return (plan.operations||[]).map(op=>{
-    const points=[];
-    if(op.type==="DRILL" || op.type==="MILL" || op.type==="POCKET") {
-      points.push({x:Number(op.x)||0,y:Number(op.y)||0,z:0});
-      if(Number.isFinite(Number(op.depth))) points.push({x:Number(op.x)||0,y:Number(op.y)||0,z:-Math.abs(Number(op.depth))});
-      points.push({x:Number(op.x)||0,y:Number(op.y)||0,z:Number(plan.machineSetup?.safeZ)||5});
+  const safeZ=Number(plan.machineSetup?.safeZ)||5;
+  const out=[];
+  (plan.operations||[]).forEach(op=>{
+    const toolId=op.toolId||null;
+    const depth=Math.abs(Number(op.depth)||0);
+    const tech=op.cuttingParameters||{};
+    const passDepth=Math.max(0.1,Math.abs(Number(tech.passDepth)||Number(op.passDepth)||depth||0.1));
+    const passes=Math.max(1,Math.ceil(depth/passDepth));
+    const zLevels=Array.from({length:passes},(_,i)=>-Math.min(depth,(i+1)*passDepth));
+    if(op.type==="DRILL" || op.type==="MILL") {
+      const points=[];
+      points.push({x:Number(op.x)||0,y:Number(op.y)||0,z:safeZ});
+      zLevels.forEach(z=>points.push({x:Number(op.x)||0,y:Number(op.y)||0,z}));
+      points.push({x:Number(op.x)||0,y:Number(op.y)||0,z:safeZ});
+      out.push({operationId:op.id,type:op.type,toolId,passes,zLevels,points,source:"CNC_PASS_PLAN"});
     } else if(op.type==="CONTOUR" && Array.isArray(op.path)) {
-      op.path.forEach(p=>points.push({x:Number(p.x)||0,y:Number(p.y)||0,z:0}));
+      const base=op.path.map(p=>({x:Number(p.x)||0,y:Number(p.y)||0}));
+      if(base.length<3) return;
+      if(base[0].x!==base[base.length-1].x || base[0].y!==base[base.length-1].y) base.push({...base[0]});
+      const points=[{x:base[0].x,y:base[0].y,z:safeZ}];
+      zLevels.forEach(z=>{
+        base.forEach(p=>points.push({x:p.x,y:p.y,z}));
+        points.push({x:base[0].x,y:base[0].y,z:safeZ});
+      });
+      out.push({operationId:op.id,type:op.type,toolId,passes,zLevels,points,source:"CNC_PASS_PLAN"});
+    } else if(op.type==="POCKET") {
+      const typed=(plan.compensatedToolpaths||[]).filter(x=>x.operationId===op.id);
+      if(typed.length) {
+        typed.forEach(path=>out.push({...path,toolId,source:path.source||"IFC_POCKET_PASS"}));
+      } else {
+        out.push({operationId:op.id,type:op.type,toolId,passes,zLevels,points:[{x:Number(op.x)||0,y:Number(op.y)||0,z:safeZ}],source:"CNC_PASS_PLAN"});
+      }
     }
-    return {operationId:op.id,type:op.type,toolId:op.toolId||null,points};
   });
+  return out;
 }
 
 function pointInPolygon2D(point, polygon) {
@@ -3349,6 +3373,30 @@ function validateToolpathAgainstGeometry(plan, part) {
   return issues;
 }
 
+function validateCncPassPlan(plan) {
+  const issues=[];
+  (plan.toolpaths||[]).forEach(path=>{
+    const op=(plan.operations||[]).find(o=>o.id===path.operationId);
+    if(!op) return;
+    const depth=Math.abs(Number(op.depth)||0);
+    const zLevels=Array.isArray(path.zLevels)?path.zLevels:[];
+    if(depth>0 && !zLevels.length) issues.push({level:"error",code:"PASS_LEVELS_MISSING",message:"Не сформированы проходы по глубине.",operation:path.operationId});
+    if(zLevels.length && Math.abs(Math.abs(zLevels[zLevels.length-1])-depth)>0.001)
+      issues.push({level:"error",code:"PASS_FINAL_DEPTH",message:"Последний проход не достигает заданной глубины.",operation:path.operationId});
+    if((path.type==="CONTOUR") && path.points.length>1) {
+      const contour=path.points.filter(p=>Number(p.z)<=(Number(plan.machineSetup?.safeZ)||5)+0.001);
+      if(contour.length>=2) {
+        const first=contour[0], last=contour[contour.length-1];
+        if(first.x!==last.x || first.y!==last.y)
+          issues.push({level:"error",code:"PASS_CONTOUR_NOT_CLOSED",message:"Контурная траектория не замкнута.",operation:path.operationId});
+      }
+    }
+    if(path.points.some(p=>!Number.isFinite(p.x)||!Number.isFinite(p.y)||!Number.isFinite(p.z)))
+      issues.push({level:"error",code:"PASS_COORDINATES","message":"Некорректные координаты прохода.",operation:path.operationId});
+  });
+  return issues;
+}
+
 function validateTypedCompensatedToolpaths(plan) {
   const issues=[];
   (plan.compensatedToolpaths||[]).forEach(path=>{
@@ -3505,7 +3553,7 @@ function getCompiledManufacturingPlan(part) {
   plan.segmentToolpathValidation=validateToolpathSegmentsAgainstGeometry(plan,part);
   plan.toolRadiusCompensation=validateToolRadiusCompensation(plan,part);
   plan.toolpathClearance=validateToolpathClearance(plan,part);
-  plan.typedToolpathValidation=validateTypedCompensatedToolpaths(plan);
+  plan.typedToolpathValidation=validateTypedCompensatedToolpaths(plan);\n    plan.passPlanValidation=validateCncPassPlan(plan);
   plan.compensatedToolpaths=buildTypedCompensatedToolpaths(plan,part);
   plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance,...plan.typedToolpathValidation];
   plan.machineReady=plan.validation.every(x=>x.level!=="error") &&
