@@ -1418,6 +1418,7 @@ function buildSheetLayout(sheetLength, sheetWidth, kerf, margin) {
   const newSheet = (material) => ({
     sheetNumber: sheetIndex++,
     material,
+    thickness: null,
     length: sheetLength,
     width: sheetWidth,
     placements: []
@@ -1482,11 +1483,14 @@ function buildSheetLayout(sheetLength, sheetWidth, kerf, margin) {
   };
 
   items.forEach(item => {
-    let sheet = [...sheets].reverse().find(s => s.material === item.material);
+    let sheet = [...sheets].reverse().find(s =>
+      s.material === item.material && Number(s.thickness) === Number(item.thickness)
+    );
     let placement = sheet ? tryPlace(sheet, item) : null;
 
     if (!placement) {
       sheet = newSheet(item.material);
+      sheet.thickness = item.thickness;
       sheets.push(sheet);
       placement = tryPlace(sheet, item);
     }
