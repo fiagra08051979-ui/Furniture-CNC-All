@@ -78,7 +78,9 @@ function addPart(name, kind, width, height, depth, position, quantity = 1, edges
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material());
   mesh.position.copy(position);
   mesh.userData = {
-    name, kind, width, height, depth,
+    name, kind, width, height, depth, quantity,
+    material: $("material").value,
+    edges: edges || [edgeLabel(), edgeLabel(), edgeLabel(), edgeLabel()],
     base: position.clone()
   };
   root.add(mesh);
