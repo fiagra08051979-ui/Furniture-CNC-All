@@ -166,6 +166,37 @@ function buildBodyFasteners() {
   return result;
 }
 
+
+function buildShelfSupportDrilling() {
+  const p = readParams();
+  const shelfSupports = [];
+  const shelves = parts.filter(part => part.userData.kind === "Полка");
+  const sides = parts.filter(part => part.userData.kind === "Боковина");
+  const diameter = p.shelfSupportType === "штифт Ø6" ? 6 : 5;
+  let index = 1;
+  shelves.forEach(shelf => {
+    const y = shelf.position.y;
+    const shelfLeft = shelf.position.x - shelf.userData.width / 2;
+    const shelfRight = shelf.position.x + shelf.userData.width / 2;
+    const frontZ = shelf.position.z + shelf.userData.depth / 2;
+    [shelfLeft + 32, shelfRight - 32].forEach((x, i) => {
+      shelfSupports.push({
+        id: "S" + index++,
+        operation: "Отверстие под полкодержатель",
+        type: p.shelfSupportType,
+        diameter,
+        depth: 12,
+        x: Math.round(x),
+        y: Math.round(y),
+        z: Math.round(frontZ - p.shelfFrontOffset),
+        edgeDistance: 32,
+        linkedPart: shelf.userData.name
+      });
+    });
+  });
+  return shelfSupports;
+}
+
 function material() {
   const colors = {
     ldsp18: 0xc69b68,
@@ -300,7 +331,11 @@ function build() {
   }
 
   const bodyFasteners = buildBodyFasteners();
-  parts.forEach(part => { part.userData.bodyFasteners = bodyFasteners.filter(h => h.linkedPart === part.userData.name); });
+  const shelfSupportDrilling = buildShelfSupportDrilling();
+  parts.forEach(part => {
+    part.userData.bodyFasteners = bodyFasteners.filter(h => h.linkedPart === part.userData.name);
+    part.userData.shelfSupportDrilling = shelfSupportDrilling.filter(h => h.linkedPart === part.userData.name);
+  });
 
   exploded = false;
   $("explode").textContent = "Взрыв";
@@ -310,8 +345,9 @@ function build() {
   renderPartsTable();
   const drillingCount = parts.reduce((sum, part) => sum + (part.userData.drilling?.length || 0), 0);
   const bodyFastenerCount = bodyFasteners.length;
+  const shelfSupportCount = shelfSupportDrilling.length;
   if ($("drillingSummary")) $("drillingSummary").textContent = drillingCount
-    ? "Фасады: " + drillingCount + " отв. · корпус: " + bodyFastenerCount + " креплений"
+    ? "Фасады: " + drillingCount + " отв. · корпус: " + bodyFastenerCount + " креплений · полкодержатели: " + shelfSupportCount
     : "Фасадное сверление не требуется. Корпус: " + bodyFastenerCount + " креплений.";
   validate("Модель построена: корпус, перегородки, полки и фасады.", "ok");
   fitView();
@@ -396,7 +432,8 @@ function exportExcel() {
     "Петель": part.userData.hardware?.quantity || "",
     "Позиции петель, мм": part.userData.hardware?.mountingPositionsFromBottom?.join("; ") || "",
     "Сверление": part.userData.drilling?.map(h => h.operation + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ")").join(" | ") || "",
-    "Крепёж корпуса": part.userData.bodyFasteners?.map(h => h.type + " Ø" + h.diameter + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || ""
+    "Крепёж корпуса": part.userData.bodyFasteners?.map(h => h.type + " Ø" + h.diameter + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
+    "Полкодержатели": part.userData.shelfSupportDrilling?.map(h => h.type + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || ""
   }));
   const ws = XLSX.utils.json_to_sheet(rows); const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Деталировка");
@@ -449,6 +486,8 @@ $("saveProject").addEventListener("click", () => {
   parameters.fastenerType = $("fastenerType").value;
   parameters.confirmatDiameter = $("confirmatDiameter").value;
   parameters.connectorDiameter = $("connectorDiameter").value;
+  parameters.shelfSupportType = $("shelfSupportType").value;
+  parameters.shelfFrontOffset = $("shelfFrontOffset").value;
 
   const data = {
     version: projectVersion,
