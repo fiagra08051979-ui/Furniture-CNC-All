@@ -78,6 +78,12 @@ const required = [
 ];
 
 const gateContract = [
+  ["PASS: Hardware → detailing → Release Gate", {
+    qc:{status:"PASS", modelRevision:1, details:[{number:"001", status:"PASS"}]}, modelRevision:1, partsCount:1,
+    partStates:[{number:"001",sourceGeometry:"Furniture Core",geometryLocked:false,detailing:{number:"001",status:"ready",modelRevision:1,construction:{source:"Furniture Core"},material:"ldsp18",quantity:1,edges:["PVC 1 мм","PVC 1 мм","нет","нет"],cutting:{length:600,width:400,thickness:18},holes:[{id:"H1",operation:"Чашка петли",diameter:35,depth:12.5,x:21.5,y:100},{id:"C1",operation:"Конфирмат",diameter:7,depth:36,x:120,y:280}]}}],
+    cuttingGroups:[{groupNumber:"001",material:"ldsp18",thickness:18,details:[{number:"001",length:600,width:400,thickness:18,quantity:1,material:"ldsp18",edges:["PVC 1 мм","PVC 1 мм","нет","нет"]}]}],
+    sheetLayout:{sheetLength:2800,sheetWidth:2070,margin:10,kerf:4,sheets:[{sheetNumber:1,placements:[{sheetNumber:1,groupNumber:"001",partNumber:"001",x:10,y:10,length:600,width:400,thickness:18,material:"ldsp18",edges:["PVC 1 мм","PVC 1 мм","нет","нет"],overflow:false}]}]}
+  }, true],
   ["PASS: QC PASS + готовая деталировка + раскрой + лист", {
     qc: {status:"PASS", modelRevision:1, details:[{number:"001", status:"PASS"}]},
     modelRevision:1,
