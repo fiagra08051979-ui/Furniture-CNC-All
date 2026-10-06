@@ -2429,6 +2429,7 @@ function compileManufacturingPlan(part) {
     thickness:Number(part.userData.thickness || 0),
     machineSetup:readCncMachineSetup(),
     operations,
+    toolTechnology:buildCncToolTechnologyPlan({operations,material:part.userData.material,thickness:part.userData.thickness}),
     operationJournal:journal,
     manufacturingIntegrity:integrity,
     preflight,
@@ -3025,6 +3026,45 @@ function animate() {
 }
 animate();
 build();
+function resolveCncCuttingParameters(op, tool, material, thickness) {
+  const family=cncMaterialFamily(material);
+  const t=Number(thickness)||18;
+  const dia=Number(tool?.diameter||op.diameter||6);
+  const base=family==="ЛДСП" ? {rpm:18000,feed:4500,plunge:1200} :
+    family==="МДФ" ? {rpm:20000,feed:5000,plunge:1400} :
+    family==="Фанера" ? {rpm:18000,feed:4000,plunge:1100} :
+    {rpm:18000,feed:3500,plunge:1000};
+  const depth=Math.min(Number(op.depth||t),t);
+  const passDepth=Math.max(1,Math.min(depth, dia*0.75));
+  return {
+    rpm:base.rpm,
+    feed:base.feed,
+    plunge:base.plunge,
+    depth,
+    passDepth,
+    passes:Math.max(1,Math.ceil(depth/passDepth)),
+    safeZ:Number(readCncMachineSetup().safeZ)||5,
+    materialFamily:family||"UNKNOWN"
+  };
+}
+
+function buildCncToolTechnologyPlan(plan) {
+  const groups=[];
+  (plan.operations||[]).forEach(op=>{
+    const tool=CNC_TOOL_LIBRARY.find(t=>t.id===op.toolId);
+    const parameters=resolveCncCuttingParameters(op,tool,plan.material,plan.thickness);
+    let group=groups.find(g=>g.toolId===op.toolId);
+    if(!group) {
+      group={toolId:op.toolId||"NONE",toolName:tool?.name||"Не назначен",toolDiameter:tool?.diameter||null,
+        materialFamily:parameters.materialFamily,rpm:parameters.rpm,feed:parameters.feed,plunge:parameters.plunge,
+        safeZ:parameters.safeZ,operations:[]};
+      groups.push(group);
+    }
+    group.operations.push({...op,technologyParameters:parameters});
+  });
+  return groups;
+}
+
 function validateMachineCompatibility(plan, post=getPostprocessor()) {
   const issues=[];
   const setup=plan.machineSetup || readCncMachineSetup();
