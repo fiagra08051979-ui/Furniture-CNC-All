@@ -15,6 +15,7 @@ const required = [
   ["утвержден блок освещения", html.includes('id="lightingEnabled"') && html.includes('id="lightingMount"') && html.includes('id="shelfLighting"') && app.includes("lightingEnabled") && app.includes("shelfLighting")],
   ["утвержден блок столешницы", html.includes('id="countertopEnabled"') && html.includes('id="countertopThickness"') && html.includes('id="countertopMaterial"') && app.includes("countertopThickness") && app.includes("countertopMaterial")],
   ["утвержден блок библиотеки внешних фасадов", html.includes('id="facadeManufacturer"') && html.includes('id="facadeModel"') && html.includes('id="facadeLibraryItem"') && app.includes("facadeLibrary")],
+  ["дизайнерские параметры сохраняются в JSON", app.includes('parameters.lightingEnabled = $("lightingEnabled").value') && app.includes('parameters.countertopThickness = $("countertopThickness").value') && app.includes('parameters.facadeModel = $("facadeModel").value')],
   ["AI текст", app.includes("recognizeFurnitureText") && app.includes("aiRecognize")],
   ["AI изображение", app.includes("analyzeFurnitureImageMetadata") && app.includes("aiImageAnalyze")],
   ["IFC", app.includes("web-ifc") && app.includes("importIfcIntoFurnitureCore")],
