@@ -1997,7 +1997,7 @@ function buildCncJobManifest() {
     preflight,
     manufacturingIntegrity: integrity,
     readyForMachine:preflight.filter(i => i.level === "error").length === 0,
-    manufacturingPreflight: integrity.length ? "ERROR" : "OK"
+    manufacturingPreflight: preflight.some(i => i.level === "error") ? "ERROR" : "OK"
   };
 }
 
@@ -2021,7 +2021,7 @@ function buildCncJob(part) {
     material:u.material || "Не задан",
     thickness:Number(u.thickness || 0),
     safeZ:readCncMachineSetup().safeZ,
-    zeroPoint:readCncMachineSetup().origin || "G54",
+    zeroPoint:readCncMachineSetup().origin || "top-center",
     operations:buildCncToolPlan(part),
     manufacturingIntegrity:validateIfcManufacturingIntegrity(part)
   };
@@ -2301,9 +2301,18 @@ const CNC_TOOL_LIBRARY = {
   ]
 };
 
+function cncMaterialFamily(material) {
+  const m=String(material||"").toLowerCase();
+  if(m.includes("ldsp") || m.includes("лдсп")) return "ЛДСП";
+  if(m.includes("mdf") || m.includes("мдф")) return "МДФ";
+  if(m.includes("ply") || m.includes("фанер")) return "Фанера";
+  return "";
+}
+
 function selectCncTool(op, material) {
   const family = op.type === "DRILL" ? CNC_TOOL_LIBRARY.drilling : CNC_TOOL_LIBRARY.milling;
-  const candidates = family.filter(t => t.materials.includes(material));
+  const familyName=cncMaterialFamily(material);
+  const candidates = family.filter(t => t.materials.includes(familyName));
   if (op.diameter > 0) {
     const exact = candidates.find(t => t.diameter === op.diameter);
     if (exact) return exact;
