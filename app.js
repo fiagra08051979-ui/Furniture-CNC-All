@@ -1285,6 +1285,8 @@ function cuttingOperationList(part) {
     type: op.operation || op.type || "Сверление",
     diameter: Number.isFinite(Number(op.diameter)) ? Number(op.diameter) : null,
     depth: Number.isFinite(Number(op.depth)) ? Number(op.depth) : null,
+    x: Number.isFinite(Number(op.x)) ? Number(op.x) : null,
+    y: Number.isFinite(Number(op.y)) ? Number(op.y) : null,
     hardware: op.linkedHardware || op.linkedPart || op.type || ""
   }));
 }
@@ -1332,6 +1334,7 @@ function buildCuttingPdfHtml(layout) {
     const ops = cuttingOperationList(part);
     const rows = ops.length ? ops.map(op =>
       '<tr><td>'+op.number+'</td><td>'+op.type+'</td><td>'+
+      (op.x ?? "—")+'</td><td>'+(op.y ?? "—")+'</td><td>'+
       (op.diameter ?? "—")+'</td><td>'+(op.depth ?? "—")+
       '</td><td>'+op.hardware+'</td></tr>'
     ).join("") : '<tr><td colspan="5">Присадка не задана</td></tr>';
@@ -1342,7 +1345,7 @@ function buildCuttingPdfHtml(layout) {
       '<b>Материал:</b> '+u.material+' · <b>Количество:</b> '+(u.quantity || 1)+'</div>' +
       '<div class="detail-meta"><b>Кромка:</b> '+edgeSummary(u.edges)+'</div>' +
       (ops.length ? drillingSchematic(part) : '<div class="no-drilling">Присадка и сверловка отсутствуют.</div>') +
-      '<table><thead><tr><th>№</th><th>Операция</th><th>Ø, мм</th><th>Глубина, мм</th><th>Фурнитура / назначение</th></tr></thead><tbody>'+
+      '<table><thead><tr><th>№</th><th>Операция</th><th>X, мм</th><th>Y, мм</th><th>Ø, мм</th><th>Глубина, мм</th><th>Фурнитура / назначение</th></tr></thead><tbody>'+
       rows+'</tbody></table></section>';
   }).join("");
 
