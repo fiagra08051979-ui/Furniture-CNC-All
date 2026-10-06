@@ -1353,17 +1353,20 @@ function rebuildDetailingPipeline() {
 
 function getSheetSpec(part) {
   const u = part.userData;
+  const target = Number($("thickness")?.value || 18);
   if (Number.isFinite(Number(u.sheetThickness)) &&
       Number.isFinite(Number(u.sheetLength)) &&
-      Number.isFinite(Number(u.sheetWidth))) {
+      Number.isFinite(Number(u.sheetWidth)) &&
+      Number.isFinite(Number(u.sheetSpecTargetThickness)) &&
+      Number(u.sheetSpecTargetThickness) === target) {
+    u.sheetSpecConfidence = Math.abs(Number(u.sheetThickness) - target) <= 2 ? "high" : "review";
     return {
       thickness: Math.round(u.sheetThickness),
       length: Math.round(u.sheetLength),
-      width: Math.round(u.sheetWidth)
+      width: Math.round(u.sheetWidth),
+      confidence: u.sheetSpecConfidence
     };
   }
-
-  const target = Number($("thickness")?.value || 18);
   const dims = [
     {axis:"width", value:Number(u.width)},
     {axis:"height", value:Number(u.height)},
@@ -1375,6 +1378,7 @@ function getSheetSpec(part) {
   u.sheetThickness = Math.round(thickness);
   u.sheetLength = remaining[0] || Math.round(u.width);
   u.sheetWidth = remaining[1] || Math.round(u.height);
+  u.sheetSpecTargetThickness = target;
   u.sheetSpecConfidence = Math.abs(thickness - target) <= 2 ? "high" : "review";
   return {
     thickness: u.sheetThickness,
