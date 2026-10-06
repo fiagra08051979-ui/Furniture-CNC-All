@@ -188,6 +188,9 @@ function evaluateReleaseGateState({ qc, partsCount, partStates, cuttingGroups, s
         issues.push("Для детали " + number + " отсутствует запись в группах раскроя.");
         return;
       }
+      if (!Number.isInteger(Number(cutting.quantity)) || Number(cutting.quantity) < 1) {
+        issues.push("Для детали " + number + " в группах раскроя указано некорректное количество.");
+      }
       if (Number(cutting.length) !== Number(detail.cutting?.length) ||
           Number(cutting.width) !== Number(detail.cutting?.width) ||
           Number(cutting.thickness) !== Number(detail.cutting?.thickness) ||
