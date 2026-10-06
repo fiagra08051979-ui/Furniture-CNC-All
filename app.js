@@ -3339,6 +3339,47 @@ function validateToolpathClearance(plan, part) {
   return issues;
 }
 
+function optimizeCompiledToolpathSequence(program,plan){
+  const remaining=[...(program||[])];
+  const result=[];
+  let currentTool=null, currentPoint={x:0,y:0};
+  while(remaining.length){
+    const sameTool=remaining.filter(x=>(x.toolId||null)===(currentTool||null));
+    const pool=sameTool.length ? sameTool : remaining;
+    let bestIndex=0,bestScore=Infinity;
+    pool.forEach(candidate=>{
+      const p=candidate.points?.find(x=>Number(x.z)<=candidate.safeZ) || candidate.points?.[0] || {x:0,y:0};
+      const distance=Math.hypot((Number(p.x)||0)-currentPoint.x,(Number(p.y)||0)-currentPoint.y);
+      const toolPenalty=currentTool && candidate.toolId!==currentTool ? 100000 : 0;
+      const score=toolPenalty+distance;
+      const idx=remaining.indexOf(candidate);
+      if(score<bestScore){bestScore=score;bestIndex=idx;}
+    });
+    const selected=remaining.splice(bestIndex,1)[0];
+    selected.sequence=result.length+1;
+    selected.toolChange=selected.toolId!==currentTool;
+    selected.approachSafeZ=true;
+    selected.departureSafeZ=true;
+    result.push(selected);
+    currentTool=selected.toolId||null;
+    const last=selected.points?.[selected.points.length-1];
+    if(last) currentPoint={x:Number(last.x)||0,y:Number(last.y)||0};
+  }
+  return result;
+}
+function validateCompiledToolpathSequence(plan){
+  const issues=[];
+  const seq=plan.compiledToolpathProgram||[];
+  let currentTool=null;
+  seq.forEach((op,i)=>{
+    if(op.sequence!==i+1) issues.push({level:"error",code:"SEQUENCE_NUMBER",message:"Нарушена нумерация последовательности операций.",operation:op.operationId});
+    if(op.toolChange && !op.toolId) issues.push({level:"error",code:"SEQUENCE_TOOL","message":"Для смены инструмента не назначен инструмент.",operation:op.operationId});
+    if(op.toolChange && currentTool===op.toolId) issues.push({level:"error",code:"SEQUENCE_DUPLICATE_TOOL",message:"Лишняя повторная смена одного и того же инструмента.",operation:op.operationId});
+    if(!op.approachSafeZ || !op.departureSafeZ) issues.push({level:"error",code:"SEQUENCE_SAFE_Z",message:"Операция не имеет безопасного подхода или отхода.",operation:op.operationId});
+    currentTool=op.toolId||currentTool;
+  });
+  return issues;
+}
 function buildCompiledToolpathProgram(plan,part){
   const safeZ=Number(plan.machineSetup?.safeZ)||5;
   const result=[];
@@ -3693,7 +3734,7 @@ function getCompiledManufacturingPlan(part) {
   plan.motionSafety=validateCncMotionSafety(plan);
   plan.compensatedToolpaths=buildTypedCompensatedToolpaths(plan,part);
   plan.toolpaths=buildCncToolpaths(plan);
-  plan.compiledToolpathProgram=buildCompiledToolpathProgram(plan,part);
+  plan.compiledToolpathProgram=buildCompiledToolpathProgram(plan,part);\n  plan.compiledToolpathProgram=optimizeCompiledToolpathSequence(plan.compiledToolpathProgram,plan);\n  plan.toolpathSequenceValidation=validateCompiledToolpathSequence(plan);
   plan.toolpathValidation=validateCncToolpaths(plan);
   plan.toolpathGeometryEnvelope=buildToolpathGeometryEnvelope(plan,part);
   plan.geometryToolpathValidation=validateToolpathAgainstGeometry(plan,part);
@@ -3706,7 +3747,7 @@ function getCompiledManufacturingPlan(part) {
   plan.contourCompensationValidation=validateContourCompensationGeometry(plan,part);
   plan.contourWidthValidation=validateContourMinimumWidth(plan,part);
   plan.toolpathCollisionValidation=validateToolpathCollisions(plan,part);
-  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance,...plan.typedToolpathValidation,...plan.passPlanValidation,...plan.pocketGeometryValidation,...plan.contourCompensationValidation,...plan.contourWidthValidation,...plan.toolpathCollisionValidation];
+  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance,...plan.typedToolpathValidation,...plan.passPlanValidation,...plan.pocketGeometryValidation,...plan.contourCompensationValidation,...plan.contourWidthValidation,...plan.toolpathCollisionValidation,...plan.toolpathSequenceValidation];
   plan.machineReady=plan.validation.every(x=>x.level!=="error") && plan.status==="READY" && plan.lifecycle.every(x=>x.valid) && plan.machineCompatibility.machineReady;
   plan.status=plan.machineReady ? "MACHINE_READY" : (plan.status==="BLOCKED" ? "BLOCKED" : "REVIEW");
   return plan;
