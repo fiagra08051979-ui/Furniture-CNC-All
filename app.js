@@ -3377,6 +3377,18 @@ function validateToolpathClearance(plan, part) {
   return issues;
 }
 
+function validateContourMinimumWidth(plan,part){
+  const issues=[];
+  const contour=part.userData?.ifcContour?.path;
+  if(!Array.isArray(contour)||contour.length<3) return issues;
+  const pts=contour.map(p=>({x:Number(p.x)||0,y:Number(p.y)||0}));
+  const minEdge=Math.min(...pts.map((a,i)=>distancePointToSegment2D(a,pts[(i+1)%pts.length],pts[(i+2)%pts.length])));
+  (plan.compensatedToolpaths||[]).filter(p=>p.type==="CONTOUR"||p.source==="IFC_COMPENSATED_NORMAL_OFFSET").forEach(path=>{
+    if(path.radius*2>minEdge*2+0.001)
+      issues.push({level:"warning",code:"CONTOUR_TOOL_LARGE",message:"Диаметр инструмента сопоставим с минимальной шириной геометрии; требуется проверка траектории.",operation:path.operationId});
+  });
+  return issues;
+}
 function validateContourCompensationGeometry(plan,part){
   const issues=[];
   (plan.compensatedToolpaths||[]).filter(p=>p.type==="CONTOUR"||p.source==="IFC_COMPENSATED_NORMAL_OFFSET").forEach(path=>{
@@ -3668,9 +3680,9 @@ function getCompiledManufacturingPlan(part) {
   plan.segmentToolpathValidation=validateToolpathSegmentsAgainstGeometry(plan,part);
   plan.toolRadiusCompensation=validateToolRadiusCompensation(plan,part);
   plan.toolpathClearance=validateToolpathClearance(plan,part);
-  plan.typedToolpathValidation=validateTypedCompensatedToolpaths(plan);\n  plan.passPlanValidation=validateCncPassPlan(plan);\n  plan.pocketGeometryValidation=validatePocketGeometry(plan,part);\n  plan.contourCompensationValidation=validateContourCompensationGeometry(plan,part);
+  plan.typedToolpathValidation=validateTypedCompensatedToolpaths(plan);\n  plan.passPlanValidation=validateCncPassPlan(plan);\n  plan.pocketGeometryValidation=validatePocketGeometry(plan,part);\n  plan.contourCompensationValidation=validateContourCompensationGeometry(plan,part);\n  plan.contourWidthValidation=validateContourMinimumWidth(plan,part);
   plan.compensatedToolpaths=buildTypedCompensatedToolpaths(plan,part);\n  plan.toolpaths=buildCncToolpaths(plan);\n  plan.passPlanValidation=validateCncPassPlan(plan);
-  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance,...plan.typedToolpathValidation,...plan.passPlanValidation,...plan.pocketGeometryValidation,...plan.contourCompensationValidation];
+  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance,...plan.typedToolpathValidation,...plan.passPlanValidation,...plan.pocketGeometryValidation,...plan.contourCompensationValidation,...plan.contourWidthValidation];
   plan.machineReady=plan.validation.every(x=>x.level!=="error") &&
     plan.status==="READY" &&
     plan.lifecycle.every(x=>x.valid) &&
