@@ -611,6 +611,57 @@ function clearModel() {
   parts.length = 0;
 }
 
+function recognizeFurnitureText(text) {
+  const source = String(text || "").toLowerCase().replace(/,/g, ".");
+  const nums = source.match(/(\d+(?:\.\d+)?)\s*[×xх*]\s*(\d+(?:\.\d+)?)\s*[×xх*]\s*(\d+(?:\.\d+)?)/i);
+  const result = {recognized:[], params:{}};
+  if (nums) {
+    result.params.width = Math.round(Number(nums[1]));
+    result.params.height = Math.round(Number(nums[2]));
+    result.params.depth = Math.round(Number(nums[3]));
+    result.recognized.push("габариты " + result.params.width + "×" + result.params.height + "×" + result.params.depth + " мм");
+  }
+  const rules = [
+    ["sections",/(\d+)\s*(?:секц|отдел|отсек)/i,"секций"],
+    ["shelves",/(\d+)\s*(?:съ[её]мн(?:ых|ые)?\s*)?пол(?:к|ок|ки)/i,"съёмных полок"],
+    ["doors",/(\d+)\s*(?:фасад|двер)/i,"фасадов"],
+    ["fixedPartitions",/(\d+)\s*(?:горизонтальн(?:ых|ые)?\s*)?перегород/i,"горизонтальных перегородок"]
+  ];
+  rules.forEach(([key,re,label]) => {
+    const m=source.match(re);
+    if(m){ result.params[key]=Number(m[1]); result.recognized.push(m[1]+" "+label); }
+  });
+  if (/мдф/.test(source)) { result.params.material="mdf18"; result.recognized.push("МДФ 18 мм"); }
+  else if (/фанер/.test(source)) { result.params.material="ply18"; result.recognized.push("фанера 18 мм"); }
+  else if (/лдсп\s*16/.test(source)) { result.params.material="ldsp16"; result.recognized.push("ЛДСП 16 мм"); }
+  else if (/лдсп/.test(source)) { result.params.material="ldsp18"; result.recognized.push("ЛДСП 18 мм"); }
+  result.confirmation = result.recognized.length ?
+    "Я распознал конструкцию следующим образом: " + result.recognized.join(", ") + "." :
+    "Не удалось распознать параметры конструкции.";
+  return result;
+}
+
+function renderAiRecognition(result) {
+  const target=$("aiRecognition");
+  if(!target) return;
+  target.innerHTML="<b>"+result.confirmation+"</b>" +
+    (result.recognized.length ? "<div class='status'>Проверьте распознанные параметры. Модель не изменена.</div>" :
+    "<div class='status error'>Добавьте размеры и параметры мебели.</div>");
+  window._aiRecognized=result;
+}
+
+function applyAiRecognition() {
+  const result=window._aiRecognized;
+  if(!result || !result.recognized.length) return;
+  Object.entries(result.params).forEach(([key,value])=>{
+    const el=$(key);
+    if(el && key !== "material") el.value=value;
+    if(key==="material" && $("material")) $("material").value=value;
+  });
+  build();
+  validate("AI-распознавание применено: параметрическая модель построена.", "ok");
+}
+
 function build() {
   const p = readParams();
   const error = validateParams(p);
