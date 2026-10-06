@@ -469,9 +469,8 @@ function buildIfcTechnologyOperations() {
     const u=part.userData;
     u.technology.jointCount=u.technology.joints.length;
     u.technology.operationCount=u.technology.operations.length;
-    u.technology.status = u.technology.status==="ready" && u.technology.joints.every(j=>j.status==="candidate" || j.status==="ready")
-      ? "ready"
-      : u.technology.status;
+    const hasUnconfirmedJoint = u.technology.joints.some(j=>j.status !== "ready");
+    if (hasUnconfirmedJoint) u.technology.status = "review";
   });
 
   return result;
