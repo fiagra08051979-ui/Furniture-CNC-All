@@ -1996,7 +1996,8 @@ function buildCncJobManifest() {
     tools,
     preflight,
     manufacturingIntegrity: integrity,
-    readyForMachine:preflight.filter(i => i.level === "error").length === 0
+    readyForMachine:preflight.filter(i => i.level === "error").length === 0,
+    manufacturingPreflight: integrity.length ? "ERROR" : "OK"
   };
 }
 
