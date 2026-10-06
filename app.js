@@ -2029,7 +2029,13 @@ function buildCncJobManifest() {
     generatedProgramTraceability: plans.map(plan => ({
       partNumber:plan.partNumber,
       status:"Готово после постпроверки",
-      note:"Полная трассировка формируется при генерации управляющей программы."
+      note:"Паспорт происхождения формируется для каждой операции при генерации управляющей программы.",
+      operations:plan.operations.map(op=>({
+        operationId:op.id,
+        expressId:op.expressId||op.sourceExpressId||null,
+        source:op.source||plan.source,
+        technologyGroup:(plan.technologyGroups||[]).find(g=>g.operations?.includes(op.id))?.key||null
+      }))
     })),
     compensatedToolpaths: plans.map(plan => ({
       partNumber:plan.partNumber,
