@@ -1965,8 +1965,8 @@ function applyCncMachineSetup() {
     validate(setupIssues.map(i => i.message).join(" "), "error");
     return setup;
   }
-  ЧПУ_POSTPROCESSORS.generic.safeZ = setup.safeZ;
-  ЧПУ_POSTPROCESSORS.generic.drillFeed = setup.defaultFeed;
+  CNC_POSTPROCESSORS.generic.safeZ = setup.safeZ;
+  CNC_POSTPROCESSORS.generic.drillFeed = setup.defaultFeed;
   validate("Настройки ЧПУ применены: Безопасная высота Z " + setup.safeZ + " мм, подача " + setup.defaultFeed + " мм/мин.", "ok");
   return setup;
 }
@@ -2393,7 +2393,7 @@ function exportCncProgram(part) {
   URL.revokeObjectURL(link.href);
 }
 
-const ЧПУ_TOOL_LIBRARY = {
+const CNC_TOOL_LIBRARY = {
   drilling: [
     {id:"DRILL-5",name:"Сверло Ø5 мм",diameter:5,kind:"drill",materials:["ЛДСП","МДФ","Фанера"]},
     {id:"DRILL-6",name:"Сверло Ø6 мм",diameter:6,kind:"drill",materials:["ЛДСП","МДФ","Фанера"]},
@@ -2414,7 +2414,7 @@ function cncMaterialFamily(material) {
 }
 
 function selectCncTool(op, material) {
-  const family = op.type === "DRILL" ? ЧПУ_TOOL_LIBRARY.drilling : ЧПУ_TOOL_LIBRARY.milling;
+  const family = op.type === "DRILL" ? CNC_TOOL_LIBRARY.drilling : CNC_TOOL_LIBRARY.milling;
   const familyName=cncMaterialFamily(material);
   const candidates = family.filter(t => t.materials.includes(familyName));
   if (op.diameter > 0) {
@@ -2611,7 +2611,7 @@ function exportCncTechCards() {
   validate("Технологическая карта ЧПУ экспортирована.", "ok");
 }
 
-const ЧПУ_POSTPROCESSORS = {
+const CNC_POSTPROCESSORS = {
   generic: {
     name: "Universal G-code",
     extension: ".nc",
@@ -2647,7 +2647,7 @@ const ЧПУ_POSTPROCESSORS = {
 };
 
 function getPostprocessor() {
-  return ЧПУ_POSTPROCESSORS[$("cncPostprocessor")?.value || "generic"] || ЧПУ_POSTPROCESSORS.generic;
+  return CNC_POSTPROCESSORS[$("cncPostprocessor")?.value || "generic"] || CNC_POSTPROCESSORS.generic;
 }
 
 function buildIfcProductionPacket(part) {
@@ -3090,7 +3090,7 @@ function buildCncToolpaths(plan) {
       points.push({x:Number(op.x)||0,y:Number(op.y)||0,z:safeZ});
       zLevels.forEach(z=>points.push({x:Number(op.x)||0,y:Number(op.y)||0,z}));
       points.push({x:Number(op.x)||0,y:Number(op.y)||0,z:safeZ});
-      out.push({operationId:op.id,type:op.type,toolId,passes,zLevels,points,source:"ЧПУ_PASS_PLAN"});
+      out.push({operationId:op.id,type:op.type,toolId,passes,zLevels,points,source:"CNC_PASS_PLAN"});
     } else if(op.type==="CONTOUR" && Array.isArray(op.path)) {
       const base=op.path.map(p=>({x:Number(p.x)||0,y:Number(p.y)||0}));
       if(base.length<3) return;
@@ -3100,13 +3100,13 @@ function buildCncToolpaths(plan) {
         base.forEach(p=>points.push({x:p.x,y:p.y,z}));
         points.push({x:base[0].x,y:base[0].y,z:safeZ});
       });
-      out.push({operationId:op.id,type:op.type,toolId,passes,zLevels,points,source:"ЧПУ_PASS_PLAN"});
+      out.push({operationId:op.id,type:op.type,toolId,passes,zLevels,points,source:"CNC_PASS_PLAN"});
     } else if(op.type==="POCKET") {
       const typed=(plan.compensatedToolpaths||[]).filter(x=>x.operationId===op.id);
       if(typed.length) {
         typed.forEach(path=>out.push({...path,toolId,source:path.source||"IFC_POCKET_PASS"}));
       } else {
-        out.push({operationId:op.id,type:op.type,toolId,passes,zLevels,points:[{x:Number(op.x)||0,y:Number(op.y)||0,z:safeZ}],source:"ЧПУ_PASS_PLAN"});
+        out.push({operationId:op.id,type:op.type,toolId,passes,zLevels,points:[{x:Number(op.x)||0,y:Number(op.y)||0,z:safeZ}],source:"CNC_PASS_PLAN"});
       }
     }
   });
@@ -3614,7 +3614,7 @@ function validateToolChangeSequence(plan) {
 function buildCncToolTechnologyPlan(plan) {
   const groups=[];
   (plan.operations||[]).forEach(op=>{
-    const tool=ЧПУ_TOOL_LIBRARY.find(t=>t.id===op.toolId);
+    const tool=CNC_TOOL_LIBRARY.find(t=>t.id===op.toolId);
     const parameters=resolveCncCuttingParameters(op,tool,plan.material,plan.thickness);
     let group=groups.find(g=>g.toolId===op.toolId);
     if(!group) {
@@ -3639,7 +3639,7 @@ function validateMachineCompatibility(plan, post=getPostprocessor()) {
     issues.push({level:"error",code:"POST_SAFE_Z",message:"Безопасная высота Z постпроцессора превышает настройку станка."});
   (plan.operations||[]).forEach(op=>{
     const toolId=op.toolId;
-    const tool=toolId && ЧПУ_TOOL_LIBRARY.find(t=>t.id===toolId);
+    const tool=toolId && CNC_TOOL_LIBRARY.find(t=>t.id===toolId);
     if(!tool) issues.push({level:"error",code:"MACHINE_TOOL",message:"Инструмент не найден в библиотеке: "+(toolId||"NONE"),operation:op.id});
     if(op.depth!=null && Number(op.depth)>Number(plan.thickness||0))
       issues.push({level:"error",code:"MACHINE_DEPTH",message:"Глубина операции превышает толщину детали.",operation:op.id});
