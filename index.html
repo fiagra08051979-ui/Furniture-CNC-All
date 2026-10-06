@@ -77,6 +77,29 @@
       </section>
 
       <section>
+        <h2>Освещение</h2>
+        <label>Освещение мебели<select id="lightingEnabled"><option value="нет">Без освещения</option><option value="есть">С освещением</option></select></label>
+        <label>Тип монтажа<select id="lightingMount"><option value="накладное">Накладное</option><option value="внутреннее">Внутреннее (с фрезеровкой)</option></select></label>
+        <label>Освещение полок<select id="shelfLighting"><option value="нет">Без освещения</option><option value="есть">С освещением</option></select></label>
+      </section>
+
+      <section>
+        <h2>Столешница</h2>
+        <label>Столешница<select id="countertopEnabled"><option value="нет">Без столешницы</option><option value="есть">Со столешницей</option></select></label>
+        <label>Толщина, мм<input id="countertopThickness" type="number" min="35" max="50" step="1" value="40"></label>
+        <label>Постформинг<select id="countertopPostforming"><option value="нет">Без постформинга</option><option value="есть">С постформингом</option></select></label>
+        <label>Тип выреза<select id="countertopCut"><option value="через планку">Через планку</option><option value="еврозапил">Еврозапил</option></select></label>
+        <label>Материал<select id="countertopMaterial"><option value="агломерат">Агломерат</option><option value="лдсп">ЛДСП</option><option value="пластик">Пластиковая столешница</option><option value="hp">HP-панель 12–20 мм</option><option value="акрил">Акриловая столешница</option></select></label>
+      </section>
+
+      <section>
+        <h2>Библиотека внешних фасадов</h2>
+        <label>Производитель<input id="facadeManufacturer" type="text" placeholder="Производитель"></label>
+        <label>Модель / артикул<input id="facadeModel" type="text" placeholder="Модель или артикул"></label>
+        <label>Фасад<select id="facadeLibraryItem"><option value="внешний фасад">Внешний фасад</option></select></label>
+      </section>
+
+      <section>
         <h2>Лист раскроя</h2>
         <label>Длина листа, мм<input id="sheetLength" type="number" min="500" value="2800"></label>
         <label>Ширина листа, мм<input id="sheetWidth" type="number" min="500" value="2070"></label>
