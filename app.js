@@ -3239,20 +3239,6 @@ function buildTypedCompensatedToolpaths(plan, part) {
   return result;
 }
 
-    const kind=classifyCncGeometryOperation(op);
-    if(kind==="POCKET") return buildPocketPasses(op,plan,part)[0] || null;
-    if(kind==="INNER_CONTOUR") {
-      const paths=buildCompensatedContourToolpath({...plan,operations:[{...op,compensationSide:"INSIDE"}]},part);
-      return paths[0] || null;
-    }
-    if(kind==="OUTER_CONTOUR") {
-      const paths=buildCompensatedContourToolpath({...plan,operations:[{...op,compensationSide:"OUTSIDE"}]},part);
-      return paths[0] || null;
-    }
-    return null;
-  }).filter(Boolean);
-}
-
 function buildCompensatedContourToolpath(plan, part) {
   const contour=part.userData?.ifcContour?.path;
   if(!Array.isArray(contour)||contour.length<3) return [];
