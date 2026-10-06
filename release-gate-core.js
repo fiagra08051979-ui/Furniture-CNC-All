@@ -83,7 +83,7 @@ function evaluateReleaseGateState({ qc, partsCount, partStates, cuttingGroups, s
   if (Array.isArray(partStates) && Number(partsCount) !== partStates.length) {
     issues.push("Количество состояний деталей не соответствует количеству деталей проекта.");
   }
-  if (qc?.details?.length && Array.isArray(partStates) && qc.details.length !== partStates.length) {
+  if (!Array.isArray(qc?.details) || qc.details.length !== Number(partsCount)) {
     issues.push("Construction QC не содержит полный состав деталей проекта.");
   }
 
@@ -96,9 +96,7 @@ function evaluateReleaseGateState({ qc, partsCount, partStates, cuttingGroups, s
     if (state.detailing.status !== "ready") {
       issues.push("Деталь " + (state.detailing.number || id) + ": detailing не готов.");
     }
-    if (Number.isFinite(Number(modelRevision)) &&
-        Number.isFinite(Number(state.detailing.modelRevision)) &&
-        Number(state.detailing.modelRevision) !== Number(modelRevision)) {
+    if (Number(state.detailing.modelRevision) !== Number(modelRevision)) {
       issues.push("Деталь " + (state.detailing.number || id) + ": detailing относится к другой ревизии модели.");
     }
     const c = state.detailing.cutting;
