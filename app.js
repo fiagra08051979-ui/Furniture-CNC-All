@@ -1005,6 +1005,62 @@ function buildDetailedProcessing(part) {
 function constructionChecksDetailed() {
   const p = readParams();
   const issues = [];
+
+  // Геометрическая целостность параметрической модели.
+  // Для IFC источник геометрии остаётся неизменным, поэтому эти проверки
+  // применяются только к модели, построенной Furniture Core.
+  if (!ifcMode) {
+    const innerW = p.width - 2 * p.thickness;
+    const innerH = p.height - 2 * p.thickness;
+    const eps = 0.5;
+
+    parts.forEach(part => {
+      const u = part.userData;
+      if (![u.width, u.height, u.depth].every(v => Number.isFinite(Number(v)) && Number(v) > 0)) {
+        issues.push("Некорректные габариты детали: " + u.name);
+      }
+
+      if (u.kind === "Полка") {
+        const left = part.position.x - u.width / 2;
+        const right = part.position.x + u.width / 2;
+        if (left < -innerW / 2 - eps || right > innerW / 2 + eps) {
+          issues.push("Полка выходит за пределы внутренней секции: " + u.name);
+        }
+        if (u.height > p.thickness + eps) {
+          issues.push("Толщина полки не соответствует материалу: " + u.name);
+        }
+      }
+
+      if (u.kind === "Вертикальная перегородка") {
+        const x = part.position.x;
+        if (x < -innerW / 2 - eps || x > innerW / 2 + eps) {
+          issues.push("Вертикальная перегородка выходит за корпус: " + u.name);
+        }
+      }
+
+      if (u.kind === "Горизонтальная перегородка") {
+        const y = part.position.y;
+        if (y < p.thickness - eps || y > p.height - p.thickness + eps) {
+          issues.push("Горизонтальная перегородка выходит за корпус: " + u.name);
+        }
+      }
+
+      if (u.kind === "Фасад") {
+        const left = part.position.x - u.width / 2;
+        const right = part.position.x + u.width / 2;
+        const bottom = part.position.y - u.height / 2;
+        const top = part.position.y + u.height / 2;
+        if (left < -p.width / 2 - eps || right > p.width / 2 + eps ||
+            bottom < -eps || top > p.height + eps) {
+          issues.push("Фасад выходит за габариты корпуса: " + u.name);
+        }
+      }
+    });
+
+    if (innerW <= 0 || innerH <= 0) {
+      issues.push("Внутренний объём корпуса имеет недопустимый размер.");
+    }
+  }
   parts.forEach(part => {
     const u = part.userData;
     const minDrillEdge = 4;
