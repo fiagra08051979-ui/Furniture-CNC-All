@@ -3065,16 +3065,26 @@ function drawProductionGeometryA3(doc, part, x0, y0, maxW, maxH) {
     const a=mapped[i], b=mapped[(i+1)%mapped.length];
     doc.line(a.x,a.y,b.x,b.y);
   }
-  doc.setFontSize(7);
-  doc.text("КОНТУР IFC",x0,y0+maxH+7);
-  doc.text("Масштаб: "+scale.toFixed(3)+" мм/мм",x0,y0+maxH+13);
 
   const plan=getCompiledManufacturingPlan(part);
-  const drillOps=(plan.operations||[]).filter(op=>op.type==="DRILL" && Number.isFinite(Number(op.x)) && Number.isFinite(Number(op.y)));
-  const basis=part.userData?.technology?.drillingBasis;
-  const basisOrigin=basis?.origin && Number.isFinite(Number(basis.origin.x)) && Number.isFinite(Number(basis.origin.y))
-    ? map({x:Number(basis.origin.x),y:Number(basis.origin.y)}) : null;
+  const ops=(plan.operations||[]).filter(op=>op.type==="DRILL"||op.type==="MILL"||op.type==="POCKET"||op.type==="CONTOUR");
+  const pathFor=(op)=>{
+    const typed=(plan.compensatedToolpaths||[]).find(p=>p.operationId===op.id);
+    if(typed?.points?.length>=2) return typed.points;
+    if(op.path?.length>=2) return op.path;
+    const x=Number(op.x), y=Number(op.y);
+    return Number.isFinite(x)&&Number.isFinite(y) ? [[x,y]] : [];
+  };
+  const drawArrow=(a,b)=>{
+    const dx=b.x-a.x, dy=b.y-a.y, len=Math.hypot(dx,dy);
+    if(len<1) return;
+    const ux=dx/len, uy=dy/len, al=Math.min(7,len*0.35);
+    doc.line(a.x,a.y,b.x,b.y);
+    doc.line(b.x,b.y,b.x-ux*al+uy*2,b.y-uy*al-ux*2);
+    doc.line(b.x,b.y,b.x-ux*al-uy*2,b.y-uy*al+ux*2);
+  };
 
+  const drillOps=ops.filter(op=>op.type==="DRILL");
   drillOps.forEach((op,index)=>{
     const p=map({x:Number(op.x),y:Number(op.y)});
     const d=Number(op.diameter)||0;
@@ -3084,30 +3094,38 @@ function drawProductionGeometryA3(doc, part, x0, y0, maxW, maxH) {
     doc.setFontSize(6);
     doc.text("О"+String(index+1),p.x+r+1,p.y-2);
     doc.text("Ø"+d+" × "+depth+" мм",p.x+r+1,p.y+3);
-    const direction=op.localBasis?.drillDirection || op.drillDirection || basis?.direction || "";
+    const direction=op.localBasis?.drillDirection || op.drillDirection || u.technology?.drillingBasis?.direction;
     if(direction){
-      const dx=direction.x??0, dy=direction.y??0;
-      const len=Math.hypot(Number(dx),Number(dy));
-      if(len>0.01){
-        const ux=Number(dx)/len, uy=Number(dy)/len;
-        const al=8;
-        doc.line(p.x,p.y,p.x+ux*al,p.y-uy*al);
-        doc.line(p.x+ux*al,p.y-uy*al,p.x+ux*al-2*ux+uy*2,p.y-uy*al+2*uy+ux*2);
-        doc.line(p.x+ux*al,p.y-uy*al,p.x+ux*al-2*ux-uy*2,p.y-uy*al+2*uy-ux*2);
-      }
+      const dx=Number(direction.x)||0, dy=Number(direction.y)||0, len=Math.hypot(dx,dy);
+      if(len>0.01) drawArrow(p,{x:p.x+dx/len*8,y:p.y-dy/len*8});
     }
   });
 
-  if(basisOrigin){
-    doc.setFontSize(7);
-    doc.line(basisOrigin.x-5,basisOrigin.y,basisOrigin.x+5,basisOrigin.y);
-    doc.line(basisOrigin.x,basisOrigin.y-5,basisOrigin.x,basisOrigin.y+5);
-    doc.text("БАЗА X0/Y0",basisOrigin.x+6,basisOrigin.y-3);
-  }
+  const routeOps=ops.filter(op=>op.type==="MILL"||op.type==="POCKET"||op.type==="CONTOUR");
+  routeOps.forEach((op,index)=>{
+    const path=pathFor(op).map(p=>map({x:Number(p[0]),y:Number(p[1])})).filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.y));
+    if(path.length<2) return;
+    doc.setLineWidth(op.type==="CONTOUR"?0.9:0.5);
+    for(let j=0;j<path.length-1;j++) drawArrow(path[j],path[j+1]);
+    if(op.type==="CONTOUR" && path.length>2) drawArrow(path[path.length-1],path[0]);
+    const label=op.type==="POCKET"?"КАРМАН":op.type==="MILL"?"ФРЕЗЕРОВКА":"КОНТУР";
+    const c=path[Math.floor(path.length/2)];
+    doc.setFontSize(6);
+    doc.text("О"+String(drillOps.length+index+1)+" "+label,c.x+2,c.y-2);
+  });
 
+  const basis=u.technology?.drillingBasis;
+  if(basis?.origin && Number.isFinite(Number(basis.origin.x)) && Number.isFinite(Number(basis.origin.y))){
+    const p=map({x:Number(basis.origin.x),y:Number(basis.origin.y)});
+    doc.setFontSize(7);
+    doc.line(p.x-5,p.y,p.x+5,p.y); doc.line(p.x,p.y-5,p.x,p.y+5);
+    doc.text("БАЗА X0/Y0",p.x+6,p.y-3);
+  }
   doc.setFontSize(7);
-  doc.text("Система координат: X/Y — локальная база детали; Z — направление обработки.",x0,y0+maxH+19);
-  return {drawn:true,scale,drillCount:drillOps.length,basis:!!basisOrigin};
+  doc.text("КОНТУР IFC",x0,y0+maxH+7);
+  doc.text("Система координат: X/Y — локальная база детали; Z — направление обработки.",x0,y0+maxH+13);
+  doc.text("Стрелки показывают направление технологического прохода.",x0,y0+maxH+19);
+  return {drawn:true,scale,drillCount:drillOps.length,routeCount:routeOps.length,basis:!!basis};
 }
 
 function exportProductionPdf() {
