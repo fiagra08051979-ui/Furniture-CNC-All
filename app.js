@@ -630,6 +630,14 @@ function parseIfcFurniture(text) {
   };
 }
 
+function mapIfcFurnitureToProject(result){
+  return (result.furniture||[]).map((o,index)=>({
+    ifcId:o.id,name:o.name,sourceType:o.type,
+    projectObjectType:"Мебель",sourceIndex:index,
+    attributes:o.attributes||[],numericValues:o.numericValues||[]
+  }));
+}
+
 function renderIfcResult(result){
   const target=$("ifcRecognition");
   if(!target) return;
@@ -638,6 +646,9 @@ function renderIfcResult(result){
     (furniture.length ? "<ul>"+furniture.map(o=>"<li>#"+o.id+" — "+o.name+"</li>").join("")+"</ul>" :
     "<div class='status'>IFC содержит объекты, но мебель IFC не обнаружена.</div>");
   window._ifcResult=result;
+  window._ifcProjectObjects=mapIfcFurnitureToProject(result);
+  const p=$("ifcProjectObjects");
+  if(p) p.innerHTML="<b>Объекты проекта</b>"+(window._ifcProjectObjects.length ? "<ul>"+window._ifcProjectObjects.map(o=>"<li>#"+o.ifcId+" — "+o.name+"</li>").join("")+"</ul>" : "<div>Нет IFCFURNISHINGELEMENT.</div>");
 }
 
 function importIfcFile(file){
