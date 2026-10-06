@@ -1077,7 +1077,12 @@ function assignPartNumbers() {
       material: u.material,
       edges: [...u.edges],
       processing: [...(u.processing || [])],
-      holes: [...(u.drilling || []), ...(u.shelfSupportDrilling || [])],
+      holes: [
+        ...(u.drilling || []),
+        ...(u.bodyFasteners || []),
+        ...(u.shelfSupportDrilling || []),
+        ...(u.secondaryFasteners || [])
+      ],
       milling: (u.processing || []).filter(op => /фрез|паз|выбор/i.test(op.operation || "")),
       notes: []
     };
@@ -1114,12 +1119,18 @@ function buildCuttingGroups() {
   return [...groups.values()].map((g, index) => ({...g, groupNumber: String(index + 1).padStart(3, "0")}));
 }
 
-function buildSheetLayout(sheetLength, sheetWidth, kerf, margin, allowRotation, grainMode) {
+
+function buildSheetLayout(sheetLength, sheetWidth, kerf, margin) {
   const groups = buildCuttingGroups();
   const sheets = [];
   let sheetIndex = 1;
+
   const newSheet = (material) => ({
-    sheetNumber: sheetIndex++, material, length: sheetLength, width: sheetWidth, placements: []
+    sheetNumber: sheetIndex++,
+    material,
+    length: sheetLength,
+    width: sheetWidth,
+    placements: []
   });
 
   const items = [];
@@ -1135,149 +1146,260 @@ function buildSheetLayout(sheetLength, sheetWidth, kerf, margin, allowRotation, 
       });
     }
   });
+
   items.sort((a, b) => (b.length * b.width) - (a.length * a.width));
 
-  const canRotate = allowRotation && grainMode === "нет";
   const tryPlace = (sheet, item) => {
-    const candidates = [
-      {w:item.length, h:item.width, rotated:false},
-      ...(canRotate ? [{w:item.width, h:item.length, rotated:true}] : [])
-    ];
-    let best = null;
+    const rows = [];
+    const rowMap = new Map();
     sheet.placements.forEach(p => {
-      for (const c of candidates) {
-        const x = p.x + p.length + kerf;
-        const y = p.y;
-        if (x + c.w <= sheetLength - margin && y + c.h <= sheetWidth - margin) {
-          best = best || {x, y, ...c};
-        }
-      }
+      const key = p.y;
+      if (!rowMap.has(key)) rowMap.set(key, []);
+      rowMap.get(key).push(p);
     });
-    for (const c of candidates) {
-      const x = margin;
-      const y = margin;
-      if (x + c.w <= sheetLength - margin && y + c.h <= sheetWidth - margin) {
-        best = best || {x, y, ...c};
+
+    for (const [y, row] of [...rowMap.entries()].sort((a,b) => a[0]-b[0])) {
+      const right = row.reduce((m,p) => Math.max(m, p.x + p.length), margin);
+      if (right + kerf + item.length <= sheetLength - margin &&
+          y + item.width <= sheetWidth - margin) {
+        return { x:right + kerf, y, length:item.length, width:item.width };
       }
     }
-    const rowYs = [...new Set(sheet.placements.map(p => p.y))].sort((x,y)=>x-y);
-    for (const y of rowYs) {
-      const row = sheet.placements.filter(p => p.y === y);
-      const right = row.reduce((m,p)=>Math.max(m,p.x+p.length), margin);
-      for (const c of candidates) {
-        if (right + kerf + c.w <= sheetLength - margin && y + c.h <= sheetWidth - margin) {
-          const candidate = {x:right+kerf,y,...c};
-          if (!best || candidate.y < best.y || (candidate.y === best.y && candidate.x < best.x)) best = candidate;
-        }
-      }
+
+    const maxY = sheet.placements.reduce(
+      (m,p) => Math.max(m, p.y + p.width + kerf),
+      margin
+    );
+    if (margin + item.length <= sheetLength - margin &&
+        maxY + item.width <= sheetWidth - margin) {
+      return { x:margin, y:maxY, length:item.length, width:item.width };
     }
-    return best;
+
+    if (sheet.placements.length === 0 &&
+        margin + item.length <= sheetLength - margin &&
+        margin + item.width <= sheetWidth - margin) {
+      return { x:margin, y:margin, length:item.length, width:item.width };
+    }
+
+    return null;
   };
 
   items.forEach(item => {
     let sheet = [...sheets].reverse().find(s => s.material === item.material);
     let placement = sheet ? tryPlace(sheet, item) : null;
+
     if (!placement) {
       sheet = newSheet(item.material);
       sheets.push(sheet);
       placement = tryPlace(sheet, item);
     }
-    if (!placement) {
-      sheet.placements.push({
-        sheetNumber: sheet.sheetNumber, groupNumber: item.groupNumber, partNumber: item.partNumber,
-        x: margin, y: margin, length: item.length, width: item.width, rotated:false, overflow:true
-      });
-      return;
-    }
+
     sheet.placements.push({
       sheetNumber: sheet.sheetNumber,
       groupNumber: item.groupNumber,
       partNumber: item.partNumber,
-      x: Math.round(placement.x),
-      y: Math.round(placement.y),
-      length: placement.w,
-      width: placement.h,
-      rotated: placement.rotated,
-      overflow:false,
-      grain: grainMode
+      x: placement ? Math.round(placement.x) : margin,
+      y: placement ? Math.round(placement.y) : margin,
+      length: item.length,
+      width: item.width,
+      overflow: !placement,
+      edges: [...item.edges]
     });
   });
 
-  return {sheetLength, sheetWidth, kerf, margin, allowRotation:canRotate, grainMode, sheets};
+  return { sheetLength, sheetWidth, kerf, margin, sheets };
 }
 
-function showCuttingMap() {
+function renderCuttingMap(layout) {
+  const panel = $("cuttingMap");
+  if (!panel) return;
+
+  panel.innerHTML = "";
+  layout.sheets.forEach(sheet => {
+    const card = document.createElement("div");
+    card.className = "cutting-sheet";
+
+    const title = document.createElement("div");
+    title.className = "cutting-sheet-title";
+    title.textContent =
+      "Лист " + sheet.sheetNumber + " · " + sheet.material +
+      " · " + sheet.length + " × " + sheet.width + " мм";
+    card.appendChild(title);
+
+    const canvas = document.createElement("canvas");
+    canvas.width = 900;
+    canvas.height = Math.max(300, Math.round(900 * sheet.width / sheet.length));
+    canvas.className = "cutting-canvas";
+
+    const ctx = canvas.getContext("2d");
+    const sx = canvas.width / sheet.length;
+    const sy = canvas.height / sheet.width;
+
+    ctx.strokeStyle = "#334155";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
+
+    sheet.placements.forEach(p => {
+      const x = p.x * sx, y = p.y * sy;
+      const w = p.length * sx, h = p.width * sy;
+
+      ctx.fillStyle = p.overflow ? "#fecaca" : "#dbeafe";
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = "#334155";
+      ctx.strokeRect(x, y, w, h);
+
+      ctx.fillStyle = "#111827";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = Math.max(11, Math.min(24, Math.min(w,h)*0.18)) + "px Arial";
+      ctx.fillText(p.partNumber, x + w/2, y + h/2);
+      ctx.font = "11px Arial";
+      ctx.fillText(
+        Math.round(p.length) + "×" + Math.round(p.width),
+        x + w/2,
+        y + h/2 + 16
+      );
+
+      if (p.overflow) {
+        ctx.fillStyle = "#991b1b";
+        ctx.fillText("НЕ ПОМЕЩАЕТСЯ", x + w/2, y + h/2 + 31);
+      }
+    });
+
+    panel.appendChild(card);
+  });
+
+  panel.hidden = false;
+}
+
+function cuttingOperationList(part) {
+  const u = part.userData;
+  return [
+    ...(u.drilling || []),
+    ...(u.bodyFasteners || []),
+    ...(u.shelfSupportDrilling || []),
+    ...(u.secondaryFasteners || []),
+    ...((u.technology && u.technology.drilling) || [])
+  ].map((op, index) => ({
+    number: index + 1,
+    type: op.operation || op.type || "Сверление",
+    diameter: Number.isFinite(Number(op.diameter)) ? Number(op.diameter) : null,
+    depth: Number.isFinite(Number(op.depth)) ? Number(op.depth) : null,
+    hardware: op.linkedHardware || op.linkedPart || op.type || ""
+  }));
+}
+
+function edgeSummary(edges) {
+  return (edges || []).map((e, i) => "С" + (i + 1) + ": " + e).join(" · ");
+}
+
+function drillingSchematic(part) {
+  const u = part.userData;
+  const ops = cuttingOperationList(part);
+  const W = 420, H = 220, pad = 22;
+  const dw = Math.max(40, Number(u.width) || 40);
+  const dh = Math.max(40, Number(u.height) || 40);
+  const sx = (W - pad*2) / dw;
+  const sy = (H - pad*2) / dh;
+
+  const circles = ops.map((op, i) => {
+    const raw = part.userData.drilling?.[i] || part.userData.shelfSupportDrilling?.[i] ||
+      part.userData.bodyFasteners?.[i] || part.userData.secondaryFasteners?.[i];
+    const rx = Number(raw?.x);
+    const ry = Number(raw?.y);
+    const px = Number.isFinite(rx) ? Math.max(0.06, Math.min(0.94, (rx + dw/2) / dw)) : 0.18 + (i % 5) * 0.16;
+    const py = Number.isFinite(ry) ? Math.max(0.06, Math.min(0.94, (ry + dh/2) / dh)) : 0.18 + (Math.floor(i/5) % 4) * 0.18;
+    const cx = pad + px * (W - pad*2);
+    const cy = pad + py * (H - pad*2);
+    const r = Math.max(4, Math.min(10, Number(op.diameter || 6)));
+    return '<circle cx="' + cx.toFixed(1) + '" cy="' + cy.toFixed(1) +
+      '" r="' + r.toFixed(1) + '" fill="none" stroke="#111827" stroke-width="2"/>' +
+      '<text x="' + (cx+8).toFixed(1) + '" y="' + (cy-8).toFixed(1) +
+      '" font-size="10" fill="#111827">' + op.number + '</text>';
+  }).join("");
+
+  return '<svg viewBox="0 0 '+W+' '+H+'" class="drilling-schematic">' +
+    '<rect x="'+pad+'" y="'+pad+'" width="'+(W-pad*2)+'" height="'+(H-pad*2)+'" fill="#f8fafc" stroke="#334155" stroke-width="2"/>' +
+    circles +
+    '<text x="'+W/2+'" y="15" text-anchor="middle" font-size="12" font-weight="bold">Схема присадки · номера соответствуют перечню</text>' +
+    '</svg>';
+}
+
+function buildCuttingPdfHtml(layout) {
+  const projectName = $("projectName")?.textContent || "Furniture AI Designer";
+  const detailPages = parts.map(part => {
+    const u = part.userData;
+    const ops = cuttingOperationList(part);
+    const rows = ops.length ? ops.map(op =>
+      '<tr><td>'+op.number+'</td><td>'+op.type+'</td><td>'+
+      (op.diameter ?? "—")+'</td><td>'+(op.depth ?? "—")+
+      '</td><td>'+op.hardware+'</td></tr>'
+    ).join("") : '<tr><td colspan="5">Присадка не задана</td></tr>';
+
+    return '<section class="detail-page">' +
+      '<h2>Деталь №'+u.partNumber+' — '+u.name+'</h2>' +
+      '<div class="detail-meta"><b>Размер:</b> '+Math.round(u.width)+' × '+Math.round(u.height)+' × '+Math.round(u.depth)+' мм · '+
+      '<b>Материал:</b> '+u.material+' · <b>Количество:</b> '+(u.quantity || 1)+'</div>' +
+      '<div class="detail-meta"><b>Кромка:</b> '+edgeSummary(u.edges)+'</div>' +
+      (ops.length ? drillingSchematic(part) : '<div class="no-drilling">Присадка и сверловка отсутствуют.</div>') +
+      '<table><thead><tr><th>№</th><th>Операция</th><th>Ø, мм</th><th>Глубина, мм</th><th>Фурнитура / назначение</th></tr></thead><tbody>'+
+      rows+'</tbody></table></section>';
+  }).join("");
+
+  const sheetPages = layout.sheets.map(sheet => {
+    const rects = sheet.placements.map(p => {
+      const x = p.x / sheet.length * 760;
+      const y = p.y / sheet.width * 510;
+      const w = p.length / sheet.length * 760;
+      const h = p.width / sheet.width * 510;
+      const label = p.partNumber + '  ' + Math.round(p.length) + '×' + Math.round(p.width);
+      return '<g><rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h.toFixed(1)+'" fill="#e5e7eb" stroke="#111827"/>' +
+        '<text x="'+(x+w/2).toFixed(1)+'" y="'+(y+h/2).toFixed(1)+'" text-anchor="middle" dominant-baseline="middle" font-size="12">'+label+'</text>'+
+        (p.overflow ? '<text x="'+(x+w/2).toFixed(1)+'" y="'+(y+h/2+18).toFixed(1)+'" text-anchor="middle" font-size="11" fill="#991b1b">НЕ ПОМЕЩАЕТСЯ</text>' : '')+
+        '</g>';
+    }).join("");
+
+    return '<section class="sheet-page">' +
+      '<h2>Карта раскроя · лист '+sheet.sheetNumber+'</h2>' +
+      '<div class="sheet-meta">'+sheet.material+' · '+sheet.length+' × '+sheet.width+' мм · пропил '+sheet.kerf+' мм</div>' +
+      '<svg viewBox="0 0 760 510" class="sheet-svg"><rect x="0" y="0" width="760" height="510" fill="white" stroke="#111827" stroke-width="3"/>'+rects+'</svg>' +
+      '<table><thead><tr><th>№ детали</th><th>Размер</th><th>Материал</th><th>Кромка</th></tr></thead><tbody>'+
+      sheet.placements.map(p => {
+        const part = parts.find(x => x.userData.partNumber === p.partNumber);
+        return '<tr><td>'+p.partNumber+'</td><td>'+Math.round(p.length)+' × '+Math.round(p.width)+' × '+Math.round(part?.userData?.depth || 0)+' мм</td><td>'+
+          (part?.userData?.material || sheet.material)+'</td><td>'+edgeSummary(part?.userData?.edges || p.edges)+'</td></tr>';
+      }).join("")+'</tbody></table></section>';
+  }).join("");
+
+  return '<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Карта раскроя — '+projectName+'</title><style>'+
+    '@page{size:A4 portrait;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#111827;margin:0;font-size:10pt}h1{font-size:20pt;margin:0 0 8mm}h2{font-size:15pt;margin:0 0 4mm}.cover{page-break-after:always}.sheet-page{page-break-after:always}.detail-page{page-break-after:always}.sheet-meta,.detail-meta{margin:2mm 0}.sheet-svg{width:100%;height:auto;border:1px solid #111827}.drilling-schematic{width:100%;max-width:180mm;height:auto;margin:5mm 0}table{width:100%;border-collapse:collapse;margin-top:5mm}th,td{border:1px solid #6b7280;padding:3px 4px;text-align:left;vertical-align:top}th{font-weight:700}.no-drilling{margin:8mm 0;padding:5mm;border:1px solid #9ca3af}'+
+    '</style></head><body><section class="cover"><h1>Карта раскроя</h1><p><b>Проект:</b> '+projectName+'</p><p><b>Листов:</b> '+layout.sheets.length+' · <b>Деталей:</b> '+parts.length+'</p><p>Документ для производственного использования: листы раскроя, детали, кромка, присадка и сверловка.</p></section>'+
+    sheetPages + detailPages + '</body></html>';
+}
+
+function exportSheetLayout() {
   const layout = buildSheetLayout(
     Number($("sheetLength")?.value || 2800),
     Number($("sheetWidth")?.value || 2070),
     Number($("cutKerf")?.value || 4),
-    Number($("sheetMargin")?.value || 10),
-    Boolean($("allowRotation")?.checked),
-    $("grainMode")?.value || "нет"
+    Number($("sheetMargin")?.value || 10)
   );
-  const panel = $("cuttingMap");
-  if (!panel) return;
-  panel.innerHTML = "";
-  layout.sheets.forEach((sheet, index) => {
-    const card = document.createElement("div");
-    card.className = "cutting-sheet";
-    const title = document.createElement("div");
-    title.className = "cutting-sheet-title";
-    title.textContent = "Лист " + sheet.sheetNumber + " · " + sheet.material + " · " + sheet.length + " × " + sheet.width + " мм";
-    card.appendChild(title);
-    const canvas = document.createElement("canvas");
-    canvas.width = 900; canvas.height = Math.max(300, Math.round(900 * sheet.width / sheet.length));
-    canvas.className = "cutting-canvas";
-    const ctx = canvas.getContext("2d");
-    const sx = canvas.width / sheet.length, sy = canvas.height / sheet.width;
-    ctx.strokeStyle = "#334155"; ctx.lineWidth = 3; ctx.strokeRect(1,1,canvas.width-2,canvas.height-2);
-    sheet.placements.forEach(p => {
-      const x=p.x*sx, y=p.y*sy, w=p.length*sx, h=p.width*sy;
-      ctx.fillStyle = p.overflow ? "#fecaca" : "#dbeafe";
-      ctx.fillRect(x,y,w,h); ctx.strokeRect(x,y,w,h);
-      ctx.fillStyle = "#111827"; ctx.textAlign="center"; ctx.textBaseline="middle";
-      ctx.font = Math.max(11, Math.min(24, Math.min(w,h)*0.18)) + "px Arial";
-      ctx.fillText(p.partNumber, x+w/2, y+h/2);
-      ctx.font = "11px Arial";
-      ctx.fillText(Math.round(p.length)+"×"+Math.round(p.width), x+w/2, y+h/2+16);
-      if (p.rotated) { ctx.font="10px Arial"; ctx.fillText("90°",x+w/2,y+h/2-16); }
-      if (p.overflow) { ctx.fillStyle="#991b1b"; ctx.fillText("ВНЕ ЛИСТА",x+w/2,y+h/2+31); }
-    });
-    card.appendChild(canvas);
-    panel.appendChild(card);
-  });
-  panel.hidden = false;
-}
 
-function exportSheetLayout() {
-  if (!window.XLSX) { validate("Модуль Excel недоступен.", "error"); return; }
-  const sheetLength = Number($("sheetLength")?.value || 2800);
-  const sheetWidth = Number($("sheetWidth")?.value || 2070);
-  const kerf = Number($("cutKerf")?.value || 4);
-  const margin = Number($("sheetMargin")?.value || 10);
-  const allowRotation = Boolean($("allowRotation")?.checked);
-  const grainMode = $("grainMode")?.value || "нет";
-  const layout = buildSheetLayout(sheetLength, sheetWidth, kerf, margin, allowRotation, grainMode);
-  const rows = [];
-  layout.sheets.forEach(sheet => sheet.placements.forEach(p => rows.push({
-    "Лист": sheet.sheetNumber,
-    "Группа": p.groupNumber,
-    "№ детали": p.partNumber,
-    "X, мм": p.x,
-    "Y, мм": p.y,
-    "Длина, мм": p.length,
-    "Ширина, мм": p.width,
-    "Поворот": p.rotated ? "90°" : "0°",
-    "Направление текстуры": p.grain || "нет",
-    "Переполнение": p.overflow ? "ДА" : "нет"
-  })));
-  const ws = XLSX.utils.json_to_sheet(rows);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Карта раскроя");
-  XLSX.writeFile(wb, "furniture-ai-sheet-layout.xlsx");
-  validate("Карта раскроя рассчитана: " + layout.sheets.length + " лист(ов).", "ok");
-}
+  renderCuttingMap(layout);
 
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    validate("Браузер заблокировал окно PDF. Разрешите всплывающие окна для приложения.", "error");
+    return;
+  }
+
+  printWindow.document.open();
+  printWindow.document.write(buildCuttingPdfHtml(layout));
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => printWindow.print(), 250);
+  validate("Карта раскроя подготовлена. В окне печати выберите «Сохранить как PDF».", "ok");
+}
 function createPartLabel(part) {
   const canvas = document.createElement("canvas");
   canvas.width = 256; canvas.height = 96;
