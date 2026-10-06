@@ -17,7 +17,10 @@ const required = [
   ["кнопка PDF карты раскроя", html.includes("exportSheetLayout") && html.includes("Сформировать карту раскроя PDF")],
   ["кнопки карты раскроя без дублирования id", !/<button[^>]+id="(?:exportSheetLayout|showCuttingMap)"/i.test(html) && app.includes('querySelectorAll(".exportSheetLayout")') && app.includes('querySelectorAll(".showCuttingMap")')],
   ["координаты только в PDF", app.includes("x: Number.isFinite(Number(op.x))") && app.includes("X, мм") && app.includes("Y, мм")],
-  ["геометрический контроль модели", app.includes("Геометрическая целостность параметрической модели") && app.includes("Полка выходит за пределы внутренней секции") && app.includes("Фасад выходит за габариты корпуса")]
+  ["геометрический контроль модели", app.includes("Геометрическая целостность параметрической модели") && app.includes("Полка выходит за пределы внутренней секции") && app.includes("Фасад выходит за габариты корпуса")],
+  ["Construction QC Gate", app.includes("runConstructionQC") && app.includes("window._constructionQC")],
+  ["Release Gate runtime", app.includes("runReleaseGate") && app.includes("window._releaseGate") && app.includes("выпуск PDF заблокирован")],
+  ["цепочка Construction QC → Release Gate", app.includes("runConstructionQC(detailingPipeline)") && app.includes("runReleaseGate()")]
 ];
 
 const forbidden = [
