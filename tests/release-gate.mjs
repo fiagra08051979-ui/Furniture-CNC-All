@@ -9,7 +9,8 @@ const readme = fs.readFileSync("README.md", "utf8");
 const fixtures = JSON.parse(fs.readFileSync("tests/reference-projects.json", "utf8"));
 
 const required = [
-  ["Furniture AI Designer", app.includes("Furniture AI Designer") || readme.includes("Furniture AI Designer")],\n  ["версия интерфейса синхронизирована с v1.0.0", app.includes('projectVersion = "1.0.0"') && html.includes("Furniture AI Designer v1.0.0")],
+  ["Furniture AI Designer", app.includes("Furniture AI Designer") || readme.includes("Furniture AI Designer")],
+  ["версия интерфейса синхронизирована с v1.0.0", app.includes('projectVersion = "1.0.0"') && html.includes("Furniture AI Designer v1.0.0")],
   ["дизайнер поддерживает материалы по отдельным деталям", app.includes("detail-material") && app.includes("applyPartMaterial(index, materialSelect.value)")],
   ["дизайнер поддерживает полный набор материалов и толщин", html.includes("ЛДСП 35 мм") && html.includes("МДФ 16 мм") && html.includes("Фанера 22 мм") && html.includes("ABS 0.8 мм") && html.includes("PVC 1 мм") && html.includes("PP 2 мм")],
   ["утвержден блок освещения", html.includes('id="lightingEnabled"') && html.includes('id="lightingMount"') && html.includes('id="shelfLighting"') && app.includes("lightingEnabled") && app.includes("shelfLighting")],
@@ -138,7 +139,11 @@ const contractChecks = [
   ["Release Gate сверяет состав деталей", app.includes("Количество состояний деталей не соответствует количеству деталей проекта")],
   ["Release Gate требует полный состав Construction QC", app.includes("Construction QC не содержит полный состав деталей проекта")],
   ["Release Gate отвергает устаревшую деталировку", app.includes("detailing относится к другой ревизии модели")],
-  ["Release Gate сверяет состав групп раскроя с деталировкой", core.includes("отсутствует запись в группах раскроя") && core.includes("Группа раскроя не соответствует деталировке детали") && core.includes("В группах раскроя присутствует деталь без готовой деталировки")],\n  ["Release Gate запрещает дубли номеров деталей", core.includes("Дублируется номер детали") && core.includes("const detailNumbers = new Set()")],\n  ["Release Gate сверяет номер детали с detailing", core.includes("в detailing отсутствует номер детали") && core.includes("номер детали не соответствует номеру в detailing")],\n  ["Release Gate проверяет количество детали в группе раскроя", core.includes("в группах раскроя указано некорректное количество") && core.includes("Number(cutting.quantity) !== Number(detail.quantity)")],\n  ["Release Gate проверяет принадлежность размещения листу", core.includes("размещение содержит неверный номер листа") && core.includes("placement.sheetNumber")],
+  ["Release Gate сверяет состав групп раскроя с деталировкой", core.includes("отсутствует запись в группах раскроя") && core.includes("Группа раскроя не соответствует деталировке детали") && core.includes("В группах раскроя присутствует деталь без готовой деталировки")],
+  ["Release Gate запрещает дубли номеров деталей", core.includes("Дублируется номер детали") && core.includes("const detailNumbers = new Set()")],
+  ["Release Gate сверяет номер детали с detailing", core.includes("в detailing отсутствует номер детали") && core.includes("номер детали не соответствует номеру в detailing")],
+  ["Release Gate проверяет количество детали в группе раскроя", core.includes("в группах раскроя указано некорректное количество") && core.includes("Number(cutting.quantity) !== Number(detail.quantity)")],
+  ["Release Gate проверяет принадлежность размещения листу", core.includes("размещение содержит неверный номер листа") && core.includes("placement.sheetNumber")],
   ["Release Gate проверяет источник геометрии деталировки", app.includes("источник геометрии деталировки не соответствует источнику модели")],
   ["Release Gate сверяет размещение с деталировкой", app.includes("Раскладка содержит размеры детали, не соответствующие деталировке")],
   ["раскладка сохраняет материал и толщину", app.includes("thickness: item.thickness") && app.includes("material: item.material")],
