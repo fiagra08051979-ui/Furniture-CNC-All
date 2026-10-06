@@ -2019,6 +2019,11 @@ function buildCncJobManifest() {
       partNumber:plan.partNumber,
       groups:plan.toolTechnology || []
     })),
+    segmentToolpathValidation: plans.map(plan => ({
+      partNumber:plan.partNumber,
+      status:(plan.segmentToolpathValidation||[]).some(i=>i.level==="error") ? "BLOCKED" : "READY",
+      issues:plan.segmentToolpathValidation || []
+    })),
     geometryToolpathValidation: plans.map(plan => ({
       partNumber:plan.partNumber,
       status:(plan.geometryToolpathValidation||[]).some(i=>i.level==="error") ? "BLOCKED" : "READY",
@@ -3137,6 +3142,31 @@ function buildToolpathGeometryEnvelope(plan, part) {
   return {minX,maxX,minY,maxY,width:maxX-minX,height:maxY-minY,toolRadiusMax:Math.max(...(plan.operations||[]).map(o=>Number(o.toolDiameter||o.diameter||6)/2),0)};
 }
 
+function validateToolpathSegmentsAgainstGeometry(plan, part) {
+  const issues=[];
+  const contour=part.userData?.ifcContour?.path;
+  if(!Array.isArray(contour) || contour.length<3) return issues;
+  const polygon=contour.map(p=>({x:Number(p.x)||0,y:Number(p.y)||0}));
+  const inside=(p)=>pointInPolygon2D(p,polygon);
+  const segmentSamples=(a,b,count=12)=>{
+    const out=[];
+    for(let i=0;i<=count;i++){const t=i/count;out.push({x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t});}
+    return out;
+  };
+  (plan.toolpaths||[]).forEach(path=>{
+    for(let i=1;i<path.points.length;i++){
+      const a=path.points[i-1],b=path.points[i];
+      if(Number(a.z)>0 || Number(b.z)>0) continue;
+      const samples=segmentSamples(a,b);
+      if(samples.some(p=>!inside(p))){
+        issues.push({level:"error",code:"TOOLPATH_SEGMENT_OUTSIDE",message:"Сегмент траектории выходит за допустимую геометрию IFC.",operation:path.operationId,segment:i});
+        break;
+      }
+    }
+  });
+  return issues;
+}
+
 function validateToolpathAgainstGeometry(plan, part) {
   const issues=[];
   const u=part.userData||{};
@@ -3306,7 +3336,8 @@ function getCompiledManufacturingPlan(part) {
   plan.toolpathValidation=validateCncToolpaths(plan);
   plan.toolpathGeometryEnvelope=buildToolpathGeometryEnvelope(plan,part);
   plan.geometryToolpathValidation=validateToolpathAgainstGeometry(plan,part);
-  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation];
+  plan.segmentToolpathValidation=validateToolpathSegmentsAgainstGeometry(plan,part);
+  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation];
   plan.machineReady=plan.validation.every(x=>x.level!=="error") &&
     plan.status==="READY" &&
     plan.lifecycle.every(x=>x.valid) &&
