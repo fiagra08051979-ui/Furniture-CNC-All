@@ -827,6 +827,45 @@ function buildMillingGeometry(part) {
   return ops;
 }
 
+function cncCollisionChecks(part) {
+  const u = part.userData;
+  const issues = [];
+  const w = Number(u.width)||0, h = Number(u.height)||0;
+  buildCncOperations(part).forEach(op => {
+    if (op.x !== undefined && (Math.abs(Number(op.x)) > w/2 || Math.abs(Number(op.y)||0) > h/2)) {
+      issues.push({level:"error",operation:op.sequence,message:"Операция выходит за границы детали"});
+    }
+    if (op.depth !== undefined && Number(op.depth) > Number(u.thickness || u.depth || 0)) {
+      issues.push({level:"error",operation:op.sequence,message:"Глубина обработки превышает толщину детали"});
+    }
+    if (op.type === "DRILL" && Number(op.diameter) > Number(u.thickness || u.depth || 0)) {
+      issues.push({level:"warning",operation:op.sequence,message:"Диаметр сверления больше толщины детали"});
+    }
+  });
+  return issues;
+}
+
+function cncPreflight() {
+  const result = [];
+  parts.forEach(part => {
+    const issues = cncCollisionChecks(part);
+    issues.forEach(issue => result.push({...issue,partNumber:part.userData.partNumber}));
+  });
+  return result;
+}
+
+function renderCncPreflight() {
+  const target = $("cncPreflight");
+  if (!target) return;
+  const issues = cncPreflight();
+  target.innerHTML = "<b>Проверка CNC перед экспортом</b>" +
+    (issues.length ? "<div>" + issues.map(i =>
+      "<div class='status " + i.level + "'>Деталь " + i.partNumber +
+      ", операция " + i.operation + ": " + i.message + "</div>").join("") + "</div>" :
+      "<div class='status ok'>Ошибок и предупреждений не обнаружено.</div>");
+  return issues;
+}
+
 function buildCncOperations(part) {
   const u = part.userData;
   const ops = [];
@@ -1212,6 +1251,7 @@ if ($("exportSheetLayout")) $("exportSheetLayout").addEventListener("click", exp
 if ($("exportDxf")) $("exportDxf").addEventListener("click", exportAllDxf);
 if ($("exportCnc")) $("exportCnc").addEventListener("click", exportAllCnc);
 if ($("exportCncTech")) $("exportCncTech").addEventListener("click", exportCncTechCards);
+if ($("exportCnc")) $("exportCnc").addEventListener("click", renderCncPreflight);
 function renderCncOperations() {
   const target=$("cncOperationsTable");
   if(!target || !parts.length) return;
