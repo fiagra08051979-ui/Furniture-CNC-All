@@ -17,3 +17,17 @@ jobs:
 
       - name: Запустить автоматический контроль версии
         run: node tests/release-gate.mjs
+
+      - name: Установить Playwright
+        run: npm install --no-save playwright@1.55.0
+
+      - name: Установить Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Запустить локальный сервер
+        run: |
+          npx --yes serve . -l 5173 > /tmp/furniture-server.log 2>&1 &
+          sleep 3
+
+      - name: Выполнить браузерный smoke-test
+        run: node tests/browser-smoke.mjs
