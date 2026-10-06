@@ -2420,6 +2420,27 @@ function renderCncTechCard(part) {
     "<div>Операций: " + card.operations.length + "</div>";
 }
 
+function exportCncOperationJournals() {
+  const payload={
+    format:"Furniture AI CNC Operation Journal",
+    version:"1.0",
+    generatedAt:new Date().toISOString(),
+    parts:parts.map(part=>({
+      partNumber:part.userData.partNumber,
+      name:part.userData.name,
+      source:part.userData.source || "Furniture Core",
+      journal:buildCncOperationJournal(part)
+    }))
+  };
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+  const link=document.createElement("a");
+  link.href=URL.createObjectURL(blob);
+  link.download="cnc-operation-journal.json";
+  link.click();
+  URL.revokeObjectURL(link.href);
+  validate("Операционный журнал CNC экспортирован.", "ok");
+}
+
 function exportCncTechCards() {
   const cards = parts.map(buildCncTechCard);
   const blob = new Blob([JSON.stringify({
@@ -2733,6 +2754,8 @@ function exportExcel() {
     "IFC Manufacturing ID": part.userData.source === "IFC" ? (part.userData.productionPacket?.expressId || "") : "",
     "IFC CNC-операции": part.userData.source === "IFC" ? buildIfcManufacturingOperations(part).map(op => op.id).join(" | ") : "",
     "IFC Integrity": part.userData.source === "IFC" ? (validateIfcManufacturingIntegrity(part).length ? "ОШИБКА" : "OK") : "",
+    "CNC Preflight": manufacturingPreflight(part).length ? "ОШИБКА" : "OK",
+    "CNC Operation IDs": buildCncOperationJournal(part).map(op=>op.id).join(" | "),
     "IFC-база сверления": part.userData.source === "IFC" ? (part.userData.technology?.drillingStatus || "нет") : "",
     "IFC-сопряжения": part.userData.source === "IFC" ? (part.userData.technology?.jointCount || 0) : "",
     "Примечания": constructionChecksDetailed().filter(x => x.includes(part.userData.name)).join(" | ")
