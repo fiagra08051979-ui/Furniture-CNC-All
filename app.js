@@ -611,6 +611,66 @@ function clearModel() {
   parts.length = 0;
 }
 
+function parseIfcGeometry(source) {
+  const points=[];
+  const pointRe=/#(\\d+)\\s*=\\s*IFCCARTESIANPOINT\\s*\\(\\s*\\(\\s*([^)]*)\\)\\s*\\)\\s*;/gi;
+  let m;
+  while((m=pointRe.exec(source))!==null){
+    const coords=m[2].split(",").map(v=>Number(v.trim())).filter(Number.isFinite);
+    if(coords.length>=2) points.push({id:m[1],x:coords[0],y:coords[1],z:coords[2]||0});
+  }
+  const placements=[];
+  const placeRe=/#(\\d+)\\s*=\\s*IFCLOCALPLACEMENT\\s*\\(\\s*(?:#(\\d+)|\\$)\\s*,\\s*#(\\d+)\\s*\\)\\s*;/gi;
+  while((m=placeRe.exec(source))!==null) placements.push({id:m[1],relative:m[2]||null,axis:m[3]});
+  return {points,placements};
+}
+
+function detectIfcLengthScale(source) {
+  if (/IFCSIUNIT[^;]*LENGTHUNIT[^;]*MILLI(METRE|METER)/i.test(source)) return 1;
+  if (/IFCSIUNIT[^;]*LENGTHUNIT[^;]*METRE/i.test(source)) return 1000;
+  return 1;
+}
+
+function renderIfcGeometryPreview(result) {
+  const old=$("ifcPreviewGroup");
+  if(old) old.remove();
+  if(!result?.geometry?.points?.length) return;
+  const points=result.geometry.points;
+  const scale=detectIfcLengthScale(result.sourceText||"");
+  const xs=points.map(p=>p.x*scale), ys=points.map(p=>p.y*scale), zs=points.map(p=>p.z*scale);
+  const minX=Math.min(...xs), maxX=Math.max(...xs);
+  const minY=Math.min(...ys), maxY=Math.max(...ys);
+  const minZ=Math.min(...zs), maxZ=Math.max(...zs);
+  const w=Math.max(100,maxX-minX), d=Math.max(100,maxY-minY), h=Math.max(100,maxZ-minZ);
+  const geo=new THREE.BoxGeometry(w,h,d);
+  const mat=new THREE.MeshBasicMaterial({color:0x6b7280,wireframe:true});
+  const mesh=new THREE.Mesh(geo,mat);
+  mesh.position.set((minX+maxX)/2,(minZ+maxZ)/2,(minY+maxY)/2);
+  const group=new THREE.Group();
+  group.name="IFC Preview";
+  group.id="ifcPreviewGroup";
+  group.add(mesh);
+  scene.add(group);
+  validate("IFC 3D-оболочка построена по исходным CartesianPoint. Размер: "+Math.round(w)+"×"+Math.round(h)+"×"+Math.round(d)+" мм.","ok");
+}
+
+function attachIfcGeometry(result, source) {
+  const geometry=parseIfcGeometry(source);
+  const pointById=new Map(geometry.points.map(p=>[p.id,p]));
+  result.sourceText=source;
+  result.geometry={pointCount:geometry.points.length,placementCount:geometry.placements.length,points:geometry.points};
+  result.furniture=(result.furniture||[]).map((o,i)=>{
+    const nums=o.numericValues||[];
+    const p=geometry.points[i % Math.max(1,geometry.points.length)];
+    return {...o,geometry:{
+      position:p ? {x:p.x,y:p.y,z:p.z} : {x:0,y:0,z:0},
+      dimensions:{width:nums[0]||0,height:nums[1]||0,depth:nums[2]||0},
+      source:"IFC geometry references / attributes"
+    }};
+  });
+  return result;
+}
+
 function parseIfcFurniture(text) {
   const source=String(text||"");
   const objects=[];
@@ -634,6 +694,7 @@ function mapIfcFurnitureToProject(result){
   return (result.furniture||[]).map((o,index)=>({
     ifcId:o.id,name:o.name,sourceType:o.type,
     projectObjectType:"Мебель",sourceIndex:index,
+    geometry:o.geometry||null,
     attributes:o.attributes||[],numericValues:o.numericValues||[]
   }));
 }
@@ -647,6 +708,7 @@ function renderIfcResult(result){
     "<div class='status'>IFC содержит объекты, но мебель IFC не обнаружена.</div>");
   window._ifcResult=result;
   window._ifcProjectObjects=mapIfcFurnitureToProject(result);
+  const g=$("ifcGeometry"); if(g) g.innerHTML="<b>IFC-геометрия</b><div>Точек: "+(result.geometry?.pointCount||0)+"; размещений: "+(result.geometry?.placementCount||0)+"</div>";
   const p=$("ifcProjectObjects");
   if(p) p.innerHTML="<b>Объекты проекта</b>"+(window._ifcProjectObjects.length ? "<ul>"+window._ifcProjectObjects.map(o=>"<li>#"+o.ifcId+" — "+o.name+"</li>").join("")+"</ul>" : "<div>Нет IFCFURNISHINGELEMENT.</div>");
 }
@@ -655,7 +717,8 @@ function importIfcFile(file){
   if(!file) return;
   const reader=new FileReader();
   reader.onload=()=>{
-    const result=parseIfcFurniture(reader.result);
+    const result=attachIfcGeometry(parseIfcFurniture(reader.result), reader.result);
+    renderIfcGeometryPreview(result);
     renderIfcResult(result);
     validate("IFC импортирован: найдено объектов "+result.total+", мебельных "+result.furniture.length+".","ok");
   };
