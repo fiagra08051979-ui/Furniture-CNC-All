@@ -110,7 +110,8 @@ const contractChecks = [
   ["PDF использует зафиксированный состав Gate", app.includes("gatedParts") && app.includes("buildCuttingPdfHtml(layout, gatedParts)")],
   ["PDF проверяет ревизию снимка Gate", app.includes("gatedPartsRevision") && app.includes("состав деталей относится к другой ревизии модели")],
   ["просмотр карты проходит через Release Gate", app.includes("function showCuttingMap()") && app.includes("просмотр карты раскроя заблокирован") && app.includes("renderCuttingMap(releaseGate.sheetLayout)")],
-  ["изменение технологии инвалидирует старый параметрический Gate", app.includes("technologyBuildFields") && app.includes("technologyBuildFields.forEach") && app.includes('if (ifcMode)')]
+  ["изменение технологии инвалидирует старый параметрический Gate", app.includes("technologyBuildFields") && app.includes("technologyBuildFields.forEach") && app.includes('if (ifcMode)')],
+  ["загрузка JSON возвращает модель в параметрический путь", app.includes('$("loadProject").addEventListener') && app.includes("Object.entries(data.parameters||{})") && app.includes("build();") && app.includes("ifcMode = false")]
 ];
 
 const forbidden = [
