@@ -1985,6 +1985,7 @@ function buildCncJobManifest() {
     zeroPoint:plan.machineSetup.origin || "top-center",
     operations:plan.operations,
     operationJournal:plan.operationJournal,
+    toolTechnology:plan.toolTechnology,
     manufacturingLifecycle:plan.lifecycle,
     manufacturingIntegrity:plan.manufacturingIntegrity,
     preflight:plan.preflight,
