@@ -3043,6 +3043,49 @@ function exportExcel() {
   XLSX.writeFile(wb, "furniture-ai-parts.xlsx");
 }
 
+function drawProductionGeometryA3(doc, part, x0, y0, maxW, maxH) {
+  const u=part.userData||{};
+  const contour=u.ifcContour?.ready ? u.ifcContour.path : null;
+  if(!contour || contour.length<3) {
+    doc.setFontSize(9);
+    doc.text("Графика: контур IFC не подтверждён — чертёжная геометрия не подставляется.",x0,y0+8);
+    return {drawn:false};
+  }
+  const pts=contour.map(p=>({x:Number(p[0]),y:Number(p[1])})).filter(p=>Number.isFinite(p.x)&&Number.isFinite(p.y));
+  if(pts.length<3) return {drawn:false};
+  const minX=Math.min(...pts.map(p=>p.x)), maxX=Math.max(...pts.map(p=>p.x));
+  const minY=Math.min(...pts.map(p=>p.y)), maxY=Math.max(...pts.map(p=>p.y));
+  const sx=maxX-minX, sy=maxY-minY;
+  if(!(sx>0&&sy>0)) return {drawn:false};
+  const scale=Math.min(maxW/sx,maxH/sy);
+  const map=p=>({x:x0+(p.x-minX)*scale,y:y0+maxH-(p.y-minY)*scale});
+  const mapped=pts.map(map);
+  doc.setLineWidth(0.6);
+  for(let i=0;i<mapped.length;i++){
+    const a=mapped[i], b=mapped[(i+1)%mapped.length];
+    doc.line(a.x,a.y,b.x,b.y);
+  }
+  doc.setFontSize(7);
+  doc.text("КОНТУР IFC",x0,y0+maxH+7);
+  doc.text("Масштаб: "+scale.toFixed(3)+" мм/мм",x0,y0+maxH+13);
+
+  const plan=getCompiledManufacturingPlan(part);
+  const drillOps=(plan.operations||[]).filter(op=>op.type==="DRILL" && Number.isFinite(Number(op.x)) && Number.isFinite(Number(op.y)));
+  drillOps.forEach(op=>{
+    const p=map({x:Number(op.x),y:Number(op.y)});
+    const r=Math.max(1.5,Math.min(5,(Number(op.diameter)||5)*scale/2));
+    doc.circle(p.x,p.y,r);
+    doc.setFontSize(6);
+    doc.text("Ø"+(Number(op.diameter)||0),p.x+r+1,p.y+1);
+  });
+  const basis=part.userData?.technology?.drillingBasis;
+  if(basis?.origin){
+    doc.setFontSize(7);
+    doc.text("База сверления IFC",x0,y0+maxH+19);
+  }
+  return {drawn:true,scale};
+}
+
 function exportProductionPdf() {
   if (!window.jspdf) { validate("Модуль PDF недоступен.", "error"); return; }
   const { jsPDF } = window.jspdf;
@@ -3060,6 +3103,7 @@ function exportProductionPdf() {
     doc.text("Роль: "+(passport.role||"—")+"  Материал: "+(passport.material||"—")+"  Толщина: "+(passport.thickness||0)+" мм",14,36);
     doc.text("Размер: "+Math.round(u.width||0)+" × "+Math.round(u.height||0)+" × "+Math.round(u.depth||0)+" мм",14,42);
     doc.text("Готовность станка: "+(passport.machineReady?"ГОТОВО":"ЗАБЛОКИРОВАНО")+"  Операций: "+passport.operationCount,14,48);
+    drawProductionGeometryA3(doc, part, 14, 58, 180, 120);
     doc.setFontSize(11); doc.text("Технологические операции",14,60);
     let y=67;
     doc.setFontSize(8);
