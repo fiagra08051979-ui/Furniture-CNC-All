@@ -810,6 +810,19 @@ function buildCncOperations(part) {
     partNumber: u.partNumber,
     ...data
   });
+  add("CONTOUR","Контур детали",{
+    width:Number(u.width)||0,
+    height:Number(u.height)||0,
+    depth:Number(u.thickness)||Number(u.depth)||0,
+    path:[
+      [-Number(u.width||0)/2,-Number(u.height||0)/2],
+      [ Number(u.width||0)/2,-Number(u.height||0)/2],
+      [ Number(u.width||0)/2, Number(u.height||0)/2],
+      [-Number(u.width||0)/2, Number(u.height||0)/2]
+    ],
+    toolId:"MILL-8",
+    toolName:"Фреза Ø8 мм"
+  });
   (u.drilling || []).forEach(h => add("DRILL","Сверление",{
     x:Number(h.x)||0, y:Number(h.y)||0, z:Number(h.z)||0,
     diameter:Number(h.diameter)||0, depth:Number(h.depth)||0,
@@ -850,7 +863,15 @@ function buildCncProgram(part) {
     "G54"
   ];
   ops.forEach(op => {
-    if (op.type === "DRILL") {
+    if (op.type === "CONTOUR") {
+      lines.push("; CONTOUR " + op.width + " X " + op.height);
+      lines.push("G0 Z5.000");
+      op.path.forEach(([x,y], i) => {
+        if (i === 0) lines.push("G0 X" + x.toFixed(3) + " Y" + y.toFixed(3));
+        else lines.push("G1 X" + x.toFixed(3) + " Y" + y.toFixed(3) + " F600");
+      });
+      lines.push("G1 X" + op.path[0][0].toFixed(3) + " Y" + op.path[0][1].toFixed(3) + " F600");
+    } else if (op.type === "DRILL") {
       lines.push("; " + op.operation + " " + op.diameter + " x " + op.depth);
       lines.push("G0 X" + op.x.toFixed(3) + " Y" + op.y.toFixed(3));
       lines.push("G0 Z5.000");
@@ -1160,6 +1181,14 @@ if ($("exportSheetLayout")) $("exportSheetLayout").addEventListener("click", exp
 if ($("exportDxf")) $("exportDxf").addEventListener("click", exportAllDxf);
 if ($("exportCnc")) $("exportCnc").addEventListener("click", exportAllCnc);
 if ($("exportCncTech")) $("exportCncTech").addEventListener("click", exportCncTechCards);
+function renderCncOperations() {
+  const target=$("cncOperationsTable");
+  if(!target || !parts.length) return;
+  const rows=parts.flatMap(p=>buildCncOperations(p).map(op=>"<tr><td>"+op.partNumber+"</td><td>"+op.sequence+"</td><td>"+op.type+"</td><td>"+op.operation+"</td><td>"+(op.diameter||"—")+"</td><td>"+(op.depth||"—")+"</td></tr>"));
+  target.innerHTML="<b>CNC-операции</b><table><thead><tr><th>№</th><th>№ оп.</th><th>Тип</th><th>Операция</th><th>Ø</th><th>Глубина</th></tr></thead><tbody>"+rows.join("")+"</tbody></table>";
+}
+setTimeout(renderCncOperations, 0);
+
 if ($("showCuttingMap")) $("showCuttingMap").addEventListener("click", showCuttingMap);
 $("exportPdf").addEventListener("click", exportPdf);
 
