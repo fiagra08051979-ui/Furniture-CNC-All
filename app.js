@@ -1235,6 +1235,14 @@ function rebuildDetailingPipeline() {
 
   parts.forEach(part => {
     const u = part.userData;
+
+    // Деталировка является производным состоянием.
+    // Перед каждой пересборкой удаляем только предыдущий производный результат,
+    // не изменяя исходную геометрию и исходные технологические источники.
+    delete u.detailing;
+    delete u.detailingContinuity;
+    delete u.processing;
+
     const processing = buildDetailedProcessing(part);
     u.processing = processing;
 
@@ -1297,7 +1305,8 @@ function rebuildDetailingPipeline() {
         eligible: detailStatus === "ready"
       },
       status: detailStatus,
-      notes: partIssues
+      notes: partIssues,
+      modelRevision
     };
 
     u.detailingContinuity = {
@@ -1306,7 +1315,8 @@ function rebuildDetailingPipeline() {
       processingCount: processing.length,
       holesCount: holes.length,
       cuttingReady: detailStatus === "ready",
-      sourceGeometry
+      sourceGeometry,
+      modelRevision
     };
   });
 
