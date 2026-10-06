@@ -1724,12 +1724,14 @@ function exportSheetLayout() {
     validate("Release Gate: выпуск PDF заблокирован. " + releaseGate.issues.join(" "), "error");
     return;
   }
-  const layout = releaseGate.sheetLayout || buildSheetLayout(
-    Number($("sheetLength")?.value || 2800),
-    Number($("sheetWidth")?.value || 2070),
-    Number($("cutKerf")?.value || 4),
-    Number($("sheetMargin")?.value || 10)
-  );
+  // После успешного Release Gate PDF обязан использовать именно
+  // проверенную раскладку этого же Gate. Повторная самостоятельная
+  // генерация layout здесь запрещена.
+  const layout = releaseGate.sheetLayout;
+  if (!layout) {
+    validate("Release Gate: отсутствует проверенная раскладка листа. Выпуск PDF заблокирован.", "error");
+    return;
+  }
 
   renderCuttingMap(layout);
 
