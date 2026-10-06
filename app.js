@@ -3776,7 +3776,8 @@ function getCompiledManufacturingPlan(part) {
   plan.motionSafety=validateCncMotionSafety(plan);
   plan.compensatedToolpaths=buildTypedCompensatedToolpaths(plan,part);
   plan.toolpaths=buildCncToolpaths(plan);
-  plan.compiledToolpathProgram=buildCompiledToolpathProgram(plan,part);\n  plan.compiledToolpathProgram=optimizeCompiledToolpathSequence(plan.compiledToolpathProgram,plan);\n  plan.toolpathSequenceValidation=validateCompiledToolpathSequence(plan);
+  plan.compiledToolpathProgram=buildCompiledToolpathProgram(plan,part);
+  plan.compiledToolpathProgram=optimizeCompiledToolpathSequence(plan.compiledToolpathProgram,plan);\n  plan.toolpathSequenceValidation=validateCompiledToolpathSequence(plan);
   plan.compiledToolpathTechnologyValidation=validateCompiledToolpathTechnology(plan);
   plan.toolpathValidation=validateCncToolpaths(plan);
   plan.toolpathGeometryEnvelope=buildToolpathGeometryEnvelope(plan,part);
@@ -3790,7 +3791,7 @@ function getCompiledManufacturingPlan(part) {
   plan.contourCompensationValidation=validateContourCompensationGeometry(plan,part);
   plan.contourWidthValidation=validateContourMinimumWidth(plan,part);
   plan.toolpathCollisionValidation=validateToolpathCollisions(plan,part);
-  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance,...plan.typedToolpathValidation,...plan.passPlanValidation,...plan.pocketGeometryValidation,...plan.contourCompensationValidation,...plan.contourWidthValidation,...plan.toolpathCollisionValidation,...plan.toolpathSequenceValidation];
+  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance,...plan.typedToolpathValidation,...plan.passPlanValidation,...plan.pocketGeometryValidation,...plan.contourCompensationValidation,...plan.contourWidthValidation,...plan.toolpathCollisionValidation,...plan.toolpathSequenceValidation,...plan.compiledToolpathTechnologyValidation,...plan.technologyGroupValidation];
   plan.machineReady=plan.validation.every(x=>x.level!=="error") && plan.status==="READY" && plan.lifecycle.every(x=>x.valid) && plan.machineCompatibility.machineReady;
   plan.status=plan.machineReady ? "MACHINE_READY" : (plan.status==="BLOCKED" ? "BLOCKED" : "REVIEW");
   return plan;
