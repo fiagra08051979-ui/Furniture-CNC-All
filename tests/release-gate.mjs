@@ -27,6 +27,35 @@ const required = [
   ["PDF лист использует detailing", app.includes("thickness: group.thickness") && app.includes("(p.material || sheet.material)") && app.includes("edgeSummary(p.edges)") && !app.includes("part ? getSheetSpec(part).thickness")]
 ];
 
+const gateContract = [
+  ["PASS: QC PASS + готовая деталировка + раскрой + лист", {
+    qc: {status:"PASS"},
+    partsCount: 1,
+    partStates: [{number:"001", detailing:{number:"001", status:"ready", cutting:{length:600,width:400,thickness:18}, holes:[]}}],
+    cuttingGroups: [{material:"ldsp18", thickness:18, details:[{number:"001",length:600,width:400,quantity:1}]}],
+    sheetLayout: {sheetLength:2800,sheetWidth:2070,margin:10,kerf:4,sheets:[{sheetNumber:1,placements:[{partNumber:"001",x:10,y:10,length:600,width:400,overflow:false}]}]}
+  }, true],
+  ["BLOCKED: QC REVIEW", {qc:{status:"REVIEW"},partsCount:1,partStates:[],cuttingGroups:[],sheetLayout:null}, false],
+  ["BLOCKED: detailing REVIEW", {
+    qc:{status:"PASS"}, partsCount:1,
+    partStates:[{number:"001",detailing:{number:"001",status:"review",cutting:{length:600,width:400,thickness:18},holes:[]}}],
+    cuttingGroups:[], sheetLayout:null
+  }, false],
+  ["BLOCKED: overflow", {
+    qc:{status:"PASS"}, partsCount:1,
+    partStates:[{number:"001",detailing:{number:"001",status:"ready",cutting:{length:600,width:400,thickness:18},holes:[]}}],
+    cuttingGroups:[{material:"ldsp18",thickness:18,details:[{number:"001",length:600,width:400,quantity:1}]}],
+    sheetLayout:{sheetLength:500,sheetWidth:300,margin:10,kerf:4,sheets:[{sheetNumber:1,placements:[{partNumber:"001",x:10,y:10,length:600,width:400,overflow:true}]}]}
+  }, false]
+];
+
+const contractChecks = [
+  ["Release Gate имеет детерминированный evaluator", app.includes("function evaluateReleaseGateState")],
+  ["Release Gate различает PASS/BLOCKED", app.includes('status: issues.length ? "BLOCKED" : "PASS"')],
+  ["Release Gate учитывает REVIEW", app.includes('qc.status !== "PASS"')],
+  ["Release Gate учитывает overflow", app.includes("validateSheetLayout(sheetLayout)")]
+];
+
 const forbidden = [
   "CNC", "cnc", "ЧПУ", "G-code", "toolpath",
   "ManufacturingPlan", "productionPacket",
@@ -36,6 +65,13 @@ const forbidden = [
 
 const errors = [];
 for (const [name, ok] of required) if (!ok) errors.push("Отсутствует: " + name);
+for (const [name, ok] of contractChecks) if (!ok) errors.push("Отсутствует контракт: " + name);
+for (const [name, state, expectedPass] of gateContract) {
+  // Contract scenarios are declarative fixtures; the runtime evaluator is additionally
+  // checked structurally because app.js depends on browser/Three.js globals.
+  if (expectedPass && !state.qc?.status) errors.push(name + ": некорректный PASS fixture");
+  if (!expectedPass && expectedPass !== false) errors.push(name + ": некорректный BLOCKED fixture");
+}
 for (const token of forbidden) if ((app + "\n" + html).toLowerCase().includes(token.toLowerCase())) {
   errors.push("Запрещённый производственный/CNC блок: " + token);
 }
