@@ -54,7 +54,7 @@ const required = [
   ["Construction QC блокирует IFC-соединение без подтверждения", app.includes('u.technology?.joints || []') && app.includes('IFC-соединение требует подтверждения')],
   ["IFC-порядок гарантирует QC после деталировки", app.indexOf("const detailingPipeline = rebuildDetailingPipeline();") < app.indexOf("const constructionQC = runConstructionQC(detailingPipeline);") && app.indexOf("const constructionQC = runConstructionQC(detailingPipeline);") < app.indexOf("const releaseGate = runReleaseGate();")],
   ["Release Gate runtime", app.includes("function runReleaseGate()") && app.includes("evaluateReleaseGateState") && app.includes("window._releaseGate") && app.includes("выпуск PDF заблокирован")],
-  ["Release Gate отвергает устаревший QC", app.includes("modelRevision") && app.includes("другой ревизии модели") && app.includes("qc?.modelRevision")],
+  ["Release Gate отвергает устаревший QC", core.includes("modelRevision") && core.includes("другой ревизии модели") && core.includes("qc?.modelRevision")],
   ["инвалидация Gate при пересборке", app.includes("let modelRevision = 0") && app.includes("window._constructionQC = null") && app.includes("window._releaseGate = null") && app.includes("report.modelRevision = modelRevision")],
   ["безопасное переключение IFC режима", app.includes("function build()") && app.includes("clearModel();\n  ifcMode = false;")],
   ["IFC материал меняется без пересборки геометрии", app.includes("function refreshIfcTechnology()") && app.includes('if (ifcMode) {\n    refreshIfcTechnology();\n    return;\n  }') && app.includes("applyIfcMaterial()")],
@@ -77,6 +77,7 @@ const required = [
 const gateContract = [
   ["PASS: QC PASS + готовая деталировка + раскрой + лист", {
     qc: {status:"PASS", modelRevision:1, details:[{number:"001", status:"PASS"}]},
+    modelRevision:1,
     partsCount: 1,
     partStates: [{
       number:"001", sourceGeometry:"Furniture Core", geometryLocked:false,
@@ -149,19 +150,19 @@ const gateContract = [
 
 const contractChecks = [
   ["Release Gate имеет детерминированный evaluator", app.includes("function evaluateReleaseGateState")],
-  ["Release Gate различает PASS/BLOCKED", app.includes('status: issues.length ? "BLOCKED" : "PASS"')],
-  ["Release Gate учитывает REVIEW", app.includes('qc.status !== "PASS"')],
+  ["Release Gate различает PASS/BLOCKED", core.includes('status: issues.length ? "BLOCKED" : "PASS"')],
+  ["Release Gate учитывает REVIEW", core.includes('qc.status !== "PASS"')],
   ["Release Gate учитывает overflow", app.includes("validateSheetLayout(sheetLayout)")],
-  ["Release Gate сверяет состав деталей", app.includes("Количество состояний деталей не соответствует количеству деталей проекта")],
-  ["Release Gate требует полный состав Construction QC", app.includes("Construction QC не содержит полный состав деталей проекта")],
-  ["Release Gate отвергает устаревшую деталировку", app.includes("detailing относится к другой ревизии модели")],
+  ["Release Gate сверяет состав деталей", core.includes("Количество состояний деталей не соответствует количеству деталей проекта")],
+  ["Release Gate требует полный состав Construction QC", core.includes("Construction QC не содержит полный состав деталей проекта")],
+  ["Release Gate отвергает устаревшую деталировку", core.includes("detailing относится к другой ревизии модели")],
   ["Release Gate сверяет состав групп раскроя с деталировкой", core.includes("отсутствует запись в группах раскроя") && core.includes("Группа раскроя не соответствует деталировке детали") && core.includes("В группах раскроя присутствует деталь без готовой деталировки")],
   ["Release Gate запрещает дубли номеров деталей", core.includes("Дублируется номер детали") && core.includes("const detailNumbers = new Set()")],
   ["Release Gate сверяет номер детали с detailing", core.includes("в detailing отсутствует номер детали") && core.includes("номер детали не соответствует номеру в detailing")],
   ["Release Gate проверяет количество детали в группе раскроя", core.includes("в группах раскроя указано некорректное количество") && core.includes("Number(cutting.quantity) !== Number(detail.quantity)")],
   ["Release Gate проверяет принадлежность размещения листу", core.includes("размещение содержит неверный номер листа") && core.includes("placement.sheetNumber")],
-  ["Release Gate проверяет источник геометрии деталировки", app.includes("источник геометрии деталировки не соответствует источнику модели")],
-  ["Release Gate сверяет размещение с деталировкой", app.includes("Раскладка содержит размеры детали, не соответствующие деталировке")],
+  ["Release Gate проверяет источник геометрии деталировки", core.includes("источник геометрии деталировки не соответствует источнику модели")],
+  ["Release Gate сверяет размещение с деталировкой", core.includes("Раскладка содержит размеры детали, не соответствующие деталировке")],
   ["раскладка сохраняет материал и толщину", app.includes("thickness: item.thickness") && app.includes("material: item.material")],
   ["PDF использует зафиксированный состав Gate", app.includes("gatedParts") && app.includes("buildCuttingPdfHtml(layout, gatedParts)")],
   ["PDF проверяет ревизию снимка Gate", app.includes("gatedPartsRevision") && app.includes("состав деталей относится к другой ревизии модели")],
