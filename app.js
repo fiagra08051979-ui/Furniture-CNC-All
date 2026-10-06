@@ -3043,6 +3043,47 @@ function exportExcel() {
   XLSX.writeFile(wb, "furniture-ai-parts.xlsx");
 }
 
+function exportProductionPdf() {
+  if (!window.jspdf) { validate("Модуль PDF недоступен.", "error"); return; }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({orientation:"landscape", unit:"mm", format:"a3"});
+  const W=420, H=297;
+  parts.forEach((part,index)=>{
+    if(index) doc.addPage("a3","landscape");
+    const u=part.userData||{};
+    const passport=buildProductionOperationPassport(part);
+    doc.setFontSize(18);
+    doc.text("ПРОИЗВОДСТВЕННАЯ КАРТА ДЕТАЛИ",14,16);
+    doc.setFontSize(10);
+    doc.text("Деталь: "+(u.partNumber||"")+"  "+(u.name||""),14,24);
+    doc.text("Источник: "+(u.source||"Внутренняя модель")+"  ExpressID: "+(passport.expressId??"—"),14,30);
+    doc.text("Роль: "+(passport.role||"—")+"  Материал: "+(passport.material||"—")+"  Толщина: "+(passport.thickness||0)+" мм",14,36);
+    doc.text("Размер: "+Math.round(u.width||0)+" × "+Math.round(u.height||0)+" × "+Math.round(u.depth||0)+" мм",14,42);
+    doc.text("Готовность станка: "+(passport.machineReady?"ГОТОВО":"ЗАБЛОКИРОВАНО")+"  Операций: "+passport.operationCount,14,48);
+    doc.setFontSize(11); doc.text("Технологические операции",14,60);
+    let y=67;
+    doc.setFontSize(8);
+    doc.text("№",14,y); doc.text("Операция",26,y); doc.text("Инструмент",85,y); doc.text("Обороты",145,y); doc.text("Подача",175,y); doc.text("Врезание",205,y); doc.text("Глубина",240,y); doc.text("ExpressID",275,y); doc.text("Трассировка",315,y);
+    y+=6;
+    passport.operations.forEach((op,i)=>{
+      if(y>275){ doc.addPage("a3","landscape"); y=18; }
+      doc.text(String(i+1),14,y);
+      doc.text(String(op.operationId||"").slice(0,24),26,y);
+      doc.text(String(op.toolName||"—").slice(0,22),85,y);
+      doc.text(String(op.rpm??"—"),145,y);
+      doc.text(String(op.feed??"—"),175,y);
+      doc.text(String(op.plunge??"—"),205,y);
+      doc.text(String(op.depth??0),240,y);
+      doc.text(String(op.expressId??"—"),275,y);
+      doc.text(String(op.traceId||"—"),315,y);
+      y+=5;
+    });
+    doc.setFontSize(9);
+    doc.text("Состояние: "+(passport.machineReady?"машинно готово":"требует проверки")+" | Проверка производственного плана: "+((passport.validation||[]).filter(x=>x.level==="error").length?"ОШИБКИ":"ОК"),14,286);
+  });
+  doc.save("furniture-ai-production-map-a3.pdf");
+}
+
 function exportPdf() {
   if (!window.jspdf) { validate("Модуль PDF недоступен.", "error"); return; }
   const { jsPDF } = window.jspdf; const doc = new jsPDF({orientation:"landscape", unit:"mm", format:"a4"});
@@ -3117,6 +3158,7 @@ setTimeout(renderCncOperations, 0);
 
 if ($("showCuttingMap")) $("showCuttingMap").addEventListener("click", showCuttingMap);
 $("exportPdf").addEventListener("click", exportPdf);
+if ($("exportProductionPdf")) $("exportProductionPdf").addEventListener("click", exportProductionPdf);
 
 $("newProject").addEventListener("click", () => {
   [2400, 2200, 600, 18, 3, 6, 0, 3, 2, 3].forEach((value, i) => {
