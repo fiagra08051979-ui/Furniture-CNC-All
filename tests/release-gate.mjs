@@ -23,7 +23,8 @@ const required = [
   ["цепочка Construction QC → Release Gate", app.includes("runConstructionQC(detailingPipeline)") && app.includes("runReleaseGate()")],
   ["PDF читает деталировку", app.includes("const detailing = part.userData?.detailing") && app.includes("Array.isArray(detailing?.holes)") && app.includes("d.length") && app.includes("d.material") && app.includes("d.edges")],
   ["Release Gate проверяет раскладку листа", app.includes("function validateSheetLayout") && app.includes("placement.overflow") && app.includes("sheetLayoutChecked") && app.includes("buildSheetLayout(")],
-  ["PDF использует проверенную раскладку", app.includes("releaseGate.sheetLayout || buildSheetLayout") && app.includes("sheetLayout") ]
+  ["PDF использует проверенную раскладку", app.includes("releaseGate.sheetLayout || buildSheetLayout") && app.includes("sheetLayout") ],
+  ["PDF лист использует detailing", app.includes("thickness: group.thickness") && app.includes("(p.material || sheet.material)") && app.includes("edgeSummary(p.edges)") && !app.includes("part ? getSheetSpec(part).thickness")]
 ];
 
 const forbidden = [
