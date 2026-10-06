@@ -2714,19 +2714,38 @@ function refreshPartTechnologyRecord(part) {
   return u.detailing;
 }
 
+function cncProgramTechnologyLines(op,currentTool){
+  const lines=[];
+  if(op.toolId && op.toolId!==currentTool){
+    lines.push("; СМЕНА ИНСТРУМЕНТА "+op.toolId,"M5","G0 Z"+Number(op.safeZ||5).toFixed(3),"T"+op.toolId+" M6");
+  }
+  if(Number(op.rpm)>0) lines.push("S"+Math.round(op.rpm)+" M3");
+  if(Number(op.feed)>0) lines.push("F"+Math.round(op.feed));
+  return lines;
+}
 function buildCncJobProgram(part) {
   const plan=getCompiledManufacturingPlan(part);
   assertManufacturingLifecycleReady(part);
-  if(!plan.compiledToolpathProgram?.length) throw new Error("ЧПУ заблокирован: отсутствует Compiled Toolpath Program.");
+  if(!plan.compiledToolpathProgram?.length) throw new Error("ЧПУ заблокировано: отсутствует скомпилированная траектория.");
   const u=part.userData, lines=["; Furniture AI Designer — ПРОГРАММА ЧПУ","; ДЕТАЛЬ "+plan.partNumber,"; МАТЕРИАЛ "+plan.material,"; ТОЛЩИНА "+plan.thickness,"G21","G90","G17","G54"];
-  let currentTool=null;
+  let currentTool=null,currentTechKey=null;
   plan.compiledToolpathProgram.forEach(op=>{
-    const tool=selectCncTool({type:op.type,diameter:op.diameter||0},u.material);
-    if(tool && tool.id!==currentTool){ lines.push("; СМЕНА ИНСТРУМЕНТА "+tool.id,"M5","T"+tool.id+" M6"); currentTool=tool.id; }
+    const techKey=op.technologyGroupKey||"";
+    if(techKey!==currentTechKey){
+      if(currentTool!==null) lines.push("G0 Z"+Number(op.safeZ||5).toFixed(3));
+      lines.push(...cncProgramTechnologyLines(op,currentTool));
+      currentTool=op.toolId||currentTool;
+      currentTechKey=techKey;
+    }
     lines.push("; "+op.type+" "+op.operationId);
-    op.points.forEach((p,i)=>lines.push((i===0||Number(p.z)>=op.safeZ?"G0":"G1")+" X"+p.x.toFixed(3)+" Y"+p.y.toFixed(3)+" Z"+p.z.toFixed(3)));
+    op.points.forEach((p,i)=>{
+      const rapid=i===0 || Number(p.z)>=Number(op.safeZ||5);
+      const feed=Number(op.feed)>0 ? " F"+Math.round(op.feed) : "";
+      const plunge=Number(op.plunge)>0 && Number(p.z)<Number(op.safeZ||5) ? " F"+Math.round(op.plunge) : "";
+      lines.push((rapid?"G0":"G1")+" X"+p.x.toFixed(3)+" Y"+p.y.toFixed(3)+" Z"+p.z.toFixed(3)+(rapid?"":(plunge||feed)));
+    });
   });
-  lines.push("M5","M30");
+  lines.push("G0 Z"+Number(plan.machineSetup?.safeZ||5).toFixed(3),"M5","M30");
   return lines.join("\n");
 }
 
@@ -2735,17 +2754,26 @@ function buildPostprocessedProgram(part) {
   assertManufacturingLifecycleReady(part);
   if(!plan.compiledToolpathProgram?.length) throw new Error("Постпроцессор заблокирован: отсутствует скомпилированная траектория ЧПУ.");
   const u=part.userData, lines=[...post.header,"; ДЕТАЛЬ "+u.partNumber+" "+u.name,"; ИСТОЧНИК: СКОМПИЛИРОВАННАЯ ТРАЕКТОРИЯ"];
-  let currentTool=null;
+  let currentTool=null,currentTechKey=null;
   plan.compiledToolpathProgram.forEach(op=>{
-    const tool=selectCncTool({type:op.type,diameter:op.diameter||0},u.material);
-    if(tool && tool.id!==currentTool){ lines.push("; СМЕНА ИНСТРУМЕНТА "+tool.id,"M5","T"+tool.id+" M6"); currentTool=tool.id; }
+    const techKey=op.technologyGroupKey||"";
+    if(techKey!==currentTechKey){
+      lines.push("G0 Z"+Number(op.safeZ||5).toFixed(3));
+      lines.push(...cncProgramTechnologyLines(op,currentTool));
+      currentTool=op.toolId||currentTool;
+      currentTechKey=techKey;
+    }
     lines.push("; "+op.type+" "+op.operationId);
-    op.points.forEach((p,i)=>lines.push((i===0||Number(p.z)>=op.safeZ?"G0":"G1")+" X"+p.x.toFixed(3)+" Y"+p.y.toFixed(3)+" Z"+p.z.toFixed(3)));
+    op.points.forEach((p,i)=>{
+      const rapid=i===0 || Number(p.z)>=Number(op.safeZ||5);
+      const feed=Number(op.feed)>0 ? " F"+Math.round(op.feed) : "";
+      const plunge=Number(op.plunge)>0 && Number(p.z)<Number(op.safeZ||5) ? " F"+Math.round(op.plunge) : "";
+      lines.push((rapid?"G0":"G1")+" X"+p.x.toFixed(3)+" Y"+p.y.toFixed(3)+" Z"+p.z.toFixed(3)+(rapid?"":(plunge||feed)));
+    });
   });
-  lines.push(...post.footer);
+  lines.push("G0 Z"+Number(plan.machineSetup?.safeZ||5).toFixed(3),...post.footer);
   return lines.join("\n");
 }
-
 function exportAllCnc() {
   const setupIssues = validateCncMachineSetup();
   const preflightIssues = cncPreflight();
