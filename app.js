@@ -1730,6 +1730,25 @@ function frontView() {
 }
 
 
+$("build")?.addEventListener("click", build);
+$("explode")?.addEventListener("click", () => setExplode(!exploded));
+$("resetExplode")?.addEventListener("click", () => setExplode(false));
+$("frontView")?.addEventListener("click", frontView);
+$("isoView")?.addEventListener("click", fitView);
+$("material")?.addEventListener("change", build);
+[1,2,3,4].forEach(i => $("edge"+i)?.addEventListener("change", build));
+
+$("aiRecognize")?.addEventListener("click", () => {
+  const result = recognizeFurnitureText($("aiPrompt")?.value || "");
+  renderAiRecognition(result);
+});
+$("aiApply")?.addEventListener("click", applyAiRecognition);
+$("aiImageAnalyze")?.addEventListener("click", () => {
+  const file=$("aiImageFile")?.files?.[0];
+  if(!file){ validate("Загрузите изображение мебели.","error"); return; }
+  const result=analyzeFurnitureImageMetadata(file);
+  renderAiImageRecognition(result);
+});
 $("exportSheetLayout")?.addEventListener("click", exportSheetLayout);
 $("showCuttingMap")?.addEventListener("click", showCuttingMap);
 $("newProject").addEventListener("click", () => {
