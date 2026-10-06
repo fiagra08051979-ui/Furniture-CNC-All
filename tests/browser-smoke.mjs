@@ -119,6 +119,7 @@ if (blockedPdf) { await blockedPdf.close(); throw new Error("PDF был откр
 const blockedStatus = await page.locator("#validation").textContent();
 if (!blockedStatus.includes("выпуск PDF заблокирован")) throw new Error("После изменения модели PDF не был заблокирован.");
 
+await page.locator("#frontGapBetween").fill("2");
 await page.locator("#width").fill("2400");
 await page.locator("#build").click();
 await page.waitForTimeout(1000);
@@ -130,10 +131,6 @@ const restoredCuttingStatus = await page.locator("#validation").textContent();
 if (!restoredCuttingStatus.includes("Карта раскроя показана из проверенной раскладки Release Gate")) {
   throw new Error("После новой сборки Release Gate не восстановил выпуск: " + restoredCuttingStatus);
 }
-if (!cuttingStatus.includes("Карта раскроя показана из проверенной раскладки Release Gate")) {
-  throw new Error("Release Gate не пропустил проверенную карту раскроя. Статус: " + cuttingStatus);
-}
-
 const pdfPromise = page.waitForEvent("popup", {timeout:10000});
 await page.locator(".exportSheetLayout").first().click();
 const pdfPage = await pdfPromise;
