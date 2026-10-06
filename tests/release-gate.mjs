@@ -38,7 +38,7 @@ const required = [
   ["раскрой строится только из деталировки", app.includes("const d = u.detailing") && app.includes("d.cutting.thickness") && app.includes("d.cutting.length") && app.includes("d.cutting.width")],
   ["размеры деталировки совпадают со спецификацией листа", app.includes("length: spec.length") && app.includes("width: spec.width") && app.includes("thickness: spec.thickness")],
   ["неподтвержденная IFC-толщина блокирует деталировку", app.includes("sheetSpecConfidence === \"review\"") && app.includes("толщина листа IFC не подтверждена")],
-  ["IFC без кромки блокирует деталировку", app.includes("Array.isArray(u.edges) && u.edges.length !== 4") && app.includes("кромка IFC не определена")],
+  ["IFC без кромки блокирует деталировку", app.includes('u.source === "IFC"') && app.includes("u.edges.length !== 4") && app.includes("кромка IFC не определена")],
   ["присадка без координат блокирует деталировку", app.includes("без координат X/Y") && app.includes("holes.forEach")],
   ["деталировка проверяет материал и количество", app.includes("не задан материал детали") && app.includes("некорректное количество детали")],
   ["Release Gate сверяет кромку раскроя с деталировкой", core.includes("Раскладка содержит кромку, не соответствующую деталировке") && core.includes("JSON.stringify(actualEdges)")],
@@ -54,33 +54,49 @@ const required = [
   ["Construction QC блокирует IFC-соединение без подтверждения", app.includes('u.technology?.joints || []') && app.includes('IFC-соединение требует подтверждения')],
   ["IFC-порядок гарантирует QC после деталировки", app.indexOf("const detailingPipeline = rebuildDetailingPipeline();") < app.indexOf("const constructionQC = runConstructionQC(detailingPipeline);") && app.indexOf("const constructionQC = runConstructionQC(detailingPipeline);") < app.indexOf("const releaseGate = runReleaseGate();")],
   ["Release Gate runtime", app.includes("function runReleaseGate()") && app.includes("evaluateReleaseGateState") && app.includes("window._releaseGate") && app.includes("выпуск PDF заблокирован")],
-  ["Release Gate отвергает устаревший QC", app.includes("modelRevision") && app.includes("другой ревизии модели") && app.includes("qc.modelRevision")],
+  ["Release Gate отвергает устаревший QC", app.includes("modelRevision") && app.includes("другой ревизии модели") && app.includes("qc?.modelRevision")],
   ["инвалидация Gate при пересборке", app.includes("let modelRevision = 0") && app.includes("window._constructionQC = null") && app.includes("window._releaseGate = null") && app.includes("report.modelRevision = modelRevision")],
   ["безопасное переключение IFC режима", app.includes("function build()") && app.includes("clearModel();\n  ifcMode = false;")],
   ["IFC материал меняется без пересборки геометрии", app.includes("function refreshIfcTechnology()") && app.includes('if (ifcMode) {\n    refreshIfcTechnology();\n    return;\n  }') && app.includes("applyIfcMaterial()")],
   ["IFC кромка меняется без пересборки геометрии", app.includes('$("edge"+i)?.addEventListener("change"') && app.includes("refreshIfcTechnology()") && app.includes("part.userData.edges = [...selectedEdges]")],
   ["сброс IFC при очистке модели", app.includes("function clearModel()") && app.includes("closeIfcModel();") && app.includes("ifcImportedParts = [];")],
   ["идемпотентная пересборка деталировки", app.includes("delete u.detailing;") && app.includes("delete u.detailingContinuity;") && app.includes("delete u.processing;") && app.includes("modelRevision")],
-  ["контроль пересечения деталей на листе", app.includes("пересечение деталей") && app.includes("placement.x >= other.x + other.length + kerf")],
-  ["раскладка сохраняет количество деталей", app.includes("Раскладка не соответствует количеству детали") && app.includes("В раскладке присутствует лишняя деталь")],
-  ["лист не смешивает толщины", app.includes("Number(s.thickness) === Number(item.thickness)") && app.includes("смешаны детали разной толщины")],
+  ["контроль пересечения деталей на листе", core.includes("пересечение деталей") && core.includes("placement.x >= other.x + other.length + kerf")],
+  ["раскладка сохраняет количество деталей", core.includes("Раскладка не соответствует количеству детали") && core.includes("В раскладке присутствует лишняя деталь")],
+  ["лист не смешивает толщины", core.includes("Number(placement.thickness || sheet.thickness) !== Number(sheet.thickness)") && core.includes("смешаны детали разной толщины")],
   ["раскрой сохраняет номер детали при quantity > 1", app.includes("group.details.forEach(detail =>") && app.includes("partNumber: detail.number || \"\"") && app.includes("const quantity = Math.max(1, Number(detail.quantity || 1))")],
   ["IFC открывается после очистки проекта", app.includes("clearModel();") && app.includes("api.OpenModel(data, { COORDINATE_TO_ORIGIN: true })") && app.includes("clearModel();")],
   ["цепочка Construction QC → Release Gate", app.includes("runConstructionQC(detailingPipeline)") && app.includes("runReleaseGate()")],
   ["PDF читает деталировку", app.includes("const detailing = part.userData?.detailing") && app.includes("Array.isArray(detailing?.holes)") && app.includes("d.length") && app.includes("d.material") && app.includes("d.edges")],
-  ["Release Gate проверяет раскладку листа", app.includes("function validateSheetLayout") && app.includes("placement.overflow") && app.includes("sheetLayoutChecked") && app.includes("buildSheetLayout(")],
+  ["Release Gate проверяет раскладку листа", core.includes("function validateSheetLayout") && core.includes("placement.overflow") && app.includes("sheetLayoutChecked") && app.includes("buildSheetLayout(")],
   ["PDF не пересобирает раскладку после Release Gate", app.includes("const layout = releaseGate.sheetLayout;") && app.includes("отсутствует проверенная раскладка листа")],
   ["PDF использует проверенную раскладку", app.includes("const layout = releaseGate.sheetLayout;") && !app.includes("releaseGate.sheetLayout || buildSheetLayout")],
-  ["PDF лист использует detailing", app.includes("thickness: group.thickness") && app.includes("(p.material || sheet.material)") && app.includes("edgeSummary(p.edges)") && !app.includes("part ? getSheetSpec(part).thickness")]
+  ["PDF лист использует detailing", app.includes("sheet.placements.map(p =>") && app.includes("(p.material || sheet.material)") && app.includes("edgeSummary(p.edges)") && app.includes("p.thickness")]
 ];
 
 const gateContract = [
   ["PASS: QC PASS + готовая деталировка + раскрой + лист", {
-    qc: {status:"PASS"},
+    qc: {status:"PASS", modelRevision:1, details:[{number:"001", status:"PASS"}]},
     partsCount: 1,
-    partStates: [{number:"001", detailing:{number:"001", status:"ready", cutting:{length:600,width:400,thickness:18}, holes:[]}}],
-    cuttingGroups: [{material:"ldsp18", thickness:18, details:[{number:"001",length:600,width:400,quantity:1}]}],
-    sheetLayout: {sheetLength:2800,sheetWidth:2070,margin:10,kerf:4,sheets:[{sheetNumber:1,placements:[{partNumber:"001",x:10,y:10,length:600,width:400,overflow:false}]}]}
+    partStates: [{
+      number:"001", sourceGeometry:"Furniture Core", geometryLocked:false,
+      detailing:{
+        number:"001", status:"ready", modelRevision:1,
+        construction:{source:"Furniture Core"}, material:"ldsp18", quantity:1,
+        edges:["PVC 1 мм","PVC 1 мм","нет","нет"],
+        cutting:{length:600,width:400,thickness:18}, holes:[]
+      }
+    }],
+    cuttingGroups: [{groupNumber:"001",material:"ldsp18",thickness:18,details:[{
+      number:"001",length:600,width:400,thickness:18,quantity:1,material:"ldsp18",
+      edges:["PVC 1 мм","PVC 1 мм","нет","нет"]
+    }]}],
+    sheetLayout: {sheetLength:2800,sheetWidth:2070,margin:10,kerf:4,sheets:[{
+      sheetNumber:1,placements:[{
+        sheetNumber:1,groupNumber:"001",partNumber:"001",x:10,y:10,length:600,width:400,
+        thickness:18,material:"ldsp18",edges:["PVC 1 мм","PVC 1 мм","нет","нет"],overflow:false
+      }]
+    }]}
   }, true],
   ["BLOCKED: QC REVIEW", {qc:{status:"REVIEW"},partsCount:1,partStates:[],cuttingGroups:[],sheetLayout:null}, false],
   ["BLOCKED: detailing REVIEW", {
