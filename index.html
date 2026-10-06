@@ -1,76 +1,85 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<meta name="description" content="A static IFC viewer for inspecting BIM geometry, metadata, selections, sections, measurements, and schema data in the browser." />
-<title>IFC Static Web Viewer</title>
-<link rel="icon" type="image/png" href="assets/logos/ifc-logo.png" />
-<!-- Reference IFC runtime: loaded from the working reference viewer bundle -->
-<link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="assets/css/main.css" />
-<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
-<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
-<script type="module">
-import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
-window.THREE = THREE;
-
-const appScripts = [
-  'assets/js/compiled/core/model.js',
-  'assets/js/compiled/core/ifcloader.js',
-  'assets/js/compiled/viewer/viewer.js',
-  'assets/js/compiled/ui/icons.js',
-  'assets/js/compiled/ui/panels.js',
-  'assets/js/compiled/app.js',
-];
-
-for (const src of appScripts) {
-  await new Promise((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = src;
-    script.onload = resolve;
-    script.onerror = () => reject(new Error(`Failed to load ${src}`));
-    document.head.appendChild(script);
-  });
-}
-</script>
-<script>
-const { useCallback, useEffect, useMemo, useReducer, useRef, useState } = React;
-</script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Furniture AI Designer — параметрическое проектирование корпусной мебели, 3D и взрывные схемы.">
+  <title>Furniture AI Designer</title>
+  <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
-<main id="root"></main>
-<noscript>This IFC viewer requires JavaScript.</noscript>
+  <header class="topbar">
+    <div class="brand"><div class="logo">F</div><div><strong>Furniture AI Designer</strong><small>Проектирование корпусной мебели</small></div></div>
+    <div class="toolbar">
+      <button id="newProject">Новый проект</button>
+      <button id="saveProject">Сохранить JSON</button>
+      <label class="file-button">Загрузить JSON<input id="loadProject" type="file" accept=".json"></label>
+    </div>
+  </header>
 
-<div id="vc-popover" class="vc-popover" role="dialog" aria-label="Visitor Statistics">
-  <div class="vc-popover-top">
-    <span>Visitor Statistics</span>
-    <button
-      type="button"
-      class="vc-pop-close"
-      onclick="document.getElementById('vc-popover').classList.remove('vc-open')"
-      aria-label="Close visitor statistics"
-    >
-      &times;
-    </button>
-  </div>
-  <a
-    href="http://s01.flagcounter.com/more/2uk"
-    target="_blank"
-    rel="noopener noreferrer"
-    class="vc-flag-link"
-    title="Click to see full analytics"
-  >
-    <img
-      src="https://s01.flagcounter.com/count2/2uk/bg_161b22/txt_e6edf3/border_30363d/columns_4/maxflags_20/viewers_0/labels_1/pageviews_1/flags_0/percent_0/"
-      alt="Flag Counter - visitor statistics by country"
-      class="vc-flag-img"
-    />
-  </a>
-</div>
+  <main class="layout">
+    <aside class="sidebar">
+      <section>
+        <h2>Параметры шкафа</h2>
+        <label>Ширина, мм<input id="width" type="number" min="200" step="1" value="2400"></label>
+        <label>Высота, мм<input id="height" type="number" min="200" step="1" value="2200"></label>
+        <label>Глубина, мм<input id="depth" type="number" min="200" step="1" value="600"></label>
+        <label>Толщина, мм<input id="thickness" type="number" min="8" step="1" value="18"></label>
+        <label>Секций<input id="sections" type="number" min="1" max="12" step="1" value="3"></label>
+        <label>Съёмных полок<input id="shelves" type="number" min="0" max="30" step="1" value="6"></label>
+        <label>Фасадов<input id="doors" type="number" min="0" max="12" step="1" value="3"></label>
+        <div class="row">
+          <button class="primary" id="build">Построить</button>
+          <button id="explode">Взрыв</button>
+        </div>
+        <div class="row">
+          <button id="resetExplode">Собрать</button>
+          <button id="frontView">Фасад</button>
+          <button id="isoView">Изометрия</button>
+        </div>
+      </section>
 
+      <section>
+        <h2>Материал</h2>
+        <select id="material">
+          <option value="ldsp18">ЛДСП 18 мм</option>
+          <option value="ldsp16">ЛДСП 16 мм</option>
+          <option value="mdf18">МДФ 18 мм</option>
+          <option value="ply18">Фанера 18 мм</option>
+        </select>
+        <h2>Кромка</h2>
+        <select id="edge">
+          <option>ABS 2 мм</option>
+          <option>ABS 1 мм</option>
+          <option>PVC 2 мм</option>
+          <option>PP 1 мм</option>
+          <option>Без кромки</option>
+        </select>
+      </section>
+
+      <section>
+        <h2>Проверка</h2>
+        <div id="validation" class="validation">Готово к построению.</div>
+      </section>
+    </aside>
+
+    <section class="stage">
+      <div class="stage-head"><span id="projectName">Новый шкаф</span><span id="status">Параметрическая модель</span></div>
+      <div id="viewer"></div>
+      <div class="hint">ЛКМ — выбор · ПКМ/Shift — вращение/панорамирование · колесо — масштаб</div>
+    </section>
+
+    <aside class="parts">
+      <div class="parts-head"><h2>Детали <span id="partsCount">0</span></h2></div>
+      <div id="partsList"></div>
+    </aside>
+  </main>
+
+  <footer class="statusbar">
+    <span>Furniture AI Designer v0.1</span>
+    <span id="summary">—</span>
+  </footer>
+
+  <script type="module" src="./app.js"></script>
 </body>
 </html>
