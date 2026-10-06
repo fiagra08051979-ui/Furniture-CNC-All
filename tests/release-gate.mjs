@@ -110,6 +110,21 @@ for (const project of fixtures.projects) {
   if (Number(p.thickness) !== Number(e.materialThickness)) errors.push("Эталон " + project.id + ": толщина материала не совпадает");
   if (Number(p.doors) !== Number(e.doors)) errors.push("Эталон " + project.id + ": число фасадов не совпадает");
   if (Number(p.shelves) !== Number(e.shelves)) errors.push("Эталон " + project.id + ": число полок не совпадает");
+
+  // Эталон должен покрывать полный утверждённый жизненный цикл,
+  // а не только исходные параметры.
+  if (!(Number(p.width) > 0 && Number(p.height) > 0 && Number(p.depth) > 0)) {
+    errors.push("Эталон " + project.id + ": некорректные габариты");
+  }
+  if (!(Number(p.thickness) > 0 && Number(p.thickness) < Math.min(Number(p.width), Number(p.height), Number(p.depth)))) {
+    errors.push("Эталон " + project.id + ": некорректная толщина относительно габаритов");
+  }
+  if (Number(p.sections) < 1 || Number(p.shelves) < 0 || Number(p.fixedPartitions) < 0 || Number(p.doors) < 0) {
+    errors.push("Эталон " + project.id + ": некорректные количества элементов");
+  }
+  if (Number(e.minimumParts) < 4) {
+    errors.push("Эталон " + project.id + ": эталон не покрывает базовый состав корпуса");
+  }
 }
 
 if (errors.length) {
