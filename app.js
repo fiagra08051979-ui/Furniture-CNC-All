@@ -3085,7 +3085,7 @@ function validateCncTechnologyGroups(plan){
   return issues;
 }
 function buildCncToolChangeSequence(plan) {
-  const groups=plan.toolTechnology || [];
+  const groups=plan.technologyGroups || plan.toolTechnology || [];
   const order=[];
   groups.forEach((group,index)=>{
     const first=group.operations?.[0];
