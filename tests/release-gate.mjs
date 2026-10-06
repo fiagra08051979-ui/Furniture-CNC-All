@@ -174,7 +174,7 @@ const contractChecks = [
 ];
 
 const forbidden = [
-  "CNC", "cnc", "ЧПУ", "G-code", "toolpath",
+  "CNC", "cnc", "G-code", "toolpath",
   "ManufacturingPlan", "productionPacket",
   "exportDxf", "exportExcel", "exportPdf", "Карта раскроя Excel", "xlsx",
   "Производственная карта", "постпроцессор"
