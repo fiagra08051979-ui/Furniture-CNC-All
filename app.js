@@ -2533,10 +2533,6 @@ function buildPartDxf(part) {
   const addCircle = (x,y,r,layer="DRILLING") => {
     lines.push("0","CIRCLE","8",layer,"10",x,"20",y,"30",0,"40",r);
   };
-  const addPolyline = (points, layer="MILLING") => {
-    lines.push("0","LWPOLYLINE","8",layer,"90",points.length,"70",1);
-    points.forEach(([x,y]) => lines.push("10",x,"20",y));
-  };
   if (!(u.source === "IFC" && u.ifcContour?.ready && u.ifcContour.path?.length >= 3)) {
     addLine(-w/2,-h/2,w/2,-h/2);
     addLine(w/2,-h/2,w/2,h/2);
