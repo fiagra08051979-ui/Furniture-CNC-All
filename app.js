@@ -1259,6 +1259,9 @@ function rebuildDetailingPipeline() {
 
     const partIssues = [];
     if (!u.partNumber) partIssues.push("нет номера детали");
+    if (u.source === "IFC" && u.recognitionConfidence === "low") {
+      partIssues.push("низкая уверенность IFC-распознавания; требуется ручная проверка");
+    }
     if (![u.width, u.height, u.depth].every(v => Number.isFinite(Number(v)) && Number(v) > 0)) {
       partIssues.push("некорректные габариты");
     }
