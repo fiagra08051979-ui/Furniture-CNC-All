@@ -2060,21 +2060,121 @@ function importIfcFile(file){
   reader.readAsText(file);
 }
 
-function analyzeFurnitureImageMetadata(file) {
+async function analyzeFurnitureImageMetadata(file) {
   if (!file) return null;
-  const result = {fileName:file.name,type:file.type||"unknown",recognized:[],params:{},confidence:"низкая"};
-  if (/^image\\//.test(file.type || "")) {
-    result.recognized.push("изображение мебели загружено");
-    result.recognized.push("требуется визуальное распознавание конструкции");
+  const result = {
+    fileName:file.name,
+    type:file.type||"unknown",
+    recognized:[],
+    params:{},
+    confidence:"низкая",
+    source:"AI image"
+  };
+  if (!/^image\\//.test(file.type || "")) {
+    result.confirmation = "Файл не является изображением.";
+    return result;
   }
-  result.confirmation = "Я распознал конструкцию следующим образом: " + result.recognized.join(", ") + ".";
+
+  const image = await new Promise((resolve,reject)=>{
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(objectUrl); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error("Не удалось прочитать изображение.")); };
+    img.src = objectUrl;
+  });
+
+  const maxSide = 900;
+  const scale = Math.min(1, maxSide / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+  canvas.height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+  const ctx = canvas.getContext("2d", {willReadFrequently:true});
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+
+  const gray = (x,y) => {
+    const i=(y*canvas.width+x)*4;
+    return (pixels[i]+pixels[i+1]+pixels[i+2])/3;
+  };
+  const threshold = 28;
+  const verticalScores = new Array(canvas.width).fill(0);
+  const horizontalScores = new Array(canvas.height).fill(0);
+
+  for(let y=1;y<canvas.height-1;y++){
+    for(let x=1;x<canvas.width-1;x++){
+      const gx=Math.abs(gray(x+1,y)-gray(x-1,y));
+      const gy=Math.abs(gray(x,y+1)-gray(x,y-1));
+      if(gx>threshold) verticalScores[x]+=gx;
+      if(gy>threshold) horizontalScores[y]+=gy;
+    }
+  }
+
+  function countPeaks(scores, minDistance, minScore) {
+    const peaks=[];
+    for(let i=1;i<scores.length-1;i++){
+      if(scores[i] < minScore || scores[i] < scores[i-1] || scores[i] < scores[i+1]) continue;
+      if(!peaks.length || i-peaks[peaks.length-1] >= minDistance) peaks.push(i);
+      else if(scores[i] > scores[peaks[peaks.length-1]]) peaks[peaks.length-1]=i;
+    }
+    return peaks;
+  }
+
+  const verticalPeaks=countPeaks(
+    verticalScores,
+    Math.max(12, Math.round(canvas.width*0.05)),
+    Math.max(1000, canvas.height*18)
+  );
+  const horizontalPeaks=countPeaks(
+    horizontalScores,
+    Math.max(12, Math.round(canvas.height*0.05)),
+    Math.max(1000, canvas.width*18)
+  );
+
+  const sections=Math.max(1, Math.min(12, verticalPeaks.length + 1));
+  const doors=Math.max(0, Math.min(12, sections));
+  const shelves=Math.max(0, Math.min(30, Math.round(horizontalPeaks.length * sections / 2)));
+
+  result.params.sections=sections;
+  result.params.doors=doors;
+  result.params.shelves=shelves;
+  result.recognized.push("секций: "+sections);
+  result.recognized.push("фасадов: "+doors);
+  result.recognized.push("съёмных полок: "+shelves);
+
+  if (horizontalPeaks.length || verticalPeaks.length) {
+    result.confidence = "средняя";
+    result.recognized.push("конструкция определена по визуальным вертикальным и горизонтальным элементам");
+  } else {
+    result.confidence = "низкая";
+    result.recognized.push("явные конструктивные элементы не обнаружены");
+  }
+
+  result.confirmation =
+    "По изображению распознана конструкция: " + result.recognized.join(", ") + ".";
   return result;
 }
+
 function renderAiImageRecognition(result) {
   const target=$("aiImageRecognition");
   if(!target || !result) return;
-  target.innerHTML="<b>"+result.confirmation+"</b><div class='status'>Файл: "+result.fileName+"</div><div class='status'>Геометрия автоматически не изменяется до подтверждения AI-анализа.</div>";
+  target.innerHTML="<b>"+result.confirmation+"</b>" +
+    "<div class='status'>Файл: "+result.fileName+" · уверенность: "+result.confidence+"</div>" +
+    (result.confidence !== "низкая"
+      ? "<div class='row'><button id='aiImageApply' class='primary'>Применить распознанную конструкцию</button></div>"
+      : "<div class='status error'>Недостаточно данных для автоматического применения.</div>");
   window._aiImageRecognition=result;
+  $("aiImageApply")?.addEventListener("click", applyAiImageRecognition);
+}
+
+function applyAiImageRecognition() {
+  const result=window._aiImageRecognition;
+  if(!result || !result.recognized.length) return;
+  Object.entries(result.params).forEach(([key,value])=>{
+    const el=$(key);
+    if(el) el.value=value;
+  });
+  build();
+  validate("AI-распознавание изображения применено: параметрическая модель построена.", "ok");
 }
 
 function recognizeFurnitureText(text) {
@@ -2483,11 +2583,15 @@ $("aiRecognize")?.addEventListener("click", () => {
   renderAiRecognition(result);
 });
 $("aiApply")?.addEventListener("click", applyAiRecognition);
-$("aiImageAnalyze")?.addEventListener("click", () => {
+$("aiImageAnalyze")?.addEventListener("click", async () => {
   const file=$("aiImageFile")?.files?.[0];
   if(!file){ validate("Загрузите изображение мебели.","error"); return; }
-  const result=analyzeFurnitureImageMetadata(file);
-  renderAiImageRecognition(result);
+  try {
+    const result=await analyzeFurnitureImageMetadata(file);
+    renderAiImageRecognition(result);
+  } catch (error) {
+    validate("Не удалось распознать изображение: "+error.message, "error");
+  }
 });
 document.querySelectorAll(".exportSheetLayout").forEach(button => button.addEventListener("click", exportSheetLayout));
 document.querySelectorAll(".showCuttingMap").forEach(button => button.addEventListener("click", showCuttingMap));
