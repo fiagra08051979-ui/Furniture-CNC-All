@@ -7,13 +7,15 @@
   <title>Furniture AI Designer</title>
   <link rel="stylesheet" href="./styles.css">
   <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 </head>
 <body>
   <header class="topbar">
     <div class="brand"><div class="logo">F</div><div><strong>Furniture AI Designer</strong><small>Проектирование корпусной мебели</small></div></div>
     <div class="toolbar">
       <button id="newProject">Новый проект</button>
-      <button id="saveProject">Сохранить JSON</button>
+      <button id="saveProject">Сохранить JSON</button><button id="exportExcel">Excel</button><button id="exportPdf">PDF</button>
       <label class="file-button">Загрузить JSON<input id="loadProject" type="file" accept=".json"></label>
     </div>
   </header>
@@ -74,7 +76,7 @@
       <div class="parts-head"><h2>Таблица деталей <span id="partsCount">0</span></h2></div>
       <div class="parts-table-wrap">
         <table class="parts-table">
-          <thead><tr><th>№</th><th>Деталь</th><th>Ш</th><th>В</th><th>Г</th></tr></thead>
+          <thead><tr><th>№</th><th>Деталь</th><th>Ш</th><th>В</th><th>Г</th><th>Материал</th><th>Кромка 1–4</th><th>Кол.</th></tr></thead>
           <tbody id="partsList"></tbody>
         </table>
       </div>
