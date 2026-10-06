@@ -1256,33 +1256,46 @@ function getSheetSpec(part) {
 
 function buildCuttingGroups() {
   const groups = new Map();
+
+  // Раскрой больше не читает конструкционные поля напрямую.
+  // Источник для него — уже согласованная деталировка.
   parts.forEach(part => {
     const u = part.userData;
-    const spec = getSheetSpec(part);
+    const d = u.detailing;
+    if (!d) return;
+
     const key = [
-      u.material,
-      spec.thickness,
-      u.edges.join("|"),
-      spec.length,
-      spec.width
+      d.material,
+      d.cutting.thickness,
+      d.edges.join("|"),
+      d.cutting.length,
+      d.cutting.width
     ].join("::");
+
     if (!groups.has(key)) {
       groups.set(key, {
         key,
-        material: u.material,
-        thickness: spec.thickness,
-        length: spec.length,
-        width: spec.width,
-        edges: [...u.edges],
+        material: d.material,
+        thickness: d.cutting.thickness,
+        length: d.cutting.length,
+        width: d.cutting.width,
+        edges: [...d.edges],
         quantity: 0,
-        partNumbers: []
+        partNumbers: [],
+        detailingStatus: d.status
       });
     }
+
     const g = groups.get(key);
-    g.quantity += Number(u.quantity || 1);
-    g.partNumbers.push(u.partNumber);
+    g.quantity += Number(d.quantity || 1);
+    g.partNumbers.push(d.number);
+    if (d.status !== "ready") g.detailingStatus = "review";
   });
-  return [...groups.values()].map((g, index) => ({...g, groupNumber: String(index + 1).padStart(3, "0")}));
+
+  return [...groups.values()].map((g, index) => ({
+    ...g,
+    groupNumber: String(index + 1).padStart(3, "0")
+  }));
 }
 
 
