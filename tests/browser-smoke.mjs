@@ -58,6 +58,38 @@ if (!ifcObjects.includes("Распознано:")) throw new Error("IFC runtime 
 const ifcValidation = await page.locator("#validation").textContent();
 if (!ifcValidation.includes("IFC импортирован")) throw new Error("IFC runtime не завершил импорт: " + ifcValidation);
 
+const ifcGeometrySnapshot = await page.evaluate(() => {
+  return [...(window.parts || [])].filter(part => part.userData?.source === "IFC").map(part => ({
+    partNumber: part.userData.partNumber,
+    geometryUuid: part.geometry?.uuid || "",
+    source: part.userData.source,
+    geometryLocked: part.userData.geometryLocked
+  }));
+});
+if (!ifcGeometrySnapshot.length) throw new Error("После IFC импорта не найдены IFC-детали для проверки сохранения геометрии.");
+
+await page.locator("#material").selectOption("mdf18");
+await page.waitForTimeout(300);
+for (const id of ["#edge1","#edge2","#edge3","#edge4"]) await page.locator(id).selectOption({label:"ABS 2 мм"});
+await page.waitForTimeout(500);
+
+const ifcGeometryAfterRefresh = await page.evaluate(() => {
+  return [...(window.parts || [])].filter(part => part.userData?.source === "IFC").map(part => ({
+    partNumber: part.userData.partNumber,
+    geometryUuid: part.geometry?.uuid || "",
+    source: part.userData.source,
+    geometryLocked: part.userData.geometryLocked
+  }));
+});
+if (ifcGeometryAfterRefresh.length !== ifcGeometrySnapshot.length) throw new Error("Изменение материала/кромки изменило состав IFC-деталей.");
+for (let i = 0; i < ifcGeometrySnapshot.length; i++) {
+  const before = ifcGeometrySnapshot[i];
+  const after = ifcGeometryAfterRefresh.find(item => item.partNumber === before.partNumber);
+  if (!after || after.geometryUuid !== before.geometryUuid || after.source !== "IFC" || after.geometryLocked !== true) {
+    throw new Error("Изменение материала/кромки изменило исходную IFC-геометрию детали " + before.partNumber + ".");
+  }
+}
+
 await page.locator("#frontGapBetween").fill("2");
 await page.locator("#width").fill("2400");
 await page.locator("#height").fill("2200");
