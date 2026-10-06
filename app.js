@@ -1942,6 +1942,7 @@ function readCncMachineSetup() {
     units: $("cncUnits")?.value || "mm",
     origin: $("cncOrigin")?.value || "top-center",
     safeZ: Number($("cncSafeZ")?.value || 5),
+    forbiddenZones: [],
     workZ: Number($("cncWorkZ")?.value || 0),
     defaultFeed: Number($("cncFeed")?.value || 300),
     spindle: Number($("cncSpindle")?.value || 18000)
@@ -3774,6 +3775,46 @@ function optimizeCompiledToolpathSequence(program,plan){
   }
   return result;
 }
+function segmentIntersectsForbiddenZone(a,b,zone){
+  if(!zone || zone.type!=="RECT") return false;
+  const minX=Number(zone.minX), maxX=Number(zone.maxX), minY=Number(zone.minY), maxY=Number(zone.maxY);
+  if(![minX,maxX,minY,maxY].every(Number.isFinite)) return false;
+  const inside=p=>p.x>=minX&&p.x<=maxX&&p.y>=minY&&p.y<=maxY;
+  if(inside(a)||inside(b)) return true;
+  const edges=[
+    [{x:minX,y:minY},{x:maxX,y:minY}],
+    [{x:maxX,y:minY},{x:maxX,y:maxY}],
+    [{x:maxX,y:maxY},{x:minX,y:maxY}],
+    [{x:minX,y:maxY},{x:minX,y:minY}]
+  ];
+  const orient=(p,q,r)=>(q.x-p.x)*(r.y-p.y)-(q.y-p.y)*(r.x-p.x);
+  const hit=(p,q,r,t)=>{
+    const o1=orient(p,q,r),o2=orient(p,q,t),o3=orient(r,t,p),o4=orient(r,t,q);
+    return ((o1>0&&o2<0)||(o1<0&&o2>0)||Math.abs(o1)<1e-9) &&
+           ((o3>0&&o4<0)||(o3<0&&o4>0)||Math.abs(o3)<1e-9);
+  };
+  return edges.some(e=>hit(a,b,e[0],e[1]));
+}
+
+function validateCompiledToolpathForbiddenZones(plan){
+  const issues=[];
+  const zones=Array.isArray(plan.machineSetup?.forbiddenZones)?plan.machineSetup.forbiddenZones:[];
+  if(!zones.length) return issues;
+  (plan.compiledToolpathProgram||[]).forEach(path=>{
+    const pts=path.points||[];
+    for(let i=1;i<pts.length;i++){
+      const a=pts[i-1], b=pts[i];
+      const travel=Number(a.z)>=Number(path.safeZ)-0.001 && Number(b.z)>=Number(path.safeZ)-0.001;
+      if(!travel) continue;
+      zones.forEach((zone,z)=>{
+        if(segmentIntersectsForbiddenZone({x:Number(a.x),y:Number(a.y)},{x:Number(b.x),y:Number(b.y)},zone))
+          issues.push({level:"error",code:"TRAVEL_FORBIDDEN_ZONE",message:"Холостой переход пересекает запрещённую зону оснастки.",operation:path.operationId,segment:i,zone:z});
+      });
+    }
+  });
+  return issues;
+}
+
 function validateCompiledToolpathTravelSafety(plan){
   const issues=[];
   const seq=plan.compiledToolpathProgram||[];
@@ -4200,6 +4241,7 @@ function getCompiledManufacturingPlan(part) {
   plan.compiledToolpathProgram=buildCompiledToolpathProgram(plan,part);
   plan.compiledToolpathProgram=optimizeCompiledToolpathSequence(plan.compiledToolpathProgram,plan);\n  plan.toolpathSequenceValidation=validateCompiledToolpathSequence(plan);
   plan.toolpathTravelSafety=validateCompiledToolpathTravelSafety(plan);
+  plan.forbiddenZoneValidation=validateCompiledToolpathForbiddenZones(plan);
   plan.compiledToolpathTechnologyValidation=validateCompiledToolpathTechnology(plan);
   plan.toolpathValidation=validateCncToolpaths(plan);
   plan.toolpathGeometryEnvelope=buildToolpathGeometryEnvelope(plan,part);
@@ -4213,7 +4255,7 @@ function getCompiledManufacturingPlan(part) {
   plan.contourCompensationValidation=validateContourCompensationGeometry(plan,part);
   plan.contourWidthValidation=validateContourMinimumWidth(plan,part);
   plan.toolpathCollisionValidation=validateToolpathCollisions(plan,part);
-  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance,...plan.typedToolpathValidation,...plan.passPlanValidation,...plan.pocketGeometryValidation,...plan.contourCompensationValidation,...plan.contourWidthValidation,...plan.toolpathCollisionValidation,...plan.toolpathSequenceValidation,...plan.toolpathTravelSafety,...plan.compiledToolpathTechnologyValidation,...plan.technologyGroupValidation];
+  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance,...plan.typedToolpathValidation,...plan.passPlanValidation,...plan.pocketGeometryValidation,...plan.contourCompensationValidation,...plan.contourWidthValidation,...plan.toolpathCollisionValidation,...plan.toolpathSequenceValidation,...plan.toolpathTravelSafety,...plan.forbiddenZoneValidation,...plan.compiledToolpathTechnologyValidation,...plan.technologyGroupValidation];
   plan.machineReady=plan.validation.every(x=>x.level!=="error") && plan.status==="READY" && plan.lifecycle.every(x=>x.valid) && plan.machineCompatibility.machineReady;
   plan.status=plan.machineReady ? "MACHINE_READY" : (plan.status==="BLOCKED" ? "BLOCKED" : "REVIEW");
   return plan;
