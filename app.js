@@ -2015,6 +2015,10 @@ function buildCncJobManifest() {
     compiledPlanValidation: plans.flatMap(plan => (plan.validation || []).map(issue => ({...issue,partNumber:plan.partNumber}))),
     machineReady: plans.every(plan => plan.machineReady),
     readinessStatus: plans.every(plan => plan.machineReady) ? "MACHINE_READY" : "BLOCKED",
+    toolTechnology: plans.map(plan => ({
+      partNumber:plan.partNumber,
+      groups:plan.toolTechnology || []
+    })),
     machineCompatibility: plans.map(plan => ({
       partNumber:plan.partNumber,
       postprocessor:plan.machineCompatibility?.postprocessor,
