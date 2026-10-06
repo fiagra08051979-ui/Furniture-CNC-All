@@ -1187,6 +1187,7 @@ function renderCncOperations() {
   const rows=parts.flatMap(p=>buildCncOperations(p).map(op=>"<tr><td>"+op.partNumber+"</td><td>"+op.sequence+"</td><td>"+op.type+"</td><td>"+op.operation+"</td><td>"+(op.diameter||"—")+"</td><td>"+(op.depth||"—")+"</td></tr>"));
   target.innerHTML="<b>CNC-операции</b><table><thead><tr><th>№</th><th>№ оп.</th><th>Тип</th><th>Операция</th><th>Ø</th><th>Глубина</th></tr></thead><tbody>"+rows.join("")+"</tbody></table>";
 }
+setTimeout(renderCncOperations, 0);
 
 if ($("showCuttingMap")) $("showCuttingMap").addEventListener("click", showCuttingMap);
 $("exportPdf").addEventListener("click", exportPdf);
