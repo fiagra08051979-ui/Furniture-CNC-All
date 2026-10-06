@@ -1629,6 +1629,7 @@ function drillingSchematic(part) {
 
 function buildCuttingPdfHtml(layout, gatedParts = parts) {
   const projectName = $("projectName")?.textContent || "Furniture AI Designer";
+  const gatedCount = gatedParts.length;
   const detailPages = gatedParts.map(part => {
     const u = part.userData;
     const d = u.detailing;
@@ -1677,7 +1678,7 @@ function buildCuttingPdfHtml(layout, gatedParts = parts) {
 
   return '<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Карта раскроя — '+projectName+'</title><style>'+
     '@page{size:A4 portrait;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#111827;margin:0;font-size:10pt}h1{font-size:20pt;margin:0 0 8mm}h2{font-size:15pt;margin:0 0 4mm}.cover{page-break-after:always}.sheet-page{page-break-after:always}.detail-page{page-break-after:always}.sheet-meta,.detail-meta{margin:2mm 0}.sheet-svg{width:100%;height:auto;border:1px solid #111827}.drilling-schematic{width:100%;max-width:180mm;height:auto;margin:5mm 0}table{width:100%;border-collapse:collapse;margin-top:5mm}th,td{border:1px solid #6b7280;padding:3px 4px;text-align:left;vertical-align:top}th{font-weight:700}.no-drilling{margin:8mm 0;padding:5mm;border:1px solid #9ca3af}'+
-    '</style></head><body><section class="cover"><h1>Карта раскроя</h1><p><b>Проект:</b> '+projectName+'</p><p><b>Листов:</b> '+layout.sheets.length+' · <b>Деталей:</b> '+parts.length+'</p><p>Документ для производственного использования: листы раскроя, детали, кромка, присадка и сверловка.</p></section>'+
+    '</style></head><body><section class="cover"><h1>Карта раскроя</h1><p><b>Проект:</b> '+projectName+'</p><p><b>Листов:</b> '+layout.sheets.length+' · <b>Деталей:</b> '+gatedCount+'</p><p>Документ для производственного использования: листы раскроя, детали, кромка, присадка и сверловка.</p></section>'+
     sheetPages + detailPages + '</body></html>';
 }
 
@@ -1719,8 +1720,10 @@ function runReleaseGate() {
   report.gatedParts = parts.map(part => ({
     partNumber: part.userData?.partNumber || "",
     name: part.userData?.name || "",
+    sourceGeometry: part.userData?.source === "IFC" ? "IFC" : "Furniture Core",
     detailing: structuredClone(part.userData?.detailing || null)
   }));
+  report.gatedPartsRevision = modelRevision;
   window._releaseGate = report;
   return report;
 }
@@ -1749,10 +1752,15 @@ function exportSheetLayout() {
   }
 
   printWindow.document.open();
+  if (Number(releaseGate.gatedPartsRevision) !== Number(releaseGate.modelRevision)) {
+    validate("Release Gate: состав деталей относится к другой ревизии модели. Выпуск PDF заблокирован.", "error");
+    return;
+  }
   const gatedParts = (releaseGate.gatedParts || []).map(snapshot => ({
     userData: {
       partNumber: snapshot.partNumber,
       name: snapshot.name,
+      source: snapshot.sourceGeometry === "IFC" ? "IFC" : "Furniture Core",
       detailing: snapshot.detailing
     }
   }));
