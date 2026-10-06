@@ -603,7 +603,10 @@ async function importIfcIntoFurnitureCore(file) {
     target && (target.textContent = "Импорт IFC: чтение геометрии…");
 
     const api = await ensureIfcApi();
-    closeIfcModel();
+    // Сначала инвалидируем старый проект и закрываем старый IFC,
+    // затем открываем новый IFC. Нельзя очищать модель после OpenModel(),
+    // потому что clearModel() закрывает активный IFC-документ.
+    clearModel();
 
     const data = new Uint8Array(await file.arrayBuffer());
     ifcModelId = api.OpenModel(data, { COORDINATE_TO_ORIGIN: true });
@@ -632,9 +635,6 @@ async function importIfcIntoFurnitureCore(file) {
         }
       });
     }
-
-    clearModel();
-    parts.length = 0;
 
     let rendered = 0;
     for (const expressId of expressIds) {
