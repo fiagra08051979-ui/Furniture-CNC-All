@@ -367,44 +367,96 @@ function buildCuttingGroups() {
   return [...groups.values()].map((g, index) => ({...g, groupNumber: String(index + 1).padStart(3, "0")}));
 }
 
-function buildSheetLayout(sheetLength, sheetWidth, kerf, margin) {
+function buildSheetLayout(sheetLength, sheetWidth, kerf, margin, allowRotation, grainMode) {
   const groups = buildCuttingGroups();
-  const placements = [];
   const sheets = [];
   let sheetIndex = 1;
-  const newSheet = () => ({sheetNumber: sheetIndex++, length: sheetLength, width: sheetWidth, placements: []});
-  let sheet = newSheet();
-  let cursorX = margin, cursorY = margin, rowHeight = 0;
-  const sorted = [...groups].sort((a,b) => (b.length*b.width) - (a.length*a.width));
-  sorted.forEach(group => {
+  const newSheet = (material) => ({
+    sheetNumber: sheetIndex++, material, length: sheetLength, width: sheetWidth, placements: []
+  });
+
+  const items = [];
+  groups.forEach(group => {
     for (let q = 0; q < group.quantity; q++) {
-      let w = group.length, h = group.width;
-      if (cursorX + w > sheetLength - margin) {
-        cursorX = margin; cursorY += rowHeight + kerf; rowHeight = 0;
-      }
-      if (cursorY + h > sheetWidth - margin) {
-        sheets.push(sheet);
-        sheet = newSheet();
-        cursorX = margin; cursorY = margin; rowHeight = 0;
-      }
-      const placement = {
-        sheetNumber: sheet.sheetNumber,
+      items.push({
         groupNumber: group.groupNumber,
-        partNumbers: group.partNumbers,
-        x: Math.round(cursorX),
-        y: Math.round(cursorY),
-        length: w,
-        width: h,
-        rotated: false
-      };
-      sheet.placements.push(placement);
-      placements.push(placement);
-      cursorX += w + kerf;
-      rowHeight = Math.max(rowHeight, h);
+        partNumber: group.partNumbers[q] || group.partNumbers[0] || "",
+        material: group.material,
+        length: group.length,
+        width: group.width,
+        edges: group.edges
+      });
     }
   });
-  if (sheet.placements.length) sheets.push(sheet);
-  return {sheetLength, sheetWidth, kerf, margin, sheets, placements};
+  items.sort((a, b) => (b.length * b.width) - (a.length * a.width));
+
+  const canRotate = allowRotation && grainMode === "нет";
+  const tryPlace = (sheet, item) => {
+    const candidates = [
+      {w:item.length, h:item.width, rotated:false},
+      ...(canRotate ? [{w:item.width, h:item.length, rotated:true}] : [])
+    ];
+    let best = null;
+    sheet.placements.forEach(p => {
+      for (const c of candidates) {
+        const x = p.x + p.length + kerf;
+        const y = p.y;
+        if (x + c.w <= sheetLength - margin && y + c.h <= sheetWidth - margin) {
+          best = best || {x, y, ...c};
+        }
+      }
+    });
+    for (const c of candidates) {
+      const x = margin;
+      const y = margin;
+      if (x + c.w <= sheetLength - margin && y + c.h <= sheetWidth - margin) {
+        best = best || {x, y, ...c};
+      }
+    }
+    const rowYs = [...new Set(sheet.placements.map(p => p.y))].sort((x,y)=>x-y);
+    for (const y of rowYs) {
+      const row = sheet.placements.filter(p => p.y === y);
+      const right = row.reduce((m,p)=>Math.max(m,p.x+p.length), margin);
+      for (const c of candidates) {
+        if (right + kerf + c.w <= sheetLength - margin && y + c.h <= sheetWidth - margin) {
+          const candidate = {x:right+kerf,y,...c};
+          if (!best || candidate.y < best.y || (candidate.y === best.y && candidate.x < best.x)) best = candidate;
+        }
+      }
+    }
+    return best;
+  };
+
+  items.forEach(item => {
+    let sheet = [...sheets].reverse().find(s => s.material === item.material);
+    let placement = sheet ? tryPlace(sheet, item) : null;
+    if (!placement) {
+      sheet = newSheet(item.material);
+      sheets.push(sheet);
+      placement = tryPlace(sheet, item);
+    }
+    if (!placement) {
+      sheet.placements.push({
+        sheetNumber: sheet.sheetNumber, groupNumber: item.groupNumber, partNumber: item.partNumber,
+        x: margin, y: margin, length: item.length, width: item.width, rotated:false, overflow:true
+      });
+      return;
+    }
+    sheet.placements.push({
+      sheetNumber: sheet.sheetNumber,
+      groupNumber: item.groupNumber,
+      partNumber: item.partNumber,
+      x: Math.round(placement.x),
+      y: Math.round(placement.y),
+      length: placement.w,
+      width: placement.h,
+      rotated: placement.rotated,
+      overflow:false,
+      grain: grainMode
+    });
+  });
+
+  return {sheetLength, sheetWidth, kerf, margin, allowRotation:canRotate, grainMode, sheets};
 }
 
 function exportSheetLayout() {
@@ -413,17 +465,21 @@ function exportSheetLayout() {
   const sheetWidth = Number($("sheetWidth")?.value || 2070);
   const kerf = Number($("cutKerf")?.value || 4);
   const margin = Number($("sheetMargin")?.value || 10);
-  const layout = buildSheetLayout(sheetLength, sheetWidth, kerf, margin);
+  const allowRotation = Boolean($("allowRotation")?.checked);
+  const grainMode = $("grainMode")?.value || "нет";
+  const layout = buildSheetLayout(sheetLength, sheetWidth, kerf, margin, allowRotation, grainMode);
   const rows = [];
   layout.sheets.forEach(sheet => sheet.placements.forEach(p => rows.push({
     "Лист": sheet.sheetNumber,
     "Группа": p.groupNumber,
-    "№ детали": p.partNumbers.join(", "),
+    "№ детали": p.partNumber,
     "X, мм": p.x,
     "Y, мм": p.y,
     "Длина, мм": p.length,
     "Ширина, мм": p.width,
-    "Поворот": p.rotated ? "90°" : "0°"
+    "Поворот": p.rotated ? "90°" : "0°",
+    "Направление текстуры": p.grain || "нет",
+    "Переполнение": p.overflow ? "ДА" : "нет"
   })));
   const ws = XLSX.utils.json_to_sheet(rows);
   const wb = XLSX.utils.book_new();
