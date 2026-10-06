@@ -105,7 +105,21 @@ function evaluateReleaseGateState({ qc, partsCount, partStates, cuttingGroups, s
     if (!c || !c.length || !c.width || !c.thickness) {
       issues.push("Деталь " + (state.detailing.number || id) + ": отсутствуют данные раскроя.");
     }
+    if (!String(state.detailing.material || "").trim()) {
+      issues.push("Деталь " + (state.detailing.number || id) + ": отсутствует материал.");
+    }
+    const detailQuantity = Number(state.detailing.quantity);
+    if (!Number.isInteger(detailQuantity) || detailQuantity < 1) {
+      issues.push("Деталь " + (state.detailing.number || id) + ": некорректное количество.");
+    }
+    if (!Array.isArray(state.detailing.edges) || state.detailing.edges.length !== 4 ||
+        state.detailing.edges.some(edge => !String(edge || "").trim())) {
+      issues.push("Деталь " + (state.detailing.number || id) + ": неполные данные кромки.");
+    }
     (state.detailing.holes || []).forEach(hole => {
+      if (!Number.isFinite(Number(hole.x)) || !Number.isFinite(Number(hole.y))) {
+        issues.push("Деталь " + (state.detailing.number || id) + ": отверстие без координат X/Y.");
+      }
       if (!Number.isFinite(Number(hole.diameter)) || Number(hole.diameter) <= 0) {
         issues.push("Деталь " + (state.detailing.number || id) + ": некорректный диаметр отверстия.");
       }
