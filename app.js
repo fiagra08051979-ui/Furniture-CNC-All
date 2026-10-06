@@ -877,6 +877,58 @@ function exportCncProgram(part) {
   URL.revokeObjectURL(link.href);
 }
 
+function buildCncTechCard(part) {
+  const u = part.userData;
+  const material = u.material || "Не задан";
+  const thickness = Number(u.thickness || u.depth || 0);
+  const post = getPostprocessor();
+  const ops = buildCncOperations(part);
+  return {
+    partNumber: u.partNumber || "",
+    name: u.name || "",
+    material,
+    thickness,
+    size: { length:Number(u.width)||0, width:Number(u.height)||0, depth:Number(u.depth)||0 },
+    machine: post.name,
+    zeroPoint: "G54 / XY — по центру детали, Z0 — верх детали",
+    safeZ: post.safeZ,
+    tool: "TBD — назначается технологом",
+    spindle: "TBD — назначается технологом",
+    feed: post.drillFeed,
+    operations: ops
+  };
+}
+
+function renderCncTechCard(part) {
+  const card = buildCncTechCard(part);
+  const target = $("cncTechCard");
+  if (!target) return;
+  target.innerHTML =
+    "<b>CNC-карточка детали " + card.partNumber + "</b>" +
+    "<div>Материал: " + card.material + " | Толщина: " + card.thickness + " мм</div>" +
+    "<div>Размер: " + Math.round(card.size.length) + " × " + Math.round(card.size.width) + " × " + Math.round(card.size.depth) + " мм</div>" +
+    "<div>Постпроцессор: " + card.machine + " | Нулевая точка: " + card.zeroPoint + "</div>" +
+    "<div>Safe Z: " + card.safeZ + " мм | Подача: " + card.feed + " мм/мин</div>" +
+    "<div>Инструмент: " + card.tool + " | Обороты: " + card.spindle + "</div>" +
+    "<div>Операций: " + card.operations.length + "</div>";
+}
+
+function exportCncTechCards() {
+  const cards = parts.map(buildCncTechCard);
+  const blob = new Blob([JSON.stringify({
+    format:"Furniture AI CNC Tech Card",
+    version:"2.0",
+    postprocessor:getPostprocessor().name,
+    cards
+  }, null, 2)], {type:"application/json"});
+  const link=document.createElement("a");
+  link.href=URL.createObjectURL(blob);
+  link.download="cnc-tech-cards.json";
+  link.click();
+  URL.revokeObjectURL(link.href);
+  validate("Технологическая карта CNC экспортирована.", "ok");
+}
+
 const CNC_POSTPROCESSORS = {
   generic: {
     name: "Universal G-code",
@@ -1075,6 +1127,7 @@ if ($("exportCutting")) $("exportCutting").addEventListener("click", exportCutti
 if ($("exportSheetLayout")) $("exportSheetLayout").addEventListener("click", exportSheetLayout);
 if ($("exportDxf")) $("exportDxf").addEventListener("click", exportAllDxf);
 if ($("exportCnc")) $("exportCnc").addEventListener("click", exportAllCnc);
+if ($("exportCncTech")) $("exportCncTech").addEventListener("click", exportCncTechCards);
 if ($("showCuttingMap")) $("showCuttingMap").addEventListener("click", showCuttingMap);
 $("exportPdf").addEventListener("click", exportPdf);
 
