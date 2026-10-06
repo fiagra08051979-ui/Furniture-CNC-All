@@ -43,7 +43,11 @@ function readParams() {
     doors: Math.max(0, Math.floor(Number($("doors").value))),
     fixedPartitions: Math.max(0, Math.floor(Number($("fixedPartitions").value))),
     frontGapTB: Math.max(0, Number($("frontGapTB").value)),
-    frontGapBetween: Math.max(0, Number($("frontGapBetween").value))
+    frontGapBetween: Math.max(0, Number($("frontGapBetween").value)),
+    frontType: $("frontType").value,
+    hingeType: $("hingeType").value,
+    hingeLimiter: $("hingeLimiter").value,
+    openingAngle: Number($("openingAngle").value)
   };
 }
 
@@ -59,6 +63,7 @@ function validateParams(p) {
   }
   if (p.doors > 0 && p.doors > 12) return "Количество фасадов: максимум 12.";
   if (p.doors > 0 && p.width - p.frontGapBetween * (p.doors - 1) <= 0) return "Зазоры фасадов превышают ширину корпуса.";
+  if (![95, 110, 180].includes(p.openingAngle)) return "Недопустимый угол открывания фасада.";
   return "";
 }
 
@@ -182,6 +187,14 @@ function build() {
           p.depth / 2 + p.thickness / 2
         )
       );
+      parts[parts.length - 1].userData.frontTechnology = {
+        type: p.frontType,
+        hinge: p.hingeType,
+        limiter: p.hingeLimiter,
+        openingAngle: p.openingAngle,
+        topBottomGap: sideGap,
+        betweenGap
+      };
     }
   }
 
@@ -265,7 +278,11 @@ function exportExcel() {
     "Длина": Math.round(part.userData.width), "Ширина": Math.round(part.userData.height),
     "Глубина": Math.round(part.userData.depth), "Материал": part.userData.material,
     "Кромка 1": part.userData.edges[0], "Кромка 2": part.userData.edges[1],
-    "Кромка 3": part.userData.edges[2], "Кромка 4": part.userData.edges[3]
+    "Кромка 3": part.userData.edges[2], "Кромка 4": part.userData.edges[3],
+    "Тип фасада": part.userData.frontTechnology?.type || "",
+    "Петли": part.userData.frontTechnology?.hinge || "",
+    "Ограничитель": part.userData.frontTechnology?.limiter || "",
+    "Угол открывания": part.userData.frontTechnology?.openingAngle || ""
   }));
   const ws = XLSX.utils.json_to_sheet(rows); const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Деталировка");
@@ -311,6 +328,10 @@ $("saveProject").addEventListener("click", () => {
   const parameters = Object.fromEntries(ids.map(id => [id, $(id).value]));
   parameters.material = $("material").value;
   parameters.edges = edgeLabels();
+  parameters.frontType = $("frontType").value;
+  parameters.hingeType = $("hingeType").value;
+  parameters.hingeLimiter = $("hingeLimiter").value;
+  parameters.openingAngle = $("openingAngle").value;
 
   const data = {
     version: projectVersion,
