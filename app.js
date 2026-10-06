@@ -4,6 +4,13 @@ import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.160.0/exampl
 import * as WebIFC from "web-ifc";
 
 const $ = (id) => document.getElementById(id);
+
+function validate(message, type = "ok") {
+  const element = $("validation");
+  if (!element) return;
+  element.textContent = String(message || "");
+  element.className = "validation " + (type === "error" ? "error" : "ok");
+}
 const viewer = $("viewer");
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xdfe4e9);
