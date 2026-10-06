@@ -4,6 +4,7 @@ import vm from "node:vm";
 const app = fs.readFileSync("app.js", "utf8");
 const html = fs.readFileSync("index.html", "utf8");
 const readme = fs.readFileSync("README.md", "utf8");
+const fixtures = JSON.parse(fs.readFileSync("tests/reference-projects.json", "utf8"));
 
 const required = [
   ["Furniture AI Designer", app.includes("Furniture AI Designer") || readme.includes("Furniture AI Designer")],
@@ -37,6 +38,16 @@ try {
 
 if (!html.includes('<script type="module" src="./app.js"></script>')) {
   errors.push("index.html не подключает app.js");
+}
+
+for (const project of fixtures.projects) {
+  const p = project.parameters;
+  const e = project.expected;
+  const baseParts = 4 + Math.max(0, Number(p.sections) - 1) + Number(p.shelves) + Number(p.fixedPartitions) + Number(p.doors);
+  if (baseParts < Number(e.minimumParts)) errors.push("Эталон " + project.id + ": минимальное число деталей не выполняется");
+  if (Number(p.thickness) !== Number(e.materialThickness)) errors.push("Эталон " + project.id + ": толщина материала не совпадает");
+  if (Number(p.doors) !== Number(e.doors)) errors.push("Эталон " + project.id + ": число фасадов не совпадает");
+  if (Number(p.shelves) !== Number(e.shelves)) errors.push("Эталон " + project.id + ": число полок не совпадает");
 }
 
 if (errors.length) {
