@@ -1291,9 +1291,9 @@ function rebuildDetailingPipeline() {
     u.detailing = {
       number: u.partNumber,
       name: u.name,
-      length: Math.round(u.width),
-      width: Math.round(u.height),
-      thickness: Math.round(u.depth),
+      length: spec.length,
+      width: spec.width,
+      thickness: spec.thickness,
       quantity: Number(u.quantity || 1),
       material: u.material,
       edges: [...(u.edges || [])],
