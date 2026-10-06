@@ -139,6 +139,27 @@ const pdfHtml = await pdfPage.locator("body").innerHTML();
 if (!pdfHtml.includes("Карта раскроя") || !pdfHtml.includes("Деталей:")) {
   throw new Error("PDF-карта раскроя не сформирована из проверенной раскладки Release Gate.");
 }
+const pdfExpected = await page.evaluate(() => {
+  const gate = window._releaseGate;
+  const part = gate?.gatedParts?.[0];
+  const d = part?.detailing;
+  const op = d?.holes?.[0] || d?.processing?.find(item => item && Number.isFinite(Number(item.x)) && Number.isFinite(Number(item.y)));
+  return {
+    partNumber: part?.partNumber || "",
+    material: d?.material || "",
+    edge: Array.isArray(d?.edges) ? d.edges[0] || "" : "",
+    x: op?.x ?? null,
+    y: op?.y ?? null
+  };
+});
+for (const value of [pdfExpected.partNumber, pdfExpected.material, pdfExpected.edge]) {
+  if (!value || !pdfHtml.includes(String(value))) throw new Error("PDF не содержит данные проверенной деталировки: " + value);
+}
+if (pdfExpected.x !== null && pdfExpected.y !== null) {
+  if (!pdfHtml.includes(String(pdfExpected.x)) || !pdfHtml.includes(String(pdfExpected.y))) {
+    throw new Error("PDF не содержит координаты присадки из проверенной деталировки.");
+  }
+}
 await pdfPage.close();
 
 if (errors.length) throw new Error(errors.join("\n"));
