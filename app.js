@@ -804,24 +804,37 @@ function dxfPair(code, value) { return code + "\n" + value + "\n"; }
 function buildPartDxf(part) {
   const u = part.userData;
   const w = Number(u.width), h = Number(u.height);
-  const lines = ["0","SECTION","2","HEADER","0","ENDSEC","0","SECTION","2","ENTITIES"];
+  const lines = ["0","SECTION","2","HEADER","9","$INSUNITS","70","4","0","ENDSEC","0","SECTION","2","ENTITIES"];
   const addLine = (x1,y1,x2,y2,layer="OUTLINE") => {
     lines.push("0","LINE","8",layer,"10",x1,"20",y1,"30",0,"11",x2,"21",y2,"31",0);
+  };
+  const addCircle = (x,y,r,layer="DRILLING") => {
+    lines.push("0","CIRCLE","8",layer,"10",x,"20",y,"30",0,"40",r);
+  };
+  const addPolyline = (points, layer="MILLING") => {
+    lines.push("0","LWPOLYLINE","8",layer,"90",points.length,"70",1);
+    points.forEach(([x,y]) => lines.push("10",x,"20",y));
   };
   addLine(-w/2,-h/2,w/2,-h/2);
   addLine(w/2,-h/2,w/2,h/2);
   addLine(w/2,h/2,-w/2,h/2);
   addLine(-w/2,h/2,-w/2,-h/2);
 
-  const holes = [
-    ...(u.drilling || []),
-    ...(u.shelfSupportDrilling || [])
-  ];
+  const holes = [...(u.drilling || []), ...(u.shelfSupportDrilling || []), ...(u.bodyFasteners || []), ...(u.secondaryFasteners || [])];
   holes.forEach(hole => {
     const x = Number(hole.x) || 0, y = Number(hole.y) || 0;
     const r = (Number(hole.diameter) || 5) / 2;
-    lines.push("0","CIRCLE","8","DRILLING","10",x,"20",y,"30",0,"40",r);
+    addCircle(x,y,r,"DRILLING");
   });
+
+  (u.processing || []).filter(op => /паз|фрез|выбор|карман/i.test(op.operation || "")).forEach(op => {
+    const x=Number(op.x)||0, y=Number(op.y)||0, d=Math.max(2,Number(op.diameter)||5);
+    addCircle(x,y,d/2,"MILLING");
+  });
+
+  if (u.partNumber) {
+    lines.push("0","TEXT","8","INFO","10",-w/2,"20",h/2+12,"30",0,"40",8,"1",String(u.partNumber));
+  }
   lines.push("0","ENDSEC","0","EOF");
   return lines.join("\n");
 }
