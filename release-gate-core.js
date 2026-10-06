@@ -1,0 +1,125 @@
+function validateSheetLayout(layout) {
+  const issues = [];
+  if (!layout || !Array.isArray(layout.sheets)) {
+    issues.push("Не сформирована раскладка листов.");
+    return issues;
+  }
+
+  const sheetLength = Number(layout.sheetLength);
+  const sheetWidth = Number(layout.sheetWidth);
+  const margin = Number(layout.margin);
+  const kerf = Number(layout.kerf);
+
+  if (!(sheetLength > 0) || !(sheetWidth > 0) || !(margin >= 0) || !(kerf >= 0)) {
+    issues.push("Некорректные параметры листа/припуска/пропила.");
+    return issues;
+  }
+
+  layout.sheets.forEach(sheet => {
+    (sheet.placements || []).forEach(placement => {
+      if (placement.overflow) {
+        issues.push(
+          "Деталь " + (placement.partNumber || "без номера") +
+          " не помещается на лист " + sheet.sheetNumber + "."
+        );
+      }
+
+      const x = Number(placement.x);
+      const y = Number(placement.y);
+      const length = Number(placement.length);
+      const width = Number(placement.width);
+
+      if (!(length > 0) || !(width > 0) ||
+          x < margin || y < margin ||
+          x + length > sheetLength - margin ||
+          y + width > sheetWidth - margin) {
+        issues.push(
+          "Деталь " + (placement.partNumber || "без номера") +
+          " выходит за рабочую область листа " + sheet.sheetNumber + "."
+        );
+      }
+    });
+  });
+
+  return [...new Set(issues)];
+}
+
+function evaluateReleaseGateState({ qc, partsCount, partStates, cuttingGroups, sheetLayout }) {
+  const issues = [];
+  const details = Array.isArray(qc?.details) ? qc.details : [];
+
+  if (!qc) issues.push("Construction QC не выполнен.");
+  if (qc && qc.status !== "PASS") issues.push("Construction QC имеет статус REVIEW.");
+  if (!(partsCount > 0)) issues.push("Нет деталей проекта.");
+
+  (partStates || []).forEach(state => {
+    const id = state.number || state.name || "без номера";
+    if (!state.detailing) {
+      issues.push("Деталь " + id + ": отсутствует detailing.");
+      return;
+    }
+    if (state.detailing.status !== "ready") {
+      issues.push("Деталь " + (state.detailing.number || id) + ": detailing не готов.");
+    }
+    const c = state.detailing.cutting;
+    if (!c || !c.length || !c.width || !c.thickness) {
+      issues.push("Деталь " + (state.detailing.number || id) + ": отсутствуют данные раскроя.");
+    }
+    (state.detailing.holes || []).forEach(hole => {
+      if (!Number.isFinite(Number(hole.diameter)) || Number(hole.diameter) <= 0) {
+        issues.push("Деталь " + (state.detailing.number || id) + ": некорректный диаметр отверстия.");
+      }
+      if (!Number.isFinite(Number(hole.depth)) || Number(hole.depth) <= 0) {
+        issues.push("Деталь " + (state.detailing.number || id) + ": некорректная глубина отверстия.");
+      }
+    });
+    if (state.sourceGeometry === "IFC" && state.geometryLocked !== true) {
+      issues.push("Деталь " + (state.detailing.number || id) + ": IFC-геометрия не зафиксирована.");
+    }
+  });
+
+  let groups = Array.isArray(cuttingGroups) ? cuttingGroups : [];
+  if (!issues.length) {
+    if (!groups.length) {
+      issues.push("Не сформированы группы раскроя.");
+    }
+    groups.forEach(group => {
+      if (!group.material || !group.thickness || !group.details?.length) {
+        issues.push("Группа раскроя содержит неполные данные.");
+      }
+      (group.details || []).forEach(detail => {
+        if (!detail.number || !detail.length || !detail.width || !detail.quantity) {
+          issues.push("В группе раскроя есть деталь без полного состава данных.");
+        }
+      });
+    });
+  }
+
+  if (!issues.length) {
+    issues.push(...validateSheetLayout(sheetLayout));
+  }
+
+  return {
+    gate: "RELEASE",
+    status: issues.length ? "BLOCKED" : "PASS",
+    passed: issues.length === 0,
+    constructionQC: qc?.status || "MISSING",
+    checks: {
+      constructionQC: !!qc && qc.status === "PASS",
+      detailing: partsCount > 0 && (partStates || []).every(state => state.detailing?.status === "ready"),
+      cuttingLink: groups.length > 0 && groups.every(group =>
+        group.details?.every(detail => detail.number && detail.length && detail.width && detail.quantity)
+      ),
+      ifcGeometryLocked: (partStates || []).filter(state => state.sourceGeometry === "IFC")
+        .every(state => state.geometryLocked === true)
+    },
+    issueCount: issues.length,
+    issues,
+    details,
+    cuttingGroupsCount: groups.length,
+    sheetLayoutChecked: !!sheetLayout,
+    sheetCount: sheetLayout?.sheets?.length || 0
+  };
+}
+
+export { validateSheetLayout, evaluateReleaseGateState };
