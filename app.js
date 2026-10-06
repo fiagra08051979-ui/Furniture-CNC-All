@@ -2788,15 +2788,21 @@ function buildCncTraceabilityJournal(program,plan){
     const m=line.match(/^;\\s*(.+?)\\s+([^\\s]+)$/);
     if(m && m[1] && plan.operations?.some(o=>o.id===m[2])){
       const op=plan.operations.find(o=>o.id===m[2]);
+      const group=(plan.technologyGroups||[]).find(g=>g.operations?.includes(op.id));
       active={lineStart:index+1,lineEnd:index+1,operationId:op.id,toolId:op.toolId||null,type:op.type,
-        technologyGroupKey:[op.toolId||"НЕТ",plan.material||"НЕИЗВЕСТНО"].join("|"),expressId:op.expressId||null,source:op.source||plan.source};
+        technologyGroupKey:group?.key||null,technologyGroup:group?{toolId:group.toolId,rpm:group.rpm,feed:group.feed,plunge:group.plunge,passDepth:group.passDepth}:null,
+        expressId:op.expressId||op.sourceExpressId||null,source:op.source||plan.source,material:plan.material,thickness:plan.thickness,
+        depth:op.depth||0,points:[],geometrySource:plan.source==="IFC"?"IFC":"Furniture Core"};
       rows.push(active);
     } else if(active && line.trim() && !line.trim().startsWith(";")){
       active.lineEnd=index+1;
+      const xy=line.match(/X(-?[0-9.]+)\\s+Y(-?[0-9.]+)\\s+Z(-?[0-9.]+)/i);
+      if(xy) active.points.push({x:Number(xy[1]),y:Number(xy[2]),z:Number(xy[3])});
     }
   });
-  return rows.map((r,i)=>({...r,traceId:"GCODE-"+String(i+1).padStart(4,"0")}));
+  return rows.map((r,i)=>({...r,traceId:"GCODE-"+String(i+1).padStart(4,"0"),sourceGeometryReference:r.expressId!=null?"IFC ExpressID "+r.expressId:"Внутренняя геометрия"}));
 }
+
 function validateCncTraceability(program,plan){
   const issues=[];
   const journal=buildCncTraceabilityJournal(program,plan);
