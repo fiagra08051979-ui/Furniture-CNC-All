@@ -2019,6 +2019,12 @@ function buildCncJobManifest() {
       partNumber:plan.partNumber,
       groups:plan.toolTechnology || []
     })),
+    toolpathValidation: plans.map(plan => ({
+      partNumber:plan.partNumber,
+      status:(plan.toolpathValidation||[]).some(i=>i.level==="error") ? "BLOCKED" : "READY",
+      operationCount:(plan.toolpaths||[]).length,
+      issues:plan.toolpathValidation || []
+    })),
     motionSafety: plans.map(plan => ({
       partNumber:plan.partNumber,
       status:(plan.motionSafety||[]).some(i=>i.level==="error") ? "BLOCKED" : "READY",
