@@ -3377,6 +3377,33 @@ function validateToolpathClearance(plan, part) {
   return issues;
 }
 
+function buildCompiledToolpathProgram(plan,part){
+  const safeZ=Number(plan.machineSetup?.safeZ)||5;
+  const result=[];
+  const paths=plan.compensatedToolpaths||[];
+  paths.forEach((path,index)=>{
+    const op=(plan.operations||[]).find(o=>o.id===path.operationId);
+    const points=path.points||[];
+    if(points.length<2) return;
+    const toolId=path.toolId||op?.toolId||null;
+    const depth=Number(path.depth||op?.depth||0);
+    result.push({
+      sequence:index+1,
+      operationId:path.operationId,
+      type:path.type||op?.type||"OTHER",
+      toolId,
+      safeZ,
+      depth,
+      points:[
+        {x:Number(points[0].x)||0,y:Number(points[0].y)||0,z:safeZ},
+        ...points.map(p=>({x:Number(p.x)||0,y:Number(p.y)||0,z:Number.isFinite(Number(p.z))?Number(p.z):0})),
+        {x:Number(points[points.length-1].x)||0,y:Number(points[points.length-1].y)||0,z:safeZ}
+      ],
+      source:path.source||"COMPILED_TOOLPATH"
+    });
+  });
+  return result;
+}
 function validateToolpathCollisions(plan,part){
   const issues=[];
   const contour=part.userData?.ifcContour?.path;
@@ -3702,7 +3729,7 @@ function getCompiledManufacturingPlan(part) {
   plan.validation=validateCompiledManufacturingPlan(plan);
   plan.machineCompatibility=validateMachineCompatibility(plan);
   plan.motionSafety=validateCncMotionSafety(plan);
-  plan.toolpaths=buildCncToolpaths(plan);
+  plan.toolpaths=buildCncToolpaths(plan);\n  plan.compiledToolpathProgram=buildCompiledToolpathProgram(plan,part);
   plan.toolpathValidation=validateCncToolpaths(plan);
   plan.toolpathGeometryEnvelope=buildToolpathGeometryEnvelope(plan,part);
   plan.geometryToolpathValidation=validateToolpathAgainstGeometry(plan,part);
