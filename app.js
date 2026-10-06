@@ -407,6 +407,46 @@ function buildIfcTechnologyState() {
   return { ready, review };
 }
 
+function buildIfcHardwareSchedule() {
+  const schedule = [];
+  if (!ifcImportedParts.length) return schedule;
+
+  const add = (type, quantity, part, reason, status="candidate") => {
+    if (!quantity) return;
+    schedule.push({
+      id:"IFC-HW-"+String(schedule.length+1).padStart(3,"0"),
+      type,
+      quantity:Math.max(1,Math.round(quantity)),
+      partNumber:part.userData.partNumber || "",
+      partName:part.userData.name,
+      role:part.userData.recognizedKind || part.userData.kind,
+      status,
+      reason,
+      source:"IFC topology"
+    });
+  };
+
+  ifcImportedParts.forEach(part=>{
+    const u=part.userData;
+    const joints=u.technology?.joints || [];
+    const shelfJoints=joints.filter(j=>/полки/i.test(j.type));
+    const cabinetJoints=joints.filter(j=>!/полки/i.test(j.type));
+
+    if (u.recognizedKind==="Фасад") {
+      const count = u.height > 1900 ? 5 : u.height > 1500 ? 4 : u.height > 900 ? 3 : 2;
+      add("Петля с доводчиком",count,part,"Количество предварительно рассчитано по фактической высоте IFC","candidate");
+    }
+    if (shelfJoints.length) {
+      add("Полкодержатель / штифт",shelfJoints.length*2,part,"Определено фактическое сопряжение полки с корпусом","candidate");
+    }
+    if (cabinetJoints.length) {
+      add("Крепёж корпуса",cabinetJoints.length*2,part,"Определено фактическое сопряжение деталей","candidate");
+    }
+  });
+
+  return schedule;
+}
+
 function buildIfcTechnologyOperations() {
   const result = { joints: [], operations: 0, review: 0 };
   if (!ifcImportedParts.length) return result;
@@ -767,6 +807,7 @@ async function importIfcIntoFurnitureCore(file) {
     const technology = buildIfcTechnologyState();
     assignPartNumbers();
     const ifcTechnologyOps = buildIfcTechnologyOperations();
+    const ifcHardwareSchedule = buildIfcHardwareSchedule();
     const cncReadiness = updateIfcCncReadiness();
     renderPartsTable();
     fitView();
@@ -786,7 +827,8 @@ async function importIfcIntoFurnitureCore(file) {
       (recognition.lowConfidence ? " · требуют проверки: " + recognition.lowConfidence : " · неоднозначных деталей нет") +
       " · технология: готово " + technology.ready + ", на проверке " + technology.review +
       " · CNC-контур: готов " + cncReadiness.ready + ", заблокирован " + cncReadiness.blocked +
-      " · соединения-кандидаты: " + ifcTechnologyOps.joints.length;
+      " · соединения-кандидаты: " + ifcTechnologyOps.joints.length +
+      " · позиции крепежа-кандидаты: " + ifcHardwareSchedule.length;
 
     if ($("projectName")) $("projectName").textContent = file.name;
     if ($("status")) $("status").textContent = "IFC импортирован · геометрия является источником истины";
