@@ -1289,6 +1289,11 @@ function rebuildDetailingPipeline() {
         }
       }
     });
+    holes.forEach((hole, index) => {
+      if (!hole || !Number.isFinite(Number(hole.x)) || !Number.isFinite(Number(hole.y))) {
+        partIssues.push("отверстие №" + (index + 1) + " без координат X/Y");
+      }
+    });
 
     const detailStatus = partIssues.length ? "review" : "ready";
     if (detailStatus === "ready") ready++; else review++;
