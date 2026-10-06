@@ -2455,6 +2455,8 @@ function buildPostprocessedProgram(part) {
   const post = getPostprocessor();
   const u = part.userData;
   const ops = buildCncOperations(part);
+  if (ops.some(op => op.type === "CONTOUR_BLOCKED" || op.type === "TECH_BLOCKED"))
+    throw new Error("Postprocessor blocked: IFC manufacturing plan is not ready.");
   const lines = [
     ...post.header,
     "; DETAIL " + u.partNumber + " " + u.name,
