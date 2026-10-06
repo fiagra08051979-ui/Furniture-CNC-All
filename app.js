@@ -408,44 +408,53 @@ function buildIfcTechnologyState() {
 }
 
 function buildIfcDrillingPlan() {
-  if (!ifcImportedParts.length) return { candidates:0, blocked:0 };
-
-  let candidates=0, blocked=0;
+  if (!ifcImportedParts.length) return { candidates:0, ready:0, blocked:0 };
+  let candidates=0, ready=0, blocked=0;
+  const surfaceTolerance=2.5, edgeClearance=12;
   ifcImportedParts.forEach(part=>{
     const u=part.userData;
     u.technology.drilling=[];
+    const box=new THREE.Box3().setFromObject(part);
+    const size=box.getSize(new THREE.Vector3()), center=box.getCenter(new THREE.Vector3());
+    const dims=[size.x,size.y,size.z], thinAxis=dims.indexOf(Math.min(...dims));
+    const axisName=["X","Y","Z"][thinAxis], planarAxes=[0,1,2].filter(a=>a!==thinAxis);
+    const thickness=Math.min(...dims);
     (u.technology.joints||[]).forEach(j=>{
-      const role=u.recognizedKind||u.kind;
-      const contact=j.contactCenter;
-      const thickness=Number(u.technology.thicknessEstimate)||0;
-
-      // База выбирается только из фактической геометрии. Пока не подтверждена
-      // ориентация локальной системы IFC, координата считается кандидатом,
-      // а не готовой CNC-присадкой.
+      const contact=new THREE.Vector3(j.contactCenter.x,j.contactCenter.y,j.contactCenter.z);
+      const axisValue=contact.getComponent(thinAxis);
+      const minFace=box.min.getComponent(thinAxis), maxFace=box.max.getComponent(thinAxis);
+      const fromMin=Math.abs(axisValue-minFace), fromMax=Math.abs(maxFace-axisValue);
+      const useMin=fromMin<=fromMax, surface=useMin?minFace:maxFace;
+      const inward=useMin?1:-1, surfaceDistance=Math.min(fromMin,fromMax);
+      const p0=contact.getComponent(planarAxes[0]), p1=contact.getComponent(planarAxes[1]);
+      const min0=box.min.getComponent(planarAxes[0]), max0=box.max.getComponent(planarAxes[0]);
+      const min1=box.min.getComponent(planarAxes[1]), max1=box.max.getComponent(planarAxes[1]);
+      const local0=p0-(min0+max0)/2, local1=p1-(min1+max1)/2;
+      const planarSafe=Math.abs(local0)<=Math.max(0,(max0-min0)/2-edgeClearance) &&
+        Math.abs(local1)<=Math.max(0,(max1-min1)/2-edgeClearance);
+      const contourReady=Boolean(u.ifcContour?.ready);
+      const depth=/полки/i.test(j.type)?Math.min(12,Math.max(1,thickness-2)):Math.min(35,Math.max(1,thickness-2));
+      const surfaceConfirmed=surfaceDistance<=surfaceTolerance;
+      const valid=contourReady&&surfaceConfirmed&&planarSafe&&depth<thickness;
       const candidate={
         id:"IFC-D-"+String(u.technology.drilling.length+1).padStart(3,"0"),
-        type:"Сверление соединения",
-        status:"review",
-        diameter:/полки/i.test(j.type) ? 5 : 7,
-        depth:/полки/i.test(j.type) ? Math.min(12,Math.max(1,thickness-2)) : Math.min(35,Math.max(1,thickness-2)),
-        x:Number(contact.x.toFixed(2)),
-        y:Number(contact.y.toFixed(2)),
-        z:Number(contact.z.toFixed(2)),
-        contactAxis:j.contactAxis,
-        linkedPart:j.partB === (u.partNumber||u.name) ? j.partA : j.partB,
-        source:"IFC contact geometry",
-        needsReference:true,
-        note:"Требуется подтверждение базовой поверхности и направления сверления перед передачей в CNC."
+        type:"Сверление соединения", status:valid?"ready":"review",
+        diameter:/полки/i.test(j.type)?5:7, depth:Number(depth.toFixed(2)),
+        x:Number(local0.toFixed(2)), y:Number(local1.toFixed(2)), z:0,
+        worldContact:{x:Number(contact.x.toFixed(2)),y:Number(contact.y.toFixed(2)),z:Number(contact.z.toFixed(2))},
+        localBasis:{plane:planarAxes.map(a=>["X","Y","Z"][a]),drillAxis:axisName,drillDirection:inward>0?"+":"-",face:useMin?"MIN":"MAX",origin:{x:Number(center.x.toFixed(2)),y:Number(center.y.toFixed(2)),z:Number(center.z.toFixed(2))}},
+        contactAxis:j.contactAxis, linkedPart:j.partB===(u.partNumber||u.name)?j.partA:j.partB,
+        source:"IFC contact geometry", needsReference:!valid,
+        checks:{contourReady,surfaceConfirmed,planarSafe,depthSafe:depth<thickness,surfaceDistance:Number(surfaceDistance.toFixed(2)),edgeClearance},
+        note:valid?"База и направление сверления определены по фактическому габариту IFC; операция разрешена к CNC-предпроверке.":"Требуется проверка базовой поверхности/положения контакта перед передачей в CNC."
       };
-      u.technology.drilling.push(candidate);
-      candidates++;
-      blocked++;
+      u.technology.drilling.push(candidate); candidates++;
+      if(valid) ready++; else blocked++;
     });
-
-    u.technology.drillingStatus=u.technology.drilling.length ? "review" : "none";
+    u.technology.drillingStatus=u.technology.drilling.length?(u.technology.drilling.every(x=>x.status==="ready")?"ready":"review"):"none";
+    u.technology.drillingBasis={plane:planarAxes.map(a=>["X","Y","Z"][a]),drillAxis:axisName,thickness:Number(thickness.toFixed(2)),method:"AABB IFC + контактная зона"};
   });
-
-  return { candidates, blocked };
+  return {candidates,ready,blocked};
 }
 
 function buildIfcHardwareSchedule() {
