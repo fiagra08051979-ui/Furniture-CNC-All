@@ -2733,7 +2733,7 @@ function buildCncJobProgram(part) {
 function buildPostprocessedProgram(part) {
   const post=getPostprocessor(), plan=getCompiledManufacturingPlan(part);
   assertManufacturingLifecycleReady(part);
-  if(!plan.compiledToolpathProgram?.length) throw new Error("Postprocessor blocked: отсутствует Compiled Toolpath Program.");
+  if(!plan.compiledToolpathProgram?.length) throw new Error("Постпроцессор заблокирован: отсутствует скомпилированная траектория ЧПУ.");
   const u=part.userData, lines=[...post.header,"; ДЕТАЛЬ "+u.partNumber+" "+u.name,"; ИСТОЧНИК: СКОМПИЛИРОВАННАЯ ТРАЕКТОРИЯ"];
   let currentTool=null;
   plan.compiledToolpathProgram.forEach(op=>{
