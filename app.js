@@ -32,6 +32,7 @@ scene.add(root);
 const parts = [];
 let exploded = false;
 let projectVersion = "0.2";
+let ifcMode = false;
 
 /* =========================
    IFC → Furniture Core bridge
@@ -242,6 +243,67 @@ function recognizeIfcPart({ name, typeName, size, center, overallBox }) {
   return { kind:"Нестандартная деталь", label:"Нестандартная деталь", confidence:"low", reason:"неоднозначная геометрия" };
 }
 
+function syncIfcParametersFromRecognition() {
+  if (!ifcImportedParts.length) return;
+
+  const overall = new THREE.Box3();
+  ifcImportedParts.forEach(part => overall.union(new THREE.Box3().setFromObject(part)));
+  const size = overall.getSize(new THREE.Vector3());
+
+  const setNumber = (id, value) => {
+    const el = $(id);
+    if (!el || !Number.isFinite(value) || value <= 0) return;
+    el.value = Math.round(value);
+  };
+
+  const recognized = ifcImportedParts.map(p => p.userData.recognizedKind);
+  const count = kind => recognized.filter(x => x === kind).length;
+
+  // Эти параметры становятся производными от IFC, а не от шаблона нового шкафа.
+  setNumber("width", size.x);
+  setNumber("height", size.y);
+  setNumber("depth", size.z);
+
+  const verticalPartitions = count("Вертикальная перегородка");
+  const shelves = count("Полка");
+  const fixedHorizontals = count("Горизонтальная перегородка");
+  const facades = count("Фасад");
+
+  if ($("sections")) $("sections").value = Math.max(1, verticalPartitions + 1);
+  if ($("shelves")) $("shelves").value = shelves;
+  if ($("fixedPartitions")) $("fixedPartitions").value = fixedHorizontals;
+  if ($("doors")) $("doors").value = facades;
+
+  if ($("summary")) {
+    $("summary").textContent =
+      "IFC · " + Math.round(size.x) + " × " + Math.round(size.y) + " × " + Math.round(size.z) +
+      " мм · " + ifcImportedParts.length + " элементов · технология привязана к IFC";
+  }
+}
+
+function applyIfcMaterial() {
+  const selected = $("material")?.value || "ldsp18";
+  const palette = {
+    ldsp18: 0xc69b68,
+    ldsp16: 0xc69b68,
+    mdf18: 0xd7d9dc,
+    ply18: 0xb88a58
+  };
+  const color = new THREE.Color(palette[selected] || 0xc69b68);
+
+  ifcImportedParts.forEach(part => {
+    part.userData.material = selected;
+    part.traverse(obj => {
+      if (!obj.isMesh || !obj.material) return;
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      mats.forEach(mat => {
+        if (mat.color) mat.color.copy(color);
+        mat.needsUpdate = true;
+      });
+    });
+  });
+}
+
 function applyIfcRecognition() {
   if (!ifcImportedParts.length) return { counts:{}, lowConfidence:0 };
 
@@ -399,6 +461,9 @@ async function importIfcIntoFurnitureCore(file) {
     if (!rendered) throw new Error("В IFC не найдены элементы с геометрией.");
 
     const recognition = applyIfcRecognition();
+    ifcMode = true;
+    syncIfcParametersFromRecognition();
+    applyIfcMaterial();
     assignPartNumbers();
     renderPartsTable();
     fitView();
@@ -1205,6 +1270,7 @@ function applyAiRecognition() {
 }
 
 function build() {
+  ifcMode = false;
   const p = readParams();
   const error = validateParams(p);
   if (error) {
@@ -2014,13 +2080,32 @@ function validate(message, type) {
   box.className = "validation " + type;
 }
 
-$("build").addEventListener("click", build);
+$("build").addEventListener("click", () => {
+  ifcMode = false;
+  build();
+});
 $("explode").addEventListener("click", () => setExplode(!exploded));
 $("resetExplode").addEventListener("click", () => setExplode(false));
 $("frontView").addEventListener("click", frontView);
 $("isoView").addEventListener("click", fitView);
-$("material").addEventListener("change", build);
-[1, 2, 3, 4].forEach(i => $("edge" + i).addEventListener("change", build));
+$("material").addEventListener("change", () => {
+  if (ifcMode && ifcImportedParts.length) {
+    applyIfcMaterial();
+    renderPartsTable();
+    validate("Материал IFC-модели обновлён без изменения исходной геометрии.", "ok");
+  } else {
+    build();
+  }
+});
+[1, 2, 3, 4].forEach(i => $("edge" + i).addEventListener("change", () => {
+  if (ifcMode && ifcImportedParts.length) {
+    ifcImportedParts.forEach(part => part.userData.edges = edgeLabels());
+    renderPartsTable();
+    validate("Кромка назначена как технологический параметр IFC-деталей. Геометрия не изменена.", "ok");
+  } else {
+    build();
+  }
+}));
 $("exportExcel").addEventListener("click", exportExcel);
 if ($("exportCutting")) $("exportCutting").addEventListener("click", exportCuttingStructure);
 if ($("exportSheetLayout")) $("exportSheetLayout").addEventListener("click", exportSheetLayout);
