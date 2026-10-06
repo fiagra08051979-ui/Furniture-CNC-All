@@ -2709,76 +2709,32 @@ function refreshPartTechnologyRecord(part) {
 }
 
 function buildCncJobProgram(part) {
-  const job = buildCncJob(part);
-  const packet = buildIfcProductionPacket(part);
-  const lines = [
-    "; Furniture AI Designer CNC JOB",
-    "; DETAIL " + job.partNumber,
-    "; MATERIAL " + job.material,
-    "; THICKNESS " + job.thickness,
-    packet ? "; IFC EXPRESS_ID " + packet.expressId : "",
-    packet ? "; IFC ROLE " + packet.role : "",
-    packet ? "; IFC CONTOUR " + (packet.contour.ready ? "READY" : "BLOCKED") : "",
-    packet ? "; IFC DRILLING " + (packet.drilling.length ? packet.drilling.map(d => d.id + ":" + d.status).join(",") : "NONE") : "",
-    "G21","G90","G17","G54"
-  ];
-  let currentTool = null;
-  job.operations.forEach(op => {
-    if (op.toolChange && op.toolNumber > 0) {
-      lines.push("; TOOL CHANGE T" + op.toolNumber + " " + op.toolName);
-      lines.push("M5");
-      lines.push("T" + op.toolNumber + " M6");
-      currentTool = op.toolNumber;
-    }
-    if (op.type === "DRILL") {
-      lines.push("; DRILL " + op.operation);
-      lines.push("G0 Z5.000");
-      lines.push("G0 X" + (op.x||0).toFixed(3) + " Y" + (op.y||0).toFixed(3));
-      lines.push("G1 Z-" + (Number(op.depth)||0).toFixed(3) + " F300");
-      lines.push("G0 Z5.000");
-    } else if (op.type === "POCKET") {
-      lines.push("; POCKET " + op.operation);
-      (op.path || []).forEach(([x,y],idx)=>{
-        lines.push((idx===0?"G0":"G1")+" X"+x.toFixed(3)+" Y"+y.toFixed(3)+(idx===0?"":" F600"));
-      });
-      lines.push("G0 Z5.000");
-    } else if (op.type === "CONTOUR") {
-      lines.push("; CONTOUR");
-      (op.path || []).forEach(([x,y],idx)=>{
-        lines.push((idx===0?"G0":"G1")+" X"+x.toFixed(3)+" Y"+y.toFixed(3)+(idx===0?"":" F600"));
-      });
-      lines.push("G0 Z5.000");
-    }
+  const plan=getCompiledManufacturingPlan(part);
+  assertManufacturingLifecycleReady(part);
+  if(!plan.compiledToolpathProgram?.length) throw new Error("CNC заблокирован: отсутствует Compiled Toolpath Program.");
+  const u=part.userData, lines=["; Furniture AI Designer CNC JOB","; DETAIL "+plan.partNumber,"; MATERIAL "+plan.material,"; THICKNESS "+plan.thickness,"G21","G90","G17","G54"];
+  let currentTool=null;
+  plan.compiledToolpathProgram.forEach(op=>{
+    const tool=selectCncTool({type:op.type,diameter:op.diameter||0},u.material);
+    if(tool && tool.id!==currentTool){ lines.push("; TOOL CHANGE "+tool.id,"M5","T"+tool.id+" M6"); currentTool=tool.id; }
+    lines.push("; "+op.type+" "+op.operationId);
+    op.points.forEach((p,i)=>lines.push((i===0||Number(p.z)>=op.safeZ?"G0":"G1")+" X"+p.x.toFixed(3)+" Y"+p.y.toFixed(3)+" Z"+p.z.toFixed(3)));
   });
   lines.push("M5","M30");
   return lines.join("\n");
 }
 
 function buildPostprocessedProgram(part) {
-  const post = getPostprocessor();
-  const u = part.userData;
-  const ops = buildCncOperations(part);
-  if (ops.some(op => op.type === "CONTOUR_BLOCKED" || op.type === "TECH_BLOCKED"))
-    throw new Error("Postprocessor blocked: IFC manufacturing plan is not ready.");
-  const lines = [
-    ...post.header,
-    "; DETAIL " + u.partNumber + " " + u.name,
-    "; SIZE " + Math.round(u.width) + " X " + Math.round(u.height) + " X " + Math.round(u.depth)
-  ];
-  ops.forEach(op => {
-    if (op.type === "DRILL") {
-      lines.push("; DRILL " + op.diameter + " DEPTH " + op.depth);
-      lines.push("G0 X" + op.x.toFixed(3) + " Y" + op.y.toFixed(3));
-      lines.push("G0 Z" + post.safeZ.toFixed(3));
-      lines.push("G1 Z-" + op.depth.toFixed(3) + " F" + post.drillFeed);
-      lines.push("G0 Z" + post.safeZ.toFixed(3));
-    } else if (op.type === "MILL") {
-      lines.push("; MILL " + (op.source || "operation"));
-      lines.push("G0 X" + op.x.toFixed(3) + " Y" + op.y.toFixed(3));
-      lines.push("G0 Z" + post.safeZ.toFixed(3));
-      lines.push("G1 Z-" + op.depth.toFixed(3) + " F" + post.drillFeed);
-      lines.push("G0 Z" + post.safeZ.toFixed(3));
-    }
+  const post=getPostprocessor(), plan=getCompiledManufacturingPlan(part);
+  assertManufacturingLifecycleReady(part);
+  if(!plan.compiledToolpathProgram?.length) throw new Error("Postprocessor blocked: отсутствует Compiled Toolpath Program.");
+  const u=part.userData, lines=[...post.header,"; DETAIL "+u.partNumber+" "+u.name,"; SOURCE COMPILED_TOOLPATH"];
+  let currentTool=null;
+  plan.compiledToolpathProgram.forEach(op=>{
+    const tool=selectCncTool({type:op.type,diameter:op.diameter||0},u.material);
+    if(tool && tool.id!==currentTool){ lines.push("; TOOL CHANGE "+tool.id,"M5","T"+tool.id+" M6"); currentTool=tool.id; }
+    lines.push("; "+op.type+" "+op.operationId);
+    op.points.forEach((p,i)=>lines.push((i===0||Number(p.z)>=op.safeZ?"G0":"G1")+" X"+p.x.toFixed(3)+" Y"+p.y.toFixed(3)+" Z"+p.z.toFixed(3)));
   });
   lines.push(...post.footer);
   return lines.join("\n");
@@ -3729,22 +3685,23 @@ function getCompiledManufacturingPlan(part) {
   plan.validation=validateCompiledManufacturingPlan(plan);
   plan.machineCompatibility=validateMachineCompatibility(plan);
   plan.motionSafety=validateCncMotionSafety(plan);
-  plan.toolpaths=buildCncToolpaths(plan);\n  plan.compiledToolpathProgram=buildCompiledToolpathProgram(plan,part);
+  plan.compensatedToolpaths=buildTypedCompensatedToolpaths(plan,part);
+  plan.toolpaths=buildCncToolpaths(plan);
+  plan.compiledToolpathProgram=buildCompiledToolpathProgram(plan,part);
   plan.toolpathValidation=validateCncToolpaths(plan);
   plan.toolpathGeometryEnvelope=buildToolpathGeometryEnvelope(plan,part);
   plan.geometryToolpathValidation=validateToolpathAgainstGeometry(plan,part);
   plan.segmentToolpathValidation=validateToolpathSegmentsAgainstGeometry(plan,part);
   plan.toolRadiusCompensation=validateToolRadiusCompensation(plan,part);
   plan.toolpathClearance=validateToolpathClearance(plan,part);
-  plan.typedToolpathValidation=validateTypedCompensatedToolpaths(plan);\n  plan.passPlanValidation=validateCncPassPlan(plan);\n  plan.pocketGeometryValidation=validatePocketGeometry(plan,part);\n  plan.contourCompensationValidation=validateContourCompensationGeometry(plan,part);\n  plan.contourWidthValidation=validateContourMinimumWidth(plan,part);\n  plan.toolpathCollisionValidation=validateToolpathCollisions(plan,part);
-  plan.compensatedToolpaths=buildTypedCompensatedToolpaths(plan,part);\n  plan.toolpaths=buildCncToolpaths(plan);\n  plan.passPlanValidation=validateCncPassPlan(plan);
+  plan.typedToolpathValidation=validateTypedCompensatedToolpaths(plan);
+  plan.passPlanValidation=validateCncPassPlan(plan);
+  plan.pocketGeometryValidation=validatePocketGeometry(plan,part);
+  plan.contourCompensationValidation=validateContourCompensationGeometry(plan,part);
+  plan.contourWidthValidation=validateContourMinimumWidth(plan,part);
+  plan.toolpathCollisionValidation=validateToolpathCollisions(plan,part);
   plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance,...plan.typedToolpathValidation,...plan.passPlanValidation,...plan.pocketGeometryValidation,...plan.contourCompensationValidation,...plan.contourWidthValidation,...plan.toolpathCollisionValidation];
-  plan.machineReady=plan.validation.every(x=>x.level!=="error") &&
-    plan.status==="READY" &&
-    plan.lifecycle.every(x=>x.valid) &&
-    plan.machineCompatibility.machineReady;
+  plan.machineReady=plan.validation.every(x=>x.level!=="error") && plan.status==="READY" && plan.lifecycle.every(x=>x.valid) && plan.machineCompatibility.machineReady;
   plan.status=plan.machineReady ? "MACHINE_READY" : (plan.status==="BLOCKED" ? "BLOCKED" : "REVIEW");
-  part.userData.manufacturingPlan=plan;
   return plan;
 }
-
