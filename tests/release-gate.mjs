@@ -58,6 +58,18 @@ const gateContract = [
     partStates:[{number:"001",detailing:{number:"001",status:"ready",cutting:{length:600,width:400,thickness:18},holes:[]}}],
     cuttingGroups:[], sheetLayout:null
   }, false],
+  ["BLOCKED: рассогласованные размеры раскладки", {
+    qc:{status:"PASS"}, partsCount:1,
+    partStates:[{number:"001",sourceGeometry:"Furniture Core",geometryLocked:false,detailing:{number:"001",status:"ready",construction:{source:"Furniture Core"},cutting:{length:600,width:400,thickness:18},holes:[]}}],
+    cuttingGroups:[{groupNumber:"001",material:"ldsp18",thickness:18,details:[{number:"001",length:600,width:400,thickness:18,quantity:1,material:"ldsp18"}]}],
+    sheetLayout:{sheetLength:2800,sheetWidth:2070,margin:10,kerf:4,sheets:[{sheetNumber:1,placements:[{groupNumber:"001",partNumber:"001",x:10,y:10,length:500,width:400,thickness:18,material:"ldsp18",overflow:false}]}]}
+  }, false],
+  ["BLOCKED: рассогласованный материал раскладки", {
+    qc:{status:"PASS"}, partsCount:1,
+    partStates:[{number:"001",sourceGeometry:"Furniture Core",geometryLocked:false,detailing:{number:"001",status:"ready",construction:{source:"Furniture Core"},cutting:{length:600,width:400,thickness:18},holes:[]}}],
+    cuttingGroups:[{groupNumber:"001",material:"ldsp18",thickness:18,details:[{number:"001",length:600,width:400,thickness:18,quantity:1,material:"ldsp18"}]}],
+    sheetLayout:{sheetLength:2800,sheetWidth:2070,margin:10,kerf:4,sheets:[{sheetNumber:1,placements:[{groupNumber:"001",partNumber:"001",x:10,y:10,length:600,width:400,thickness:18,material:"mdf18",overflow:false}]}]}
+  }, false],
   ["BLOCKED: рассогласованный источник геометрии", {
     qc:{status:"PASS"}, partsCount:1,
     partStates:[{number:"001",sourceGeometry:"IFC",geometryLocked:true,detailing:{number:"001",status:"ready",construction:{source:"Furniture Core"},cutting:{length:600,width:400,thickness:18},holes:[]}}],
@@ -92,7 +104,9 @@ const contractChecks = [
   ["Release Gate сверяет состав деталей", app.includes("Количество состояний деталей не соответствует количеству деталей проекта")],
   ["Release Gate требует полный состав Construction QC", app.includes("Construction QC не содержит полный состав деталей проекта")],
   ["Release Gate отвергает устаревшую деталировку", app.includes("detailing относится к другой ревизии модели")],
-  ["Release Gate проверяет источник геометрии деталировки", app.includes("источник геометрии деталировки не соответствует источнику модели")]
+  ["Release Gate проверяет источник геометрии деталировки", app.includes("источник геометрии деталировки не соответствует источнику модели")],
+  ["Release Gate сверяет размещение с деталировкой", app.includes("Раскладка содержит размеры детали, не соответствующие деталировке")],
+  ["раскладка сохраняет материал и толщину", app.includes("thickness: item.thickness") && app.includes("material: item.material")]
 ];
 
 const forbidden = [
