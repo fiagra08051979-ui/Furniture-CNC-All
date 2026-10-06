@@ -3078,6 +3078,34 @@ function buildCncToolChangeSequence(plan) {
   return order;
 }
 
+function validateCncMotionSafety(plan) {
+  const issues=[];
+  const safeZ=Number(plan.machineSetup?.safeZ ?? readCncMachineSetup().safeZ);
+  let previous=null;
+  (plan.operations||[]).forEach((op,index)=>{
+    const x=Number(op.x), y=Number(op.y), z=Number(op.z);
+    if(["DRILL","MILL","POCKET","CONTOUR"].includes(op.type)) {
+      if(!Number.isFinite(x)||!Number.isFinite(y)) issues.push({level:"error",code:"MOTION_XY",message:"Некорректные XY координаты.",operation:op.id});
+      if(op.type!=="CONTOUR" && !Number.isFinite(Number(op.depth))) issues.push({level:"error",code:"MOTION_DEPTH",message:"Не задана глубина операции.",operation:op.id});
+      if(Number(op.depth)>Number(plan.thickness)) issues.push({level:"error",code:"MOTION_OVERDEPTH",message:"Глубина превышает толщину детали.",operation:op.id});
+    }
+    if(previous) {
+      const changedTool=previous.toolId!==op.toolId;
+      if(changedTool && safeZ<=0) issues.push({level:"error",code:"MOTION_TOOLCHANGE_Z",message:"Смена инструмента невозможна без положительного Safe Z.",operation:op.id});
+    }
+    previous=op;
+  });
+  (plan.toolTechnology||[]).forEach(group=>{
+    const p=group.operations||[];
+    p.forEach(op=>{
+      const params=op.technologyParameters;
+      if(params && params.passDepth<=0) issues.push({level:"error",code:"MOTION_PASS",message:"Некорректная глубина прохода.",operation:op.id});
+      if(params && params.passes<1) issues.push({level:"error",code:"MOTION_PASSES",message:"Некорректное количество проходов.",operation:op.id});
+    });
+  });
+  return issues;
+}
+
 function validateToolChangeSequence(plan) {
   const issues=[];
   const seen=new Set();
@@ -3164,7 +3192,8 @@ function getCompiledManufacturingPlan(part) {
   plan.compiledAt=new Date().toISOString();
   plan.validation=validateCompiledManufacturingPlan(plan);
   plan.machineCompatibility=validateMachineCompatibility(plan);
-  plan.validation=[...plan.validation,...plan.machineCompatibility.issues,...plan.toolChangeValidation];
+  plan.motionSafety=validateCncMotionSafety(plan);
+  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety];
   plan.machineReady=plan.validation.every(x=>x.level!=="error") &&
     plan.status==="READY" &&
     plan.lifecycle.every(x=>x.valid) &&
