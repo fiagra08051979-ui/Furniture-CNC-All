@@ -367,6 +367,71 @@ function buildCuttingGroups() {
   return [...groups.values()].map((g, index) => ({...g, groupNumber: String(index + 1).padStart(3, "0")}));
 }
 
+function buildSheetLayout(sheetLength, sheetWidth, kerf, margin) {
+  const groups = buildCuttingGroups();
+  const placements = [];
+  const sheets = [];
+  let sheetIndex = 1;
+  const newSheet = () => ({sheetNumber: sheetIndex++, length: sheetLength, width: sheetWidth, placements: []});
+  let sheet = newSheet();
+  let cursorX = margin, cursorY = margin, rowHeight = 0;
+  const sorted = [...groups].sort((a,b) => (b.length*b.width) - (a.length*a.width));
+  sorted.forEach(group => {
+    for (let q = 0; q < group.quantity; q++) {
+      let w = group.length, h = group.width;
+      if (cursorX + w > sheetLength - margin) {
+        cursorX = margin; cursorY += rowHeight + kerf; rowHeight = 0;
+      }
+      if (cursorY + h > sheetWidth - margin) {
+        sheets.push(sheet);
+        sheet = newSheet();
+        cursorX = margin; cursorY = margin; rowHeight = 0;
+      }
+      const placement = {
+        sheetNumber: sheet.sheetNumber,
+        groupNumber: group.groupNumber,
+        partNumbers: group.partNumbers,
+        x: Math.round(cursorX),
+        y: Math.round(cursorY),
+        length: w,
+        width: h,
+        rotated: false
+      };
+      sheet.placements.push(placement);
+      placements.push(placement);
+      cursorX += w + kerf;
+      rowHeight = Math.max(rowHeight, h);
+    }
+  });
+  if (sheet.placements.length) sheets.push(sheet);
+  return {sheetLength, sheetWidth, kerf, margin, sheets, placements};
+}
+
+function exportSheetLayout() {
+  if (!window.XLSX) { validate("Модуль Excel недоступен.", "error"); return; }
+  const sheetLength = Number($("sheetLength")?.value || 2800);
+  const sheetWidth = Number($("sheetWidth")?.value || 2070);
+  const kerf = Number($("cutKerf")?.value || 4);
+  const margin = Number($("sheetMargin")?.value || 10);
+  const layout = buildSheetLayout(sheetLength, sheetWidth, kerf, margin);
+  const rows = [];
+  layout.sheets.forEach(sheet => sheet.placements.forEach(p => rows.push({
+    "Лист": sheet.sheetNumber,
+    "Группа": p.groupNumber,
+    "№ детали": p.partNumbers.join(", "),
+    "X, мм": p.x,
+    "Y, мм": p.y,
+    "Длина, мм": p.length,
+    "Ширина, мм": p.width,
+    "Поворот": p.rotated ? "90°" : "0°"
+  })));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Карта раскроя");
+  XLSX.writeFile(wb, "furniture-ai-sheet-layout.xlsx");
+  validate("Карта раскроя рассчитана: " + layout.sheets.length + " лист(ов).", "ok");
+}
+
 function exportCuttingStructure() {
   if (!window.XLSX) { validate("Модуль Excel недоступен.", "error"); return; }
   const groups = buildCuttingGroups();
@@ -693,6 +758,7 @@ $("material").addEventListener("change", build);
 [1, 2, 3, 4].forEach(i => $("edge" + i).addEventListener("change", build));
 $("exportExcel").addEventListener("click", exportExcel);
 if ($("exportCutting")) $("exportCutting").addEventListener("click", exportCuttingStructure);
+if ($("exportSheetLayout")) $("exportSheetLayout").addEventListener("click", exportSheetLayout);
 $("exportPdf").addEventListener("click", exportPdf);
 
 $("newProject").addEventListener("click", () => {
