@@ -58,36 +58,25 @@ if (!ifcObjects.includes("Распознано:")) throw new Error("IFC runtime 
 const ifcValidation = await page.locator("#validation").textContent();
 if (!ifcValidation.includes("IFC импортирован")) throw new Error("IFC runtime не завершил импорт: " + ifcValidation);
 
-const ifcTechnologySnapshot = await page.evaluate(() => {
-  const result = window._ifcResult;
-  return {
-    revision: window._modelRevision,
-    objectCount: Array.isArray(window._ifcProjectObjects) ? window._ifcProjectObjects.length : 0,
-    source: result?.format || "",
-    geometrySource: Array.isArray(window._ifcProjectObjects) ? window._ifcProjectObjects.every(item => item?.geometry?.source === "IFC geometry references / attributes") : false
-  };
-});
-if (!(ifcTechnologySnapshot.objectCount > 0) || ifcTechnologySnapshot.source !== "IFC" || !ifcTechnologySnapshot.geometrySource) {
-  throw new Error("После IFC импорта не сформировано доступное состояние IFC для проверки.");
+const ifcGeometryTextBeforeRefresh = await page.locator("#ifcGeometry").textContent();
+const ifcPartsCountBeforeRefresh = Number(await page.locator("#partsCount").textContent());
+const ifcRevisionBeforeRefresh = await page.evaluate(() => window._modelRevision);
+if (!ifcGeometryTextBeforeRefresh.includes("Реальная IFC-геометрия") || !(ifcPartsCountBeforeRefresh > 0)) {
+  throw new Error("После IFC импорта не подтверждена доступная реальная геометрия.");
 }
 
-const ifcRevisionBeforeRefresh = ifcTechnologySnapshot.revision;
 await page.locator("#material").selectOption("mdf18");
 await page.waitForTimeout(300);
 for (const id of ["#edge1","#edge2","#edge3","#edge4"]) await page.locator(id).selectOption({label:"ABS 2 мм"});
 await page.waitForTimeout(500);
 
-const ifcTechnologyAfterRefresh = await page.evaluate(() => ({
-  revision: window._modelRevision,
-  objectCount: Array.isArray(window._ifcProjectObjects) ? window._ifcProjectObjects.length : 0,
-  source: window._ifcResult?.format || "",
-  geometrySource: Array.isArray(window._ifcProjectObjects) ? window._ifcProjectObjects.every(item => item?.geometry?.source === "IFC geometry references / attributes") : false
-}));
-if (ifcTechnologyAfterRefresh.objectCount !== ifcTechnologySnapshot.objectCount ||
-    ifcTechnologyAfterRefresh.source !== "IFC" ||
-    !ifcTechnologyAfterRefresh.geometrySource ||
-    Number(ifcTechnologyAfterRefresh.revision) <= Number(ifcRevisionBeforeRefresh)) {
-  throw new Error("Обновление материала/кромки не сохранило IFC-технологическое состояние.");
+const ifcGeometryTextAfterRefresh = await page.locator("#ifcGeometry").textContent();
+const ifcPartsCountAfterRefresh = Number(await page.locator("#partsCount").textContent());
+const ifcRevisionAfterRefresh = await page.evaluate(() => window._modelRevision);
+if (!ifcGeometryTextAfterRefresh.includes("Реальная IFC-геометрия") ||
+    ifcPartsCountAfterRefresh !== ifcPartsCountBeforeRefresh ||
+    Number(ifcRevisionAfterRefresh) <= Number(ifcRevisionBeforeRefresh)) {
+  throw new Error("Смена материала/кромки не сохранила IFC-геометрию или не обновила технологическую ревизию.");
 }
 
 await page.locator("#frontGapBetween").fill("2");
