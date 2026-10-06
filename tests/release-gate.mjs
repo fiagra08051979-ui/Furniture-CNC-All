@@ -109,7 +109,8 @@ const contractChecks = [
   ["раскладка сохраняет материал и толщину", app.includes("thickness: item.thickness") && app.includes("material: item.material")],
   ["PDF использует зафиксированный состав Gate", app.includes("gatedParts") && app.includes("buildCuttingPdfHtml(layout, gatedParts)")],
   ["PDF проверяет ревизию снимка Gate", app.includes("gatedPartsRevision") && app.includes("состав деталей относится к другой ревизии модели")],
-  ["просмотр карты проходит через Release Gate", app.includes("function showCuttingMap()") && app.includes("просмотр карты раскроя заблокирован") && app.includes("renderCuttingMap(releaseGate.sheetLayout)")]
+  ["просмотр карты проходит через Release Gate", app.includes("function showCuttingMap()") && app.includes("просмотр карты раскроя заблокирован") && app.includes("renderCuttingMap(releaseGate.sheetLayout)")],
+  ["изменение технологии инвалидирует старый параметрический Gate", app.includes("technologyBuildFields") && app.includes("technologyBuildFields.forEach") && app.includes('if (ifcMode)')]
 ];
 
 const forbidden = [
