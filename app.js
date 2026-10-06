@@ -2556,8 +2556,8 @@ function renderCncOperationJournal(part) {
   const journal=buildCncOperationJournal(part);
   target.innerHTML="<b>Операционный журнал ЧПУ · "+part.userData.partNumber+"</b>"+
     (journal.length ? "<div>"+journal.map(op=>
-      "<div class='cnc-journal-row'><b>"+op.sequence+". "+op.id+"</b> · "+op.type+
-      " · "+op.preflightStatus+
+      "<div class='cnc-journal-row'><b>"+op.sequence+". "+op.id+"</b> · "+cncDisplayType(op.type)+
+      " · "+cncDisplayStatus(op.preflightStatus)+
       " · "+(op.tool?.name || "инструмент не назначен")+
       (op.coordinates.x!==null ? " · XYZ "+op.coordinates.x+";"+op.coordinates.y+";"+op.coordinates.z : "")+
       "</div>").join("")+"</div>" :
