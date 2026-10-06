@@ -50,7 +50,10 @@ function readParams() {
     openingAngle: Number($("openingAngle").value),
     fastenerType: $("fastenerType").value,
     confirmatDiameter: Number($("confirmatDiameter").value),
-    connectorDiameter: Number($("connectorDiameter").value)
+    connectorDiameter: Number($("connectorDiameter").value),
+    secondaryFastener: $("secondaryFastener").value,
+    dowelDiameter: Number($("dowelDiameter").value),
+    eccentricDiameter: Number($("eccentricDiameter").value)
   };
 }
 
@@ -197,6 +200,47 @@ function buildShelfSupportDrilling() {
   return shelfSupports;
 }
 
+
+function buildSecondaryFasteners() {
+  const p = readParams();
+  const result = [];
+  const useDowel = p.secondaryFastener === "дюбель" || p.secondaryFastener === "дюбель+эксцентрик";
+  const useEccentric = p.secondaryFastener === "эксцентрик" || p.secondaryFastener === "дюбель+эксцентрик";
+  let n = 1;
+  const targets = parts.filter(part => ["Вертикальная перегородка","Горизонтальная перегородка"].includes(part.userData.kind));
+  targets.forEach(part => {
+    const x = Math.round(part.position.x);
+    const y = Math.round(part.position.y);
+    if (useDowel) result.push({id:"D"+n++, type:"Дюбель", diameter:p.dowelDiameter, depth:30, x, y, z:0, linkedPart:part.userData.name});
+    if (useEccentric) result.push({id:"E"+n++, type:"Эксцентрик", diameter:p.eccentricDiameter, depth:13, x, y, z:Math.round(part.userData.depth/2-40), linkedPart:part.userData.name});
+  });
+  return result;
+}
+
+function constructionChecks(bodyFasteners, shelfSupportDrilling, secondaryFasteners) {
+  const p = readParams();
+  const issues = [];
+  if (p.shelves > 0 && p.sections > 0) {
+    const sectionW = (p.width - 2 * p.thickness) / p.sections;
+    if (sectionW < 250) issues.push("Секция уже 250 мм: проверьте конструкцию и размещение крепежа.");
+  }
+  if (p.fixedPartitions > 0 && p.height / (p.fixedPartitions + 1) < 120) issues.push("Слишком малый шаг между горизонтальными перегородками.");
+  const all = [];
+  parts.forEach(part => {
+    (part.userData.drilling || []).forEach(h => all.push({...h, part:part.userData.name}));
+    (part.userData.shelfSupportDrilling || []).forEach(h => all.push({...h, part:part.userData.name}));
+  });
+  secondaryFasteners.forEach(h => all.push({...h, part:h.linkedPart}));
+  for (let i=0;i<all.length;i++) for (let k=i+1;k<all.length;k++) {
+    if (all[i].part !== all[k].part) continue;
+    const dx=all[i].x-all[k].x, dy=all[i].y-all[k].y, dz=all[i].z-all[k].z;
+    const minR=(all[i].diameter+all[k].diameter)/2;
+    if (Math.sqrt(dx*dx+dy*dy+dz*dz) < minR) issues.push("Конфликт отверстий: " + all[i].id + " / " + all[k].id + " на " + all[i].part);
+  }
+  if (p.thickness < 16 && (p.confirmatDiameter >= 7 || p.dowelDiameter >= 8)) issues.push("Проверьте диаметр крепежа относительно толщины материала.");
+  return [...new Set(issues)];
+}
+
 function material() {
   const colors = {
     ldsp18: 0xc69b68,
@@ -332,9 +376,11 @@ function build() {
 
   const bodyFasteners = buildBodyFasteners();
   const shelfSupportDrilling = buildShelfSupportDrilling();
+  const secondaryFasteners = buildSecondaryFasteners();
   parts.forEach(part => {
     part.userData.bodyFasteners = bodyFasteners.filter(h => h.linkedPart === part.userData.name);
     part.userData.shelfSupportDrilling = shelfSupportDrilling.filter(h => h.linkedPart === part.userData.name);
+    part.userData.secondaryFasteners = secondaryFasteners.filter(h => h.linkedPart === part.userData.name);
   });
 
   exploded = false;
@@ -346,10 +392,11 @@ function build() {
   const drillingCount = parts.reduce((sum, part) => sum + (part.userData.drilling?.length || 0), 0);
   const bodyFastenerCount = bodyFasteners.length;
   const shelfSupportCount = shelfSupportDrilling.length;
+  const constructionIssues = constructionChecks(bodyFasteners, shelfSupportDrilling, secondaryFasteners);
   if ($("drillingSummary")) $("drillingSummary").textContent = drillingCount
     ? "Фасады: " + drillingCount + " отв. · корпус: " + bodyFastenerCount + " креплений · полкодержатели: " + shelfSupportCount
     : "Фасадное сверление не требуется. Корпус: " + bodyFastenerCount + " креплений.";
-  validate("Модель построена: корпус, перегородки, полки и фасады.", "ok");
+  validate(constructionIssues.length ? "Проверка: " + constructionIssues.join(" ") : "Проверка конструкции: ошибок не обнаружено.", constructionIssues.length ? "error" : "ok");
   fitView();
 }
 
@@ -433,7 +480,8 @@ function exportExcel() {
     "Позиции петель, мм": part.userData.hardware?.mountingPositionsFromBottom?.join("; ") || "",
     "Сверление": part.userData.drilling?.map(h => h.operation + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ")").join(" | ") || "",
     "Крепёж корпуса": part.userData.bodyFasteners?.map(h => h.type + " Ø" + h.diameter + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
-    "Полкодержатели": part.userData.shelfSupportDrilling?.map(h => h.type + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || ""
+    "Полкодержатели": part.userData.shelfSupportDrilling?.map(h => h.type + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
+    "Дюбели/эксцентрики": part.userData.secondaryFasteners?.map(h => h.type + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || ""
   }));
   const ws = XLSX.utils.json_to_sheet(rows); const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Деталировка");
@@ -488,6 +536,9 @@ $("saveProject").addEventListener("click", () => {
   parameters.connectorDiameter = $("connectorDiameter").value;
   parameters.shelfSupportType = $("shelfSupportType").value;
   parameters.shelfFrontOffset = $("shelfFrontOffset").value;
+  parameters.secondaryFastener = $("secondaryFastener").value;
+  parameters.dowelDiameter = $("dowelDiameter").value;
+  parameters.eccentricDiameter = $("eccentricDiameter").value;
 
   const data = {
     version: projectVersion,
