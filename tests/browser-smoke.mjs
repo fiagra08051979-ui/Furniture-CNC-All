@@ -58,6 +58,13 @@ if (!ifcObjects.includes("Распознано:")) throw new Error("IFC runtime 
 const ifcValidation = await page.locator("#validation").textContent();
 if (!ifcValidation.includes("IFC импортирован")) throw new Error("IFC runtime не завершил импорт: " + ifcValidation);
 
+await page.locator("#width").fill("2400");
+await page.locator("#height").fill("2200");
+await page.locator("#depth").fill("600");
+await page.locator("#sections").fill("3");
+await page.locator("#shelves").fill("6");
+await page.locator("#fixedPartitions").fill("0");
+await page.locator("#doors").fill("3");
 await page.locator("#build").click();
 await page.waitForTimeout(1000);
 
