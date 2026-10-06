@@ -2391,11 +2391,17 @@ function build() {
   const bodyFastenerCount = bodyFasteners.length;
   const shelfSupportCount = shelfSupportDrilling.length;
   const constructionIssues = constructionQC.issues;
-  if (!releaseGate.passed) validate("Release Gate: " + releaseGate.issues.join(" "), "error");
   if ($("drillingSummary")) $("drillingSummary").textContent = drillingCount
     ? "Фасады: " + drillingCount + " отв. · корпус: " + bodyFastenerCount + " креплений · полкодержатели: " + shelfSupportCount
-    : "Фасадное сверление не требуется. Корпус: " + bodyFastenerCount + " креплений.";
-  validate(constructionIssues.length ? "Проверка: " + constructionIssues.join(" ") : "Проверка конструкции: ошибок не обнаружено.", constructionIssues.length ? "error" : "ok");
+    : "Фасадное сверление не требуется. Корпус: " + bodyFastenerCount + " креплений."; 
+  if (!releaseGate.passed) {
+    validate("Release Gate: " + releaseGate.issues.join(" "), "error");
+  } else {
+    validate(
+      constructionIssues.length ? "Проверка: " + constructionIssues.join(" ") : "Проверка конструкции: ошибок не обнаружено.",
+      constructionIssues.length ? "error" : "ok"
+    );
+  }
   fitView();
 }
 
