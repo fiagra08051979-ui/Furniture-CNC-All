@@ -12,14 +12,16 @@ const required = [
   ["AI изображение", app.includes("analyzeFurnitureImageMetadata") && app.includes("aiImageAnalyze")],
   ["IFC", app.includes("web-ifc") && app.includes("importIfcIntoFurnitureCore")],
   ["распознавание деталей IFC", app.includes("recognizeIfcPart") && app.includes("applyIfcRecognition")],
-  ["карта раскроя", app.includes("buildCuttingGroups") && app.includes("buildSheetLayout") && app.includes("exportSheetLayout")],
-  ["кнопка карты раскроя", html.includes("exportSheetLayout") && html.includes("showCuttingMap")]
+  ["карта раскроя PDF", app.includes("buildCuttingGroups") && app.includes("buildSheetLayout") && app.includes("buildCuttingPdfHtml") && app.includes("exportSheetLayout")],
+  ["присадка и сверловка", app.includes("cuttingOperationList") && app.includes("drillingSchematic") && app.includes("shelfSupportDrilling")],
+  ["кнопка PDF карты раскроя", html.includes("exportSheetLayout") && html.includes("Сформировать карту раскроя PDF")],
+  ["без вывода координат", !app.includes('"X, мм"') && !app.includes('"Y, мм"')]
 ];
 
 const forbidden = [
   "CNC", "cnc", "ЧПУ", "G-code", "toolpath",
   "ManufacturingPlan", "productionPacket",
-  "exportDxf", "exportExcel", "exportPdf",
+  "exportDxf", "exportExcel", "exportPdf", "X, мм", "Y, мм", "Карта раскроя Excel", "xlsx",
   "Производственная карта", "постпроцессор"
 ];
 
@@ -57,4 +59,4 @@ if (errors.length) {
 }
 
 console.log("RELEASE GATE: PASS");
-console.log("Проверено: AI, IFC, распознавание, 3D, карта раскроя, отсутствие CNC/производственного слоя.");
+console.log("Проверено: AI, IFC, распознавание, 3D, PDF-карта раскроя, присадка/сверловка и отсутствие CNC/Excel-производственного слоя.");
