@@ -611,6 +611,36 @@ function clearModel() {
   parts.length = 0;
 }
 
+function parseIfcGeometry(source) {
+  const points=[];
+  const pointRe=/#(\\d+)\\s*=\\s*IFCCARTESIANPOINT\\s*\\(\\s*\\(\\s*([^)]*)\\)\\s*\\)\\s*;/gi;
+  let m;
+  while((m=pointRe.exec(source))!==null){
+    const coords=m[2].split(",").map(v=>Number(v.trim())).filter(Number.isFinite);
+    if(coords.length>=2) points.push({id:m[1],x:coords[0],y:coords[1],z:coords[2]||0});
+  }
+  const placements=[];
+  const placeRe=/#(\\d+)\\s*=\\s*IFCLOCALPLACEMENT\\s*\\(\\s*(?:#(\\d+)|\\$)\\s*,\\s*#(\\d+)\\s*\\)\\s*;/gi;
+  while((m=placeRe.exec(source))!==null) placements.push({id:m[1],relative:m[2]||null,axis:m[3]});
+  return {points,placements};
+}
+
+function attachIfcGeometry(result, source) {
+  const geometry=parseIfcGeometry(source);
+  const pointById=new Map(geometry.points.map(p=>[p.id,p]));
+  result.geometry={pointCount:geometry.points.length,placementCount:geometry.placements.length};
+  result.furniture=(result.furniture||[]).map((o,i)=>{
+    const nums=o.numericValues||[];
+    const p=geometry.points[i % Math.max(1,geometry.points.length)];
+    return {...o,geometry:{
+      position:p ? {x:p.x,y:p.y,z:p.z} : {x:0,y:0,z:0},
+      dimensions:{width:nums[0]||0,height:nums[1]||0,depth:nums[2]||0},
+      source:"IFC geometry references / attributes"
+    }};
+  });
+  return result;
+}
+
 function parseIfcFurniture(text) {
   const source=String(text||"");
   const objects=[];
@@ -634,6 +664,7 @@ function mapIfcFurnitureToProject(result){
   return (result.furniture||[]).map((o,index)=>({
     ifcId:o.id,name:o.name,sourceType:o.type,
     projectObjectType:"Мебель",sourceIndex:index,
+    geometry:o.geometry||null,
     attributes:o.attributes||[],numericValues:o.numericValues||[]
   }));
 }
@@ -655,7 +686,7 @@ function importIfcFile(file){
   if(!file) return;
   const reader=new FileReader();
   reader.onload=()=>{
-    const result=parseIfcFurniture(reader.result);
+    const result=attachIfcGeometry(parseIfcFurniture(reader.result), reader.result);
     renderIfcResult(result);
     validate("IFC импортирован: найдено объектов "+result.total+", мебельных "+result.furniture.length+".","ok");
   };
