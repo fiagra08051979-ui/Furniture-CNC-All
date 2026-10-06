@@ -877,6 +877,86 @@ function exportCncProgram(part) {
   URL.revokeObjectURL(link.href);
 }
 
+const CNC_POSTPROCESSORS = {
+  generic: {
+    name: "Universal G-code",
+    extension: ".nc",
+    header: ["G21","G90","G17","G54"],
+    footer: ["M5","M30"],
+    drillFeed: 300,
+    safeZ: 5
+  },
+  biesse: {
+    name: "Biesse — базовый шаблон",
+    extension: ".cix",
+    header: ["; BIESSE CNC PROGRAM","; Furniture AI Designer"],
+    footer: ["; END"],
+    drillFeed: 300,
+    safeZ: 5
+  },
+  homag: {
+    name: "Homag — базовый шаблон",
+    extension: ".mpr",
+    header: ["; HOMAG CNC PROGRAM","; Furniture AI Designer"],
+    footer: ["; END"],
+    drillFeed: 300,
+    safeZ: 5
+  },
+  scm: {
+    name: "SCM — базовый шаблон",
+    extension: ".pgm",
+    header: ["; SCM CNC PROGRAM","; Furniture AI Designer"],
+    footer: ["; END"],
+    drillFeed: 300,
+    safeZ: 5
+  }
+};
+
+function getPostprocessor() {
+  return CNC_POSTPROCESSORS[$("cncPostprocessor")?.value || "generic"] || CNC_POSTPROCESSORS.generic;
+}
+
+function buildPostprocessedProgram(part) {
+  const post = getPostprocessor();
+  const u = part.userData;
+  const ops = buildCncOperations(part);
+  const lines = [
+    ...post.header,
+    "; DETAIL " + u.partNumber + " " + u.name,
+    "; SIZE " + Math.round(u.width) + " X " + Math.round(u.height) + " X " + Math.round(u.depth)
+  ];
+  ops.forEach(op => {
+    if (op.type === "DRILL") {
+      lines.push("; DRILL " + op.diameter + " DEPTH " + op.depth);
+      lines.push("G0 X" + op.x.toFixed(3) + " Y" + op.y.toFixed(3));
+      lines.push("G0 Z" + post.safeZ.toFixed(3));
+      lines.push("G1 Z-" + op.depth.toFixed(3) + " F" + post.drillFeed);
+      lines.push("G0 Z" + post.safeZ.toFixed(3));
+    } else if (op.type === "MILL") {
+      lines.push("; MILL " + (op.source || "operation"));
+      lines.push("G0 X" + op.x.toFixed(3) + " Y" + op.y.toFixed(3));
+      lines.push("G0 Z" + post.safeZ.toFixed(3));
+      lines.push("G1 Z-" + op.depth.toFixed(3) + " F" + post.drillFeed);
+      lines.push("G0 Z" + post.safeZ.toFixed(3));
+    }
+  });
+  lines.push(...post.footer);
+  return lines.join("\n");
+}
+
+function exportAllCnc() {
+  const post = getPostprocessor();
+  parts.forEach(part => {
+    const blob = new Blob([buildPostprocessedProgram(part)], {type:"text/plain"});
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "detail-" + part.userData.partNumber + post.extension;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  });
+  validate("CNC-файлы подготовлены: " + post.name, "ok");
+}
+
 function exportAllCnc() {
   parts.forEach(part => exportCncProgram(part));
   validate("CNC-программы подготовлены для " + parts.length + " деталей.", "ok");
