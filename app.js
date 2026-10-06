@@ -3405,6 +3405,24 @@ function validateCompiledToolpathSequence(plan){
   });
   return issues;
 }
+function applyTechnologyParametersToCompiledPath(path,operation,plan){
+  const tool=CNC_TOOL_LIBRARY.find(t=>t.id===path.toolId);
+  const p=resolveCncCuttingParameters(operation||{},tool,plan.material,plan.thickness);
+  return {...path,rpm:p.rpm,feed:p.feed,plunge:p.plunge,passDepth:p.passDepth,passes:p.passes,
+    materialFamily:p.materialFamily,safeZ:p.safeZ,
+    technologyGroupKey:[path.toolId||"НЕТ",p.materialFamily,p.rpm,p.feed,p.plunge,p.passDepth].join("|")};
+}
+function validateCompiledToolpathTechnology(plan){
+  const issues=[];
+  (plan.compiledToolpathProgram||[]).forEach(path=>{
+    if(!(Number(path.rpm)>0)) issues.push({level:"error",code:"PATH_RPM",message:"Для траектории не заданы обороты шпинделя.",operation:path.operationId});
+    if(!(Number(path.feed)>0)) issues.push({level:"error",code:"PATH_FEED",message:"Для траектории не задана рабочая подача.",operation:path.operationId});
+    if(!(Number(path.plunge)>0)) issues.push({level:"error",code:"PATH_PLUNGE",message:"Для траектории не задана подача врезания.",operation:path.operationId});
+    if(!(Number(path.passDepth)>0)) issues.push({level:"error",code:"PATH_PASS_DEPTH",message:"Для траектории не задана глубина прохода.",operation:path.operationId});
+    if(Number(path.passDepth)>Number(path.depth)+0.001) issues.push({level:"error",code:"PATH_PASS_DEPTH_LIMIT",message:"Глубина прохода превышает глубину операции.",operation:path.operationId});
+  });
+  return issues;
+}
 function buildCompiledToolpathProgram(plan,part){
   const safeZ=Number(plan.machineSetup?.safeZ)||5;
   const result=[];
@@ -3416,12 +3434,7 @@ function buildCompiledToolpathProgram(plan,part){
     const toolId=path.toolId||op?.toolId||null;
     const depth=Number(path.depth||op?.depth||0);
     result.push({
-      sequence:index+1,
-      operationId:path.operationId,
-      type:path.type||op?.type||"OTHER",
-      toolId,
-      safeZ,
-      depth,
+      sequence:index+1,operationId:path.operationId,type:path.type||op?.type||"OTHER",toolId,safeZ,depth,
       points:[
         {x:Number(points[0].x)||0,y:Number(points[0].y)||0,z:safeZ},
         ...points.map(p=>({x:Number(p.x)||0,y:Number(p.y)||0,z:Number.isFinite(Number(p.z))?Number(p.z):0})),
@@ -3429,6 +3442,10 @@ function buildCompiledToolpathProgram(plan,part){
       ],
       source:path.source||"COMPILED_TOOLPATH"
     });
+  });
+  result.forEach(path=>{
+    const op=(plan.operations||[]).find(o=>o.id===path.operationId);
+    Object.assign(path,applyTechnologyParametersToCompiledPath(path,op,plan));
   });
   return result;
 }
@@ -3760,6 +3777,7 @@ function getCompiledManufacturingPlan(part) {
   plan.compensatedToolpaths=buildTypedCompensatedToolpaths(plan,part);
   plan.toolpaths=buildCncToolpaths(plan);
   plan.compiledToolpathProgram=buildCompiledToolpathProgram(plan,part);\n  plan.compiledToolpathProgram=optimizeCompiledToolpathSequence(plan.compiledToolpathProgram,plan);\n  plan.toolpathSequenceValidation=validateCompiledToolpathSequence(plan);
+  plan.compiledToolpathTechnologyValidation=validateCompiledToolpathTechnology(plan);
   plan.toolpathValidation=validateCncToolpaths(plan);
   plan.toolpathGeometryEnvelope=buildToolpathGeometryEnvelope(plan,part);
   plan.geometryToolpathValidation=validateToolpathAgainstGeometry(plan,part);
