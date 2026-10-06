@@ -3377,6 +3377,35 @@ function validateToolpathClearance(plan, part) {
   return issues;
 }
 
+function validateToolpathCollisions(plan,part){
+  const issues=[];
+  const contour=part.userData?.ifcContour?.path;
+  if(!Array.isArray(contour)||contour.length<3) return issues;
+  const polygon=contour.map(p=>({x:Number(p.x)||0,y:Number(p.y)||0}));
+  const paths=plan.compensatedToolpaths||[];
+  paths.forEach((path,idx)=>{
+    const op=(plan.operations||[]).find(o=>o.id===path.operationId);
+    const radius=Number(path.radius||op?.toolDiameter||op?.diameter||6)/2;
+    const pts=path.points||[];
+    for(let i=0;i<pts.length;i++){
+      const p=pts[i];
+      if(Number(p.z)>0) continue;
+      const edge=Math.min(...polygon.map((a,j)=>distancePointToSegment2D({x:p.x,y:p.y},a,polygon[(j+1)%polygon.length])));
+      const kind=classifyCncGeometryOperation(op||{});
+      if(kind==="OUTER_CONTOUR" && edge<radius-0.05)
+        issues.push({level:"error",code:"TOOL_BOUNDARY_COLLISION",message:"Инструмент выходит за границу детали при наружном контуре.",operation:path.operationId,point:i});
+    }
+    for(let j=0;j<idx;j++){
+      const prev=paths[j];
+      if(prev.operationId!==path.operationId || prev.pass===path.pass) continue;
+      const min=Math.min(...(prev.points||[]).map(a=>Math.min(...pts.map(b=>Math.hypot(a.x-b.x,a.y-b.y))));
+      const prevRadius=Number(prev.radius||6);
+      if(min < radius+prevRadius-0.05)
+        issues.push({level:"error",code:"TOOLPATH_COLLISION",message:"Соседние траектории инструмента пересекаются с недостаточным зазором.",operation:path.operationId});
+    }
+  });
+  return issues;
+}
 function validateContourMinimumWidth(plan,part){
   const issues=[];
   const contour=part.userData?.ifcContour?.path;
@@ -3680,9 +3709,9 @@ function getCompiledManufacturingPlan(part) {
   plan.segmentToolpathValidation=validateToolpathSegmentsAgainstGeometry(plan,part);
   plan.toolRadiusCompensation=validateToolRadiusCompensation(plan,part);
   plan.toolpathClearance=validateToolpathClearance(plan,part);
-  plan.typedToolpathValidation=validateTypedCompensatedToolpaths(plan);\n  plan.passPlanValidation=validateCncPassPlan(plan);\n  plan.pocketGeometryValidation=validatePocketGeometry(plan,part);\n  plan.contourCompensationValidation=validateContourCompensationGeometry(plan,part);\n  plan.contourWidthValidation=validateContourMinimumWidth(plan,part);
+  plan.typedToolpathValidation=validateTypedCompensatedToolpaths(plan);\n  plan.passPlanValidation=validateCncPassPlan(plan);\n  plan.pocketGeometryValidation=validatePocketGeometry(plan,part);\n  plan.contourCompensationValidation=validateContourCompensationGeometry(plan,part);\n  plan.contourWidthValidation=validateContourMinimumWidth(plan,part);\n  plan.toolpathCollisionValidation=validateToolpathCollisions(plan,part);
   plan.compensatedToolpaths=buildTypedCompensatedToolpaths(plan,part);\n  plan.toolpaths=buildCncToolpaths(plan);\n  plan.passPlanValidation=validateCncPassPlan(plan);
-  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance,...plan.typedToolpathValidation,...plan.passPlanValidation,...plan.pocketGeometryValidation,...plan.contourCompensationValidation,...plan.contourWidthValidation];
+  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance,...plan.typedToolpathValidation,...plan.passPlanValidation,...plan.pocketGeometryValidation,...plan.contourCompensationValidation,...plan.contourWidthValidation,...plan.toolpathCollisionValidation];
   plan.machineReady=plan.validation.every(x=>x.level!=="error") &&
     plan.status==="READY" &&
     plan.lifecycle.every(x=>x.valid) &&
