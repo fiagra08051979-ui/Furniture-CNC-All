@@ -625,10 +625,40 @@ function parseIfcGeometry(source) {
   return {points,placements};
 }
 
+function detectIfcLengthScale(source) {
+  if (/IFCSIUNIT[^;]*LENGTHUNIT[^;]*MILLI(METRE|METER)/i.test(source)) return 1;
+  if (/IFCSIUNIT[^;]*LENGTHUNIT[^;]*METRE/i.test(source)) return 1000;
+  return 1;
+}
+
+function renderIfcGeometryPreview(result) {
+  const old=$("ifcPreviewGroup");
+  if(old) old.remove();
+  if(!result?.geometry?.points?.length) return;
+  const points=result.geometry.points;
+  const scale=detectIfcLengthScale(result.sourceText||"");
+  const xs=points.map(p=>p.x*scale), ys=points.map(p=>p.y*scale), zs=points.map(p=>p.z*scale);
+  const minX=Math.min(...xs), maxX=Math.max(...xs);
+  const minY=Math.min(...ys), maxY=Math.max(...ys);
+  const minZ=Math.min(...zs), maxZ=Math.max(...zs);
+  const w=Math.max(100,maxX-minX), d=Math.max(100,maxY-minY), h=Math.max(100,maxZ-minZ);
+  const geo=new THREE.BoxGeometry(w,h,d);
+  const mat=new THREE.MeshBasicMaterial({color:0x6b7280,wireframe:true});
+  const mesh=new THREE.Mesh(geo,mat);
+  mesh.position.set((minX+maxX)/2,(minZ+maxZ)/2,(minY+maxY)/2);
+  const group=new THREE.Group();
+  group.name="IFC Preview";
+  group.id="ifcPreviewGroup";
+  group.add(mesh);
+  scene.add(group);
+  validate("IFC 3D-оболочка построена по исходным CartesianPoint. Размер: "+Math.round(w)+"×"+Math.round(h)+"×"+Math.round(d)+" мм.","ok");
+}
+
 function attachIfcGeometry(result, source) {
   const geometry=parseIfcGeometry(source);
   const pointById=new Map(geometry.points.map(p=>[p.id,p]));
-  result.geometry={pointCount:geometry.points.length,placementCount:geometry.placements.length};
+  result.sourceText=source;
+  result.geometry={pointCount:geometry.points.length,placementCount:geometry.placements.length,points:geometry.points};
   result.furniture=(result.furniture||[]).map((o,i)=>{
     const nums=o.numericValues||[];
     const p=geometry.points[i % Math.max(1,geometry.points.length)];
@@ -688,6 +718,7 @@ function importIfcFile(file){
   const reader=new FileReader();
   reader.onload=()=>{
     const result=attachIfcGeometry(parseIfcFurniture(reader.result), reader.result);
+    renderIfcGeometryPreview(result);
     renderIfcResult(result);
     validate("IFC импортирован: найдено объектов "+result.total+", мебельных "+result.furniture.length+".","ok");
   };
