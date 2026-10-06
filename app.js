@@ -1220,14 +1220,14 @@ function runConstructionQC(pipelineResult = { ready:0, review:0, issues:[] }) {
   return report;
 }
 
-function material() {
+function material(materialValue = $("material")?.value) {
   const colors = {
     ldsp16: 0xc69b68, ldsp18: 0xc69b68, ldsp22: 0xc69b68, ldsp35: 0xc69b68,
     mdf16: 0xd7d9dc, mdf18: 0xd7d9dc,
     ply15: 0xb88a58, ply18: 0xb88a58, ply22: 0xb88a58
   };
   return new THREE.MeshStandardMaterial({
-    color: colors[$("material").value] || 0xc69b68,
+    color: colors[materialValue] || 0xc69b68,
     roughness: 0.68,
     metalness: 0
   });
@@ -2248,6 +2248,10 @@ function build() {
 function renderPartsTable() {
   const body = $("partsList");
   body.innerHTML = "";
+  const materialOptions = [...($("material")?.options || [])]
+    .map(option => '<option value="' + option.value + '">' + option.textContent + '</option>')
+    .join("");
+
   parts.forEach((part, index) => {
     const row = document.createElement("tr");
     row.innerHTML =
@@ -2256,13 +2260,43 @@ function renderPartsTable() {
       "<td>" + part.userData.width.toFixed(0) + "</td>" +
       "<td>" + part.userData.height.toFixed(0) + "</td>" +
       "<td>" + part.userData.depth.toFixed(0) + "</td>" +
-      "<td>" + part.userData.material.toUpperCase() + "</td>" +
+      '<td><select class="detail-material" data-part-index="' + index + '">' + materialOptions + '</select></td>' +
       "<td>" + part.userData.edges.map(e => e || "—").join(" / ") + "</td>" +
       "<td>" + part.userData.quantity + "</td>" +
       "<td>" + (part.userData.hardware?.quantity || "—") + "</td>";
+
+    const materialSelect = row.querySelector(".detail-material");
+    if (materialSelect) {
+      materialSelect.value = part.userData.material;
+      materialSelect.addEventListener("click", event => event.stopPropagation());
+      materialSelect.addEventListener("change", event => {
+        event.stopPropagation();
+        applyPartMaterial(index, materialSelect.value);
+      });
+    }
     row.addEventListener("click", () => focusPart(part));
     body.appendChild(row);
   });
+}
+
+function applyPartMaterial(index, materialValue) {
+  const part = parts[index];
+  if (!part || !materialValue) return;
+
+  part.userData.material = materialValue;
+  if (part.material) part.material.dispose();
+  part.material = material(materialValue);
+
+  modelRevision++;
+  window._modelRevision = modelRevision;
+  window._constructionQC = null;
+  window._releaseGate = null;
+
+  const detailingPipeline = rebuildDetailingPipeline();
+  runConstructionQC(detailingPipeline);
+  runReleaseGate();
+  renderPartsTable();
+  validate("Материал детали " + part.userData.partNumber + " изменён.", "ok");
 }
 
 function focusPart(part) {
