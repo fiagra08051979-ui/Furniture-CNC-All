@@ -2592,7 +2592,8 @@ function buildCncTechCard(part) {
     feed: post.drillFeed,
     operations: ops,
     productionPacket: buildIfcProductionPacket(part),
-    operationJournal: buildCncOperationJournal(part)
+    operationJournal: buildCncOperationJournal(part),
+    productionOperationPassport: buildProductionOperationPassport(part)
   };
 }
 
