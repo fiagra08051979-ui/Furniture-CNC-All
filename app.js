@@ -2438,6 +2438,8 @@ function compileManufacturingPlan(part) {
     operationJournal:journal,
     manufacturingIntegrity:integrity,
     preflight,
+    toolChangeSequence:buildCncToolChangeSequence({toolTechnology:buildCncToolTechnologyPlan({operations,material:part.userData.material,thickness:part.userData.thickness})}),
+    toolChangeValidation:validateToolChangeSequence({toolTechnology:buildCncToolTechnologyPlan({operations,material:part.userData.material,thickness:part.userData.thickness})}),
     lifecycle,
     status:errors.length ? "BLOCKED" : lifecycle.some(x=>x.status==="REVIEW") ? "REVIEW" : "READY"
   };
@@ -3051,6 +3053,41 @@ function resolveCncCuttingParameters(op, tool, material, thickness) {
     safeZ:Number(readCncMachineSetup().safeZ)||5,
     materialFamily:family||"UNKNOWN"
   };
+}
+
+function buildCncToolChangeSequence(plan) {
+  const groups=plan.toolTechnology || [];
+  const order=[];
+  groups.forEach((group,index)=>{
+    const first=group.operations?.[0];
+    order.push({
+      sequence:index+1,
+      toolId:group.toolId,
+      toolName:group.toolName,
+      diameter:group.toolDiameter,
+      operationCount:group.operations?.length||0,
+      rpm:group.rpm,
+      feed:group.feed,
+      plunge:group.plunge,
+      safeZ:group.safeZ,
+      firstOperation:first?.id||null,
+      operations:(group.operations||[]).map(op=>op.id)
+    });
+  });
+  return order;
+}
+
+function validateToolChangeSequence(plan) {
+  const issues=[];
+  const seen=new Set();
+  buildCncToolChangeSequence(plan).forEach(group=>{
+    if(seen.has(group.toolId)) issues.push({level:"error",code:"TOOL_SEQUENCE_DUPLICATE",message:"Дублируется группа инструмента "+group.toolId});
+    seen.add(group.toolId);
+    if(!group.toolId || group.toolId==="NONE") issues.push({level:"error",code:"TOOL_SEQUENCE_MISSING",message:"Операции без назначенного инструмента."});
+    if(!Number.isFinite(Number(group.rpm)) || Number(group.rpm)<=0) issues.push({level:"error",code:"TOOL_RPM",message:"Некорректные обороты.",operation:group.firstOperation});
+    if(!Number.isFinite(Number(group.feed)) || Number(group.feed)<=0) issues.push({level:"error",code:"TOOL_FEED",message:"Некорректная подача.",operation:group.firstOperation});
+  });
+  return issues;
 }
 
 function buildCncToolTechnologyPlan(plan) {
