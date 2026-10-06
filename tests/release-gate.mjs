@@ -29,6 +29,7 @@ const required = [
   ["присадка без координат блокирует деталировку", app.includes("отверстие №" + (index + 1) + " без координат X/Y") && app.includes("holes.forEach")],
   ["деталировка проверяет материал и количество", app.includes("не задан материал детали") && app.includes("некорректное количество детали")],
   ["Release Gate сверяет кромку раскроя с деталировкой", core.includes("Раскладка содержит кромку, не соответствующую деталировке") && core.includes("JSON.stringify(actualEdges)")],
+  ["Release Gate проверяет состав деталировки", core.includes("неполные данные кромки") && core.includes("некорректное количество") && core.includes("отсутствует материал") && core.includes("отверстие без координат X/Y")],
   ["Release Gate проверяет состав раскроя против деталировки", core.includes("expectedDetailByKey") && core.includes("Раскладка не соответствует количеству детали") && core.includes("Раскладка содержит размеры детали, не соответствующие деталировке")],
   ["Construction QC защищает геометрию IFC", app.includes("geometrySourceErrors") && app.includes("ifcGeometryLocked: geometrySourceErrors.length === 0")],
   ["низкая уверенность IFC требует ручной проверки", app.includes('u.source === "IFC" && u.recognitionConfidence === "low"') && app.includes("требуется ручная проверка")],
