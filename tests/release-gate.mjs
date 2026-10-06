@@ -26,6 +26,7 @@ const required = [
   ["Release Gate проверяет состав раскроя против деталировки", core.includes("expectedDetailByKey") && core.includes("Раскладка не соответствует количеству детали") && core.includes("Раскладка содержит размеры детали, не соответствующие деталировке")],
   ["Construction QC защищает геометрию IFC", app.includes("geometrySourceErrors") && app.includes("ifcGeometryLocked: geometrySourceErrors.length === 0")],
   ["низкая уверенность IFC требует ручной проверки", app.includes('u.source === "IFC" && u.recognitionConfidence === "low"') && app.includes("требуется ручная проверка")],
+  ["кандидатные IFC-соединения требуют подтверждения", app.includes('u.source === "IFC" && (u.technology?.joints || []).some(j => j.status === "candidate")') && app.includes("неподтверждённое IFC-соединение")],
   ["Release Gate runtime", app.includes("function runReleaseGate()") && app.includes("evaluateReleaseGateState") && app.includes("window._releaseGate") && app.includes("выпуск PDF заблокирован")],
   ["Release Gate отвергает устаревший QC", app.includes("modelRevision") && app.includes("другой ревизии модели") && app.includes("qc.modelRevision")],
   ["инвалидация Gate при пересборке", app.includes("let modelRevision = 0") && app.includes("window._constructionQC = null") && app.includes("window._releaseGate = null") && app.includes("report.modelRevision = modelRevision")],
