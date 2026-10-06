@@ -1661,10 +1661,11 @@ function edgeSummary(edges) {
 
 function drillingSchematic(part) {
   const u = part.userData;
+  const d = u.detailing || {};
   const ops = cuttingOperationList(part);
   const W = 420, H = 240, pad = 28;
-  const dw = Math.max(40, Number(u.width) || 40);
-  const dh = Math.max(40, Number(u.height) || 40);
+  const dw = Math.max(40, Number(d.length) || Number(u.width) || 40);
+  const dh = Math.max(40, Number(d.width) || Number(u.height) || 40);
 
   const circles = ops.map((op, i) => {
     const rx = Number(op.x);
