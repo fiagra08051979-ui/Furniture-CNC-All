@@ -2260,7 +2260,15 @@ function buildCncOperations(part) {
   return ops;
 }
 
+function assertManufacturingLifecycleReady(part) {
+  const lifecycle=validateManufacturingLifecycle(part);
+  const blocked=lifecycle.filter(x=>!x.valid);
+  if(blocked.length) throw new Error("CNC заблокирован: "+blocked.map(x=>x.operationId+"="+x.status).join(", "));
+  return lifecycle;
+}
+
 function buildCncProgram(part) {
+  assertManufacturingLifecycleReady(part);
   const u = part.userData;
   const rawOps = buildCncOperations(part);
   if (rawOps.some(op => op.type === "CONTOUR_BLOCKED" || op.type === "TECH_BLOCKED"))
