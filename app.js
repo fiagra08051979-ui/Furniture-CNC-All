@@ -243,6 +243,117 @@ function recognizeIfcPart({ name, typeName, size, center, overallBox }) {
   return { kind:"Нестандартная деталь", label:"Нестандартная деталь", confidence:"low", reason:"неоднозначная геометрия" };
 }
 
+function convexHull2D(points) {
+  const pts = points
+    .map(p => [Number(p[0]), Number(p[1])])
+    .filter(p => Number.isFinite(p[0]) && Number.isFinite(p[1]))
+    .sort((a,b) => a[0]-b[0] || a[1]-b[1]);
+
+  const unique = [];
+  pts.forEach(p => {
+    const last = unique[unique.length-1];
+    if (!last || Math.hypot(p[0]-last[0], p[1]-last[1]) > 0.01) unique.push(p);
+  });
+  if (unique.length <= 2) return unique;
+
+  const cross = (o,a,b) => (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0]);
+  const lower=[];
+  unique.forEach(p=>{
+    while(lower.length>=2 && cross(lower[lower.length-2],lower[lower.length-1],p)<=0) lower.pop();
+    lower.push(p);
+  });
+  const upper=[];
+  for(let i=unique.length-1;i>=0;i--){
+    const p=unique[i];
+    while(upper.length>=2 && cross(upper[upper.length-2],upper[upper.length-1],p)<=0) upper.pop();
+    upper.push(p);
+  }
+  upper.pop(); lower.pop();
+  return lower.concat(upper);
+}
+
+function polygonArea2D(path) {
+  if (!path || path.length < 3) return 0;
+  let area=0;
+  for(let i=0;i<path.length;i++){
+    const a=path[i], b=path[(i+1)%path.length];
+    area += a[0]*b[1]-b[0]*a[1];
+  }
+  return Math.abs(area)/2;
+}
+
+function extractIfcPlanarContour(part) {
+  const vertices = [];
+  const addVertex = (v) => vertices.push(v.clone());
+
+  part.traverse(obj => {
+    if (!obj.isMesh || !obj.geometry?.attributes?.position) return;
+    const pos = obj.geometry.attributes.position;
+    const matrix = obj.matrixWorld;
+    for(let i=0;i<pos.count;i++){
+      addVertex(new THREE.Vector3(pos.getX(i),pos.getY(i),pos.getZ(i)).applyMatrix4(matrix));
+    }
+  });
+
+  if (vertices.length < 4) return {ready:false, reason:"недостаточно вершин IFC"};
+
+  const box = new THREE.Box3().setFromObject(part);
+  const size = box.getSize(new THREE.Vector3());
+  const dims=[size.x,size.y,size.z];
+  const thinAxis=dims.indexOf(Math.min(...dims));
+
+  const projected=vertices.map(v=>{
+    if(thinAxis===0) return [v.y,v.z];
+    if(thinAxis===1) return [v.x,v.z];
+    return [v.x,v.y];
+  });
+
+  const hull=convexHull2D(projected);
+  const area=polygonArea2D(hull);
+
+  const maxA = Math.max(
+    Math.abs(size.x*size.y),
+    Math.abs(size.x*size.z),
+    Math.abs(size.y*size.z)
+  );
+  const ratio=maxA>0 ? area/maxA : 0;
+
+  // Для серийного CNC разрешаем автоматический контур только
+  // для плоской детали, у которой фактическая геометрия практически
+  // совпадает с прямоугольной оболочкой.
+  const rectangular = hull.length === 4 && ratio >= 0.995;
+
+  let path = hull;
+  if (thinAxis===0) path=hull.map(([a,b])=>[b,a]);
+  if (thinAxis===1) path=hull.map(([a,b])=>[a,b]);
+  if (thinAxis===2) path=hull.map(([a,b])=>[a,b]);
+
+  return {
+    ready: rectangular,
+    axis: ["X","Y","Z"][thinAxis],
+    ratio,
+    hullPoints: hull.length,
+    path,
+    reason: rectangular
+      ? "плоская прямоугольная геометрия IFC"
+      : "контур IFC не является безопасным прямоугольным контуром"
+  };
+}
+
+function updateIfcCncReadiness() {
+  if (!ifcImportedParts.length) return {ready:0, blocked:0};
+
+  let ready=0, blocked=0;
+  ifcImportedParts.forEach(part=>{
+    const u=part.userData;
+    const contour=extractIfcPlanarContour(part);
+    u.ifcContour=contour;
+    u.geometryCncReady=Boolean(contour.ready);
+    if(contour.ready) ready++; else blocked++;
+  });
+  return {ready, blocked};
+}
+
 function buildIfcTechnologyState() {
   if (!ifcImportedParts.length) return { ready:0, review:0 };
 
@@ -518,6 +629,7 @@ async function importIfcIntoFurnitureCore(file) {
     syncIfcParametersFromRecognition();
     applyIfcMaterial();
     const technology = buildIfcTechnologyState();
+    const cncReadiness = updateIfcCncReadiness();
     assignPartNumbers();
     renderPartsTable();
     fitView();
@@ -535,7 +647,8 @@ async function importIfcIntoFurnitureCore(file) {
     if (objectsStatus) objectsStatus.textContent =
       "Распознано: " + recognitionSummary +
       (recognition.lowConfidence ? " · требуют проверки: " + recognition.lowConfidence : " · неоднозначных деталей нет") +
-      " · технология: готово " + technology.ready + ", на проверке " + technology.review;
+      " · технология: готово " + technology.ready + ", на проверке " + technology.review +
+      " · CNC-контур: готов " + cncReadiness.ready + ", заблокирован " + cncReadiness.blocked;
 
     if ($("projectName")) $("projectName").textContent = file.name;
     if ($("status")) $("status").textContent = "IFC импортирован · геометрия является источником истины";
@@ -1681,6 +1794,10 @@ function cncCollisionChecks(part) {
   const issues = [];
   const w = Number(u.width)||0, h = Number(u.height)||0;
   buildCncOperations(part).forEach(op => {
+    if (op.type === "CONTOUR_BLOCKED") {
+      issues.push({level:"error",operation:op.sequence,message:"CNC-контур IFC не подтверждён: автоматический экспорт запрещён до проверки геометрии"});
+      return;
+    }
     if (op.x !== undefined && (Math.abs(Number(op.x)) > w/2 || Math.abs(Number(op.y)||0) > h/2)) {
       issues.push({level:"error",operation:op.sequence,message:"Операция выходит за границы детали"});
     }
@@ -1724,19 +1841,37 @@ function buildCncOperations(part) {
     partNumber: u.partNumber,
     ...data
   });
-  add("CONTOUR","Контур детали",{
-    width:Number(u.width)||0,
-    height:Number(u.height)||0,
-    depth:Number(u.thickness)||Number(u.depth)||0,
-    path:[
-      [-Number(u.width||0)/2,-Number(u.height||0)/2],
-      [ Number(u.width||0)/2,-Number(u.height||0)/2],
-      [ Number(u.width||0)/2, Number(u.height||0)/2],
-      [-Number(u.width||0)/2, Number(u.height||0)/2]
-    ],
-    toolId:"MILL-8",
-    toolName:"Фреза Ø8 мм"
-  });
+  if (u.source === "IFC") {
+    if (!u.geometryCncReady || !u.ifcContour?.path?.length) {
+      add("CONTOUR_BLOCKED","Контур детали IFC — требуется проверка геометрии",{
+        reason:u.ifcContour?.reason || "контур не подготовлен автоматически"
+      });
+    } else {
+      add("CONTOUR","Контур детали по геометрии IFC",{
+        width:Number(u.width)||0,
+        height:Number(u.height)||0,
+        depth:Number(u.thickness)||Number(u.depth)||0,
+        path:u.ifcContour.path,
+        toolId:"MILL-8",
+        toolName:"Фреза Ø8 мм",
+        source:"IFC"
+      });
+    }
+  } else {
+    add("CONTOUR","Контур детали",{
+      width:Number(u.width)||0,
+      height:Number(u.height)||0,
+      depth:Number(u.thickness)||Number(u.depth)||0,
+      path:[
+        [-Number(u.width||0)/2,-Number(u.height||0)/2],
+        [ Number(u.width||0)/2,-Number(u.height||0)/2],
+        [ Number(u.width||0)/2, Number(u.height||0)/2],
+        [-Number(u.width||0)/2, Number(u.height||0)/2]
+      ],
+      toolId:"MILL-8",
+      toolName:"Фреза Ø8 мм"
+    });
+  }
   (u.drilling || []).forEach(h => add("DRILL","Сверление",{
     x:Number(h.x)||0, y:Number(h.y)||0, z:Number(h.z)||0,
     diameter:Number(h.diameter)||0, depth:Number(h.depth)||0,
