@@ -1127,6 +1127,7 @@ if ($("exportCutting")) $("exportCutting").addEventListener("click", exportCutti
 if ($("exportSheetLayout")) $("exportSheetLayout").addEventListener("click", exportSheetLayout);
 if ($("exportDxf")) $("exportDxf").addEventListener("click", exportAllDxf);
 if ($("exportCnc")) $("exportCnc").addEventListener("click", exportAllCnc);
+if ($("exportCncTech")) $("exportCncTech").addEventListener("click", exportCncTechCards);
 if ($("showCuttingMap")) $("showCuttingMap").addEventListener("click", showCuttingMap);
 $("exportPdf").addEventListener("click", exportPdf);
 
