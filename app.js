@@ -1262,6 +1262,9 @@ function rebuildDetailingPipeline() {
     if (u.source === "IFC" && u.recognitionConfidence === "low") {
       partIssues.push("низкая уверенность IFC-распознавания; требуется ручная проверка");
     }
+    if (u.source === "IFC" && (u.technology?.joints || []).some(j => j.status === "candidate")) {
+      partIssues.push("есть неподтверждённое IFC-соединение; требуется ручное подтверждение технологии");
+    }
     if (![u.width, u.height, u.depth].every(v => Number.isFinite(Number(v)) && Number(v) > 0)) {
       partIssues.push("некорректные габариты");
     }
