@@ -30,6 +30,7 @@ scene.add(root);
 
 const parts = [];
 let exploded = false;
+let projectVersion = "0.2";
 
 function readParams() {
   return {
@@ -71,11 +72,15 @@ function material() {
   });
 }
 
-function addPart(name, kind, width, height, depth, position) {
+function edgeLabel() { return $("edge").value; }
+
+function addPart(name, kind, width, height, depth, position, quantity = 1, edges = null) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), material());
   mesh.position.copy(position);
   mesh.userData = {
-    name, kind, width, height, depth,
+    name, kind, width, height, depth, quantity,
+    material: $("material").value,
+    edges: edges || [edgeLabel(), edgeLabel(), edgeLabel(), edgeLabel()],
     base: position.clone()
   };
   root.add(mesh);
@@ -187,7 +192,10 @@ function renderPartsTable() {
       "<td>" + part.userData.name + "</td>" +
       "<td>" + part.userData.width.toFixed(0) + "</td>" +
       "<td>" + part.userData.height.toFixed(0) + "</td>" +
-      "<td>" + part.userData.depth.toFixed(0) + "</td>";
+      "<td>" + part.userData.depth.toFixed(0) + "</td>" +
+      "<td>" + part.userData.material.toUpperCase() + "</td>" +
+      "<td>" + part.userData.edges.map(e => e || "—").join(" / ") + "</td>" +
+      "<td>" + part.userData.quantity + "</td>";
     row.addEventListener("click", () => focusPart(part));
     body.appendChild(row);
   });
@@ -236,6 +244,32 @@ function frontView() {
   controls.update();
 }
 
+function exportExcel() {
+  if (!window.XLSX) { validate("Модуль Excel недоступен.", "error"); return; }
+  const rows = parts.map((part, i) => ({
+    "№": String(i + 1).padStart(3, "0"), "Деталь": part.userData.name,
+    "Тип": part.userData.kind, "Количество": part.userData.quantity,
+    "Длина": Math.round(part.userData.width), "Ширина": Math.round(part.userData.height),
+    "Глубина": Math.round(part.userData.depth), "Материал": part.userData.material,
+    "Кромка 1": part.userData.edges[0], "Кромка 2": part.userData.edges[1],
+    "Кромка 3": part.userData.edges[2], "Кромка 4": part.userData.edges[3]
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows); const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Деталировка");
+  XLSX.writeFile(wb, "furniture-ai-parts.xlsx");
+}
+
+function exportPdf() {
+  if (!window.jspdf) { validate("Модуль PDF недоступен.", "error"); return; }
+  const { jsPDF } = window.jspdf; const doc = new jsPDF({orientation:"landscape", unit:"mm", format:"a4"});
+  doc.setFontSize(16); doc.text("Furniture AI Designer — Спецификация", 14, 16);
+  doc.setFontSize(9); doc.text("Модель: " + readParams().width + " × " + readParams().height + " × " + readParams().depth + " мм", 14, 23);
+  let y=31; doc.setFontSize(7);
+  doc.text("№   Деталь                         Ш        В        Г        Материал        Кромка 1-4",14,y); y+=5;
+  parts.forEach((part,i)=>{ const u=part.userData; const line=(String(i+1).padStart(3,"0")+"   "+u.name).slice(0,42)+"   "+Math.round(u.width)+"   "+Math.round(u.height)+"   "+Math.round(u.depth)+"   "+u.material+"   "+u.edges.join(" / "); doc.text(line.slice(0,150),14,y); y+=4; if(y>195){doc.addPage();y=15;} });
+  doc.save("furniture-ai-specification.pdf");
+}
+
 function validate(message, type) {
   const box = $("validation");
   box.textContent = message;
@@ -248,6 +282,9 @@ $("resetExplode").addEventListener("click", () => setExplode(false));
 $("frontView").addEventListener("click", frontView);
 $("isoView").addEventListener("click", fitView);
 $("material").addEventListener("change", build);
+$("edge").addEventListener("change", build);
+$("exportExcel").addEventListener("click", exportExcel);
+$("exportPdf").addEventListener("click", exportPdf);
 
 $("newProject").addEventListener("click", () => {
   [2400, 2200, 600, 18, 3, 6, 3].forEach((value, i) => {
@@ -263,7 +300,7 @@ $("saveProject").addEventListener("click", () => {
   parameters.edge = $("edge").value;
 
   const data = {
-    version: "0.1",
+    version: projectVersion,
     name: "Furniture AI Designer",
     parameters
   };
