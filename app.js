@@ -827,6 +827,36 @@ function buildMillingGeometry(part) {
   return ops;
 }
 
+function optimizeCncOperationSequence(part) {
+  const ops = buildCncOperations(part).map(op => ({...op}));
+  const priority = {CONTOUR: 30, POCKET: 20, MILL: 20, DRILL: 10};
+  ops.sort((x,y) => (priority[x.type]||50) - (priority[y.type]||50) ||
+    Math.hypot(Number(x.x)||0,Number(x.y)||0) - Math.hypot(Number(y.x)||0,Number(y.y)||0));
+  let last = null;
+  return ops.map((op,i) => {
+    const x=Number(op.x)||0, y=Number(op.y)||0;
+    const travel=last ? Math.hypot(x-last.x,y-last.y) : 0;
+    last={x,y};
+    return {...op, sequence:i+1, rapidTravel:Math.round(travel*100)/100, safeZ:5};
+  });
+}
+
+function cncSequenceChecks(part) {
+  const ops = optimizeCncOperationSequence(part);
+  const issues=[];
+  let lastType="";
+  ops.forEach((op,i)=>{
+    if (i && op.rapidTravel > 1000)
+      issues.push({level:"warning",operation:op.sequence,message:"Большой холостой переход инструмента: "+op.rapidTravel+" мм"});
+    if (lastType==="CONTOUR" && op.type==="DRILL")
+      issues.push({level:"warning",operation:op.sequence,message:"Сверление выполняется после чистового контура"});
+    lastType=op.type;
+    if (op.safeZ <= 0)
+      issues.push({level:"error",operation:op.sequence,message:"Недопустимая безопасная высота Z"});
+  });
+  return {ops,issues};
+}
+
 function cncCollisionChecks(part) {
   const u = part.userData;
   const issues = [];
@@ -848,7 +878,7 @@ function cncCollisionChecks(part) {
 function cncPreflight() {
   const result = [];
   parts.forEach(part => {
-    const issues = cncCollisionChecks(part);
+    const issues = [...cncCollisionChecks(part), ...cncSequenceChecks(part).issues];
     issues.forEach(issue => result.push({...issue,partNumber:part.userData.partNumber}));
   });
   return result;
@@ -997,7 +1027,7 @@ function buildCncTechCard(part) {
   const material = u.material || "Не задан";
   const thickness = Number(u.thickness || u.depth || 0);
   const post = getPostprocessor();
-  const ops = buildCncOperations(part);
+  const ops = optimizeCncOperationSequence(part);
   return {
     partNumber: u.partNumber || "",
     name: u.name || "",
