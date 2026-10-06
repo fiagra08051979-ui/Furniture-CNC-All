@@ -1852,8 +1852,8 @@ $("aiImageAnalyze")?.addEventListener("click", () => {
   const result=analyzeFurnitureImageMetadata(file);
   renderAiImageRecognition(result);
 });
-$("exportSheetLayout")?.addEventListener("click", exportSheetLayout);
-$("showCuttingMap")?.addEventListener("click", showCuttingMap);
+document.querySelectorAll(".exportSheetLayout").forEach(button => button.addEventListener("click", exportSheetLayout));
+document.querySelectorAll(".showCuttingMap").forEach(button => button.addEventListener("click", showCuttingMap));
 $("newProject").addEventListener("click", () => {
   [2400, 2200, 600, 18, 3, 6, 0, 3, 2, 3].forEach((value, i) => {
     $("width height depth thickness sections shelves fixedPartitions doors frontGapTB frontGapBetween".split(" ")[i]).value = value;
