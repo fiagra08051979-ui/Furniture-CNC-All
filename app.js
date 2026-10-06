@@ -1222,16 +1222,34 @@ function runConstructionQC(pipelineResult = { ready:0, review:0, issues:[] }) {
 
 function material() {
   const colors = {
-    ldsp18: 0xc69b68,
-    ldsp16: 0xc69b68,
-    mdf18: 0xd7d9dc,
-    ply18: 0xb88a58
+    ldsp16: 0xc69b68, ldsp18: 0xc69b68, ldsp22: 0xc69b68, ldsp35: 0xc69b68,
+    mdf16: 0xd7d9dc, mdf18: 0xd7d9dc,
+    ply15: 0xb88a58, ply18: 0xb88a58, ply22: 0xb88a58
   };
   return new THREE.MeshStandardMaterial({
     color: colors[$("material").value] || 0xc69b68,
     roughness: 0.68,
     metalness: 0
   });
+}
+
+function syncMaterialAndThickness(source = "material") {
+  const materialSelect = $("material");
+  const thicknessInput = $("thickness");
+  if (!materialSelect || !thicknessInput) return;
+
+  const value = String(materialSelect.value || "");
+  const match = value.match(/^(ldsp|mdf|ply)(16|18|22|35|15)$/);
+  if (source === "material" && match) {
+    thicknessInput.value = match[2];
+    return;
+  }
+
+  const family = value.replace(/(?:15|16|18|22|35)$/, "");
+  const candidate = family + String(Math.round(Number(thicknessInput.value)));
+  if ([...materialSelect.options].some(option => option.value === candidate)) {
+    materialSelect.value = candidate;
+  }
 }
 
 function edgeLabels() { return [1, 2, 3, 4].map(i => $("edge" + i).value); }
@@ -2298,12 +2316,17 @@ $("resetExplode")?.addEventListener("click", () => setExplode(false));
 $("frontView")?.addEventListener("click", frontView);
 $("isoView")?.addEventListener("click", fitView);
 $("material")?.addEventListener("change", () => {
-  if (ifcMode) {
-    refreshIfcTechnology();
-    return;
-  }
+  syncMaterialAndThickness("material");
+  parameters.material = $("material").value;
   build();
 });
+
+$("thickness")?.addEventListener("change", () => {
+  syncMaterialAndThickness("thickness");
+  build();
+});
+
+
 [1,2,3,4].forEach(i => $("edge"+i)?.addEventListener("change", () => {
   if (ifcMode) {
     refreshIfcTechnology();
