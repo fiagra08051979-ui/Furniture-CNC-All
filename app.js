@@ -3417,6 +3417,35 @@ function validateToolpathAgainstGeometry(plan, part) {
   return issues;
 }
 
+function validatePocketGeometry(plan, part) {
+  const issues=[];
+  const contour=part.userData?.ifcContour?.path;
+  if(!Array.isArray(contour)||contour.length<3) return issues;
+  const polygon=contour.map(p=>({x:Number(p.x)||0,y:Number(p.y)||0}));
+  (plan.operations||[]).filter(o=>classifyCncGeometryOperation(o)==="POCKET").forEach(op=>{
+    if(!polygonConvexity(polygon)) {
+      issues.push({level:"error",code:"POCKET_NON_CONVEX_UNSUPPORTED",message:"Pocket с невыпуклым IFC-контуром заблокирован: требуется полноценный polygon offset.",operation:op.id});
+      return;
+    }
+    const tool=Number(op.toolDiameter||op.diameter||6), radius=tool/2;
+    const paths=(plan.compensatedToolpaths||[]).filter(p=>p.operationId===op.id);
+    if(!paths.length) {
+      issues.push({level:"error",code:"POCKET_OFFSET_MISSING",message:"Не сформированы геометрические offset-проходы Pocket.",operation:op.id});
+      return;
+    }
+    paths.forEach(path=>{
+      const xy=path.points||[];
+      if(xy.length<4 || !path.closed) issues.push({level:"error",code:"POCKET_NOT_CLOSED",message:"Offset-проход Pocket не замкнут.",operation:op.id});
+      xy.forEach(p=>{
+        if(!pointInPolygon2D(p,polygon)) issues.push({level:"error",code:"POCKET_OFFSET_OUTSIDE",message:"Центр инструмента Pocket выходит за исходную геометрию.",operation:op.id});
+        const edge=Math.min(...polygon.map((a,i)=>distancePointToSegment2D(p,a,polygon[(i+1)%polygon.length])));
+        if(edge+0.001<radius) issues.push({level:"error",code:"POCKET_TOOL_CLEARANCE",message:"Недостаточный зазор радиуса фрезы у Pocket.",operation:op.id});
+      });
+    });
+  });
+  return issues;
+}
+
 function validateCncPassPlan(plan) {
   const issues=[];
   (plan.toolpaths||[]).forEach(path=>{
@@ -3597,9 +3626,9 @@ function getCompiledManufacturingPlan(part) {
   plan.segmentToolpathValidation=validateToolpathSegmentsAgainstGeometry(plan,part);
   plan.toolRadiusCompensation=validateToolRadiusCompensation(plan,part);
   plan.toolpathClearance=validateToolpathClearance(plan,part);
-  plan.typedToolpathValidation=validateTypedCompensatedToolpaths(plan);\n  plan.passPlanValidation=validateCncPassPlan(plan);
+  plan.typedToolpathValidation=validateTypedCompensatedToolpaths(plan);\n  plan.passPlanValidation=validateCncPassPlan(plan);\n  plan.pocketGeometryValidation=validatePocketGeometry(plan,part);
   plan.compensatedToolpaths=buildTypedCompensatedToolpaths(plan,part);\n  plan.toolpaths=buildCncToolpaths(plan);\n  plan.passPlanValidation=validateCncPassPlan(plan);
-  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance,...plan.typedToolpathValidation,...plan.passPlanValidation];
+  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance,...plan.typedToolpathValidation,...plan.passPlanValidation,...plan.pocketGeometryValidation];
   plan.machineReady=plan.validation.every(x=>x.level!=="error") &&
     plan.status==="READY" &&
     plan.lifecycle.every(x=>x.valid) &&
