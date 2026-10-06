@@ -3,6 +3,7 @@ import vm from "node:vm";
 import { evaluateReleaseGateState } from "../release-gate-core.js";
 
 const app = fs.readFileSync("app.js", "utf8");
+const core = fs.readFileSync("release-gate-core.js", "utf8");
 const html = fs.readFileSync("index.html", "utf8");
 const readme = fs.readFileSync("README.md", "utf8");
 const fixtures = JSON.parse(fs.readFileSync("tests/reference-projects.json", "utf8"));
