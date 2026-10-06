@@ -2278,9 +2278,13 @@ function buildCncOperations(part) {
 }
 
 function assertManufacturingLifecycleReady(part) {
-  const lifecycle=validateManufacturingLifecycle(part);
+  const plan=getCompiledManufacturingPlan(part);
+  const lifecycle=plan.lifecycle;
   const blocked=lifecycle.filter(x=>!x.valid);
-  if(blocked.length) throw new Error("CNC заблокирован: "+blocked.map(x=>x.operationId+"="+x.status).join(", "));
+  if(blocked.length || !plan.machineReady) {
+    const validation=(plan.validation||[]).map(x=>x.code || x.message).join(", ");
+    throw new Error("CNC заблокирован: "+blocked.map(x=>x.operationId+"="+x.status).join(", ")+(validation ? " | "+validation : ""));
+  }
   return lifecycle;
 }
 
