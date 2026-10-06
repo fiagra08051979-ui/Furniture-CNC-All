@@ -1340,7 +1340,7 @@ function buildCuttingPdfHtml(layout) {
       (op.x ?? "—")+'</td><td>'+(op.y ?? "—")+'</td><td>'+
       (op.diameter ?? "—")+'</td><td>'+(op.depth ?? "—")+
       '</td><td>'+op.quantity+'</td><td>'+op.hardware+'</td></tr>'
-    ).join("") : '<tr><td colspan="7">Присадка не задана</td></tr>';
+    ).join("") : '<tr><td colspan="8">Присадка не задана</td></tr>';
 
     return '<section class="detail-page">' +
       '<h2>Деталь №'+u.partNumber+' — '+u.name+'</h2>' +
@@ -1903,6 +1903,3 @@ function resize(){
   camera.aspect=width/Math.max(height,1); camera.updateProjectionMatrix(); renderer.setSize(width,height);
 }
 window.addEventListener("resize",resize); resize();
-function animate(){requestAnimationFrame(animate);controls.update();renderer.render(scene,camera);}
-animate();
-build();
