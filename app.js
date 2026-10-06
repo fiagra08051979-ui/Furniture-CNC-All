@@ -2569,7 +2569,6 @@ $("isoView")?.addEventListener("click", fitView);
 $("interiorView")?.addEventListener("click", showInteriorView);
 $("material")?.addEventListener("change", () => {
   syncMaterialAndThickness("material");
-  parameters.material = $("material").value;
   build();
 });
 
