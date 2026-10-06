@@ -67,9 +67,15 @@ function validateSheetLayout(layout) {
   return [...new Set(issues)];
 }
 
-function evaluateReleaseGateState({ qc, partsCount, partStates, cuttingGroups, sheetLayout }) {
+function evaluateReleaseGateState({ qc, partsCount, partStates, cuttingGroups, sheetLayout, modelRevision }) {
   const issues = [];
   const details = Array.isArray(qc?.details) ? qc.details : [];
+
+  if (qc && Number.isFinite(Number(modelRevision)) &&
+      Number.isFinite(Number(qc.modelRevision)) &&
+      Number(qc.modelRevision) !== Number(modelRevision)) {
+    issues.push("Construction QC относится к другой ревизии модели.");
+  }
 
   if (!qc) issues.push("Construction QC не выполнен.");
   if (qc && qc.status !== "PASS") issues.push("Construction QC имеет статус REVIEW.");
