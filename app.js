@@ -1278,28 +1278,6 @@ function exportSheetLayout() {
   validate("Карта раскроя рассчитана: " + layout.sheets.length + " лист(ов).", "ok");
 }
 
-function exportCuttingStructure() {
-  if (!window.XLSX) { validate("Модуль Excel недоступен.", "error"); return; }
-  const groups = buildCuttingGroups();
-  const rows = groups.map(g => ({
-    "Группа раскроя": g.groupNumber,
-    "Материал": g.material,
-    "Толщина, мм": g.thickness,
-    "Длина, мм": g.length,
-    "Ширина, мм": g.width,
-    "Кромка 1": g.edges[0],
-    "Кромка 2": g.edges[1],
-    "Кромка 3": g.edges[2],
-    "Кромка 4": g.edges[3],
-    "Количество": g.quantity,
-    "№ деталей": g.partNumbers.join(", ")
-  }));
-  const ws = XLSX.utils.json_to_sheet(rows);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Раскрой");
-  XLSX.writeFile(wb, "furniture-ai-cutting.xlsx");
-}
-
 function createPartLabel(part) {
   const canvas = document.createElement("canvas");
   canvas.width = 256; canvas.height = 96;
