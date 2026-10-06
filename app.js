@@ -58,6 +58,7 @@ function validateParams(p) {
     return "Слишком много секций для заданной ширины.";
   }
   if (p.doors > 0 && p.doors > 12) return "Количество фасадов: максимум 12.";
+  if (p.doors > 0 && p.width - p.frontGapBetween * (p.doors - 1) <= 0) return "Зазоры фасадов превышают ширину корпуса.";
   return "";
 }
 
@@ -176,7 +177,7 @@ function build() {
         Math.max(doorH, 1),
         p.thickness,
         new THREE.Vector3(
-          -p.width / 2 + doorW * (i + 0.5) + betweenGap * (i - (p.doors - 1) / 2),
+          -p.width / 2 + doorW * (i + 0.5) + betweenGap * i,
           p.height / 2,
           p.depth / 2 + p.thickness / 2
         )
