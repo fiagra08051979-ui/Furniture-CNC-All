@@ -63,7 +63,7 @@ await page.waitForTimeout(1000);
 
 await page.locator("#material").selectOption("mdf18");
 await page.waitForTimeout(300);
-await page.locator("#edge1").selectOption({label:"ABS 2 мм"});
+for (const id of ["#edge1","#edge2","#edge3","#edge4"]) await page.locator(id).selectOption({label:"ABS 2 мм"});
 await page.waitForTimeout(300);
 const designCount = Number(await page.locator("#partsCount").textContent());
 if (!(designCount > 0)) throw new Error("Изменение материала/кромки разрушило параметрическую модель.");
