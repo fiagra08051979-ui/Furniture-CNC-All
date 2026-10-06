@@ -3071,19 +3071,43 @@ function drawProductionGeometryA3(doc, part, x0, y0, maxW, maxH) {
 
   const plan=getCompiledManufacturingPlan(part);
   const drillOps=(plan.operations||[]).filter(op=>op.type==="DRILL" && Number.isFinite(Number(op.x)) && Number.isFinite(Number(op.y)));
-  drillOps.forEach(op=>{
+  const basis=part.userData?.technology?.drillingBasis;
+  const basisOrigin=basis?.origin && Number.isFinite(Number(basis.origin.x)) && Number.isFinite(Number(basis.origin.y))
+    ? map({x:Number(basis.origin.x),y:Number(basis.origin.y)}) : null;
+
+  drillOps.forEach((op,index)=>{
     const p=map({x:Number(op.x),y:Number(op.y)});
-    const r=Math.max(1.5,Math.min(5,(Number(op.diameter)||5)*scale/2));
+    const d=Number(op.diameter)||0;
+    const depth=Number(op.depth)||0;
+    const r=Math.max(1.5,Math.min(5,(d||5)*scale/2));
     doc.circle(p.x,p.y,r);
     doc.setFontSize(6);
-    doc.text("Ø"+(Number(op.diameter)||0),p.x+r+1,p.y+1);
+    doc.text("О"+String(index+1),p.x+r+1,p.y-2);
+    doc.text("Ø"+d+" × "+depth+" мм",p.x+r+1,p.y+3);
+    const direction=op.localBasis?.drillDirection || op.drillDirection || basis?.direction || "";
+    if(direction){
+      const dx=direction.x??0, dy=direction.y??0;
+      const len=Math.hypot(Number(dx),Number(dy));
+      if(len>0.01){
+        const ux=Number(dx)/len, uy=Number(dy)/len;
+        const al=8;
+        doc.line(p.x,p.y,p.x+ux*al,p.y-uy*al);
+        doc.line(p.x+ux*al,p.y-uy*al,p.x+ux*al-2*ux+uy*2,p.y-uy*al+2*uy+ux*2);
+        doc.line(p.x+ux*al,p.y-uy*al,p.x+ux*al-2*ux-uy*2,p.y-uy*al+2*uy-ux*2);
+      }
+    }
   });
-  const basis=part.userData?.technology?.drillingBasis;
-  if(basis?.origin){
+
+  if(basisOrigin){
     doc.setFontSize(7);
-    doc.text("База сверления IFC",x0,y0+maxH+19);
+    doc.line(basisOrigin.x-5,basisOrigin.y,basisOrigin.x+5,basisOrigin.y);
+    doc.line(basisOrigin.x,basisOrigin.y-5,basisOrigin.x,basisOrigin.y+5);
+    doc.text("БАЗА X0/Y0",basisOrigin.x+6,basisOrigin.y-3);
   }
-  return {drawn:true,scale};
+
+  doc.setFontSize(7);
+  doc.text("Система координат: X/Y — локальная база детали; Z — направление обработки.",x0,y0+maxH+19);
+  return {drawn:true,scale,drillCount:drillOps.length,basis:!!basisOrigin};
 }
 
 function exportProductionPdf() {
