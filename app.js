@@ -3019,6 +3019,28 @@ function animate() {
 }
 animate();
 build();
+function validateMachineCompatibility(plan, post=getPostprocessor()) {
+  const issues=[];
+  const setup=plan.machineSetup || readCncMachineSetup();
+  const safeZ=Number(setup.safeZ);
+  if(!Number.isFinite(safeZ) || safeZ<=0) issues.push({level:"error",code:"MACHINE_SAFE_Z",message:"Некорректный Safe Z."});
+  if(!setup.origin) issues.push({level:"error",code:"MACHINE_ORIGIN",message:"Не задана нулевая точка станка."});
+  if(!post || !post.name) issues.push({level:"error",code:"POSTPROCESSOR_MISSING",message:"Постпроцессор не выбран."});
+  if(post && post.safeZ!==undefined && Number(post.safeZ)>safeZ)
+    issues.push({level:"error",code:"POST_SAFE_Z",message:"Safe Z постпроцессора превышает настройку станка."});
+  (plan.operations||[]).forEach(op=>{
+    const toolId=op.toolId;
+    const tool=toolId && CNC_TOOL_LIBRARY.find(t=>t.id===toolId);
+    if(!tool) issues.push({level:"error",code:"MACHINE_TOOL",message:"Инструмент не найден в библиотеке: "+(toolId||"NONE"),operation:op.id});
+    if(op.depth!=null && Number(op.depth)>Number(plan.thickness||0))
+      issues.push({level:"error",code:"MACHINE_DEPTH",message:"Глубина операции превышает толщину детали.",operation:op.id});
+    if(op.diameter!=null && tool && Number(op.diameter)>Number(tool.diameter)+0.001)
+      issues.push({level:"error",code:"MACHINE_DIAMETER",message:"Диаметр операции превышает диаметр выбранного инструмента.",operation:op.id});
+  });
+  const generic=post.name==="Universal G-code";
+  return {postprocessor:post.name,postprocessorStatus:generic?"generic":"template-unvalidated",issues,machineReady:issues.length===0};
+}
+
 function validateCompiledManufacturingPlan(plan) {
   const issues=[];
   const ops=plan.operations || [];
@@ -3052,9 +3074,12 @@ function getCompiledManufacturingPlan(part) {
   const plan=compileManufacturingPlan(part);
   plan.compiledAt=new Date().toISOString();
   plan.validation=validateCompiledManufacturingPlan(plan);
+  plan.machineCompatibility=validateMachineCompatibility(plan);
+  plan.validation=[...plan.validation,...plan.machineCompatibility.issues];
   plan.machineReady=plan.validation.every(x=>x.level!=="error") &&
     plan.status==="READY" &&
-    plan.lifecycle.every(x=>x.valid);
+    plan.lifecycle.every(x=>x.valid) &&
+    plan.machineCompatibility.machineReady;
   plan.status=plan.machineReady ? "MACHINE_READY" : (plan.status==="BLOCKED" ? "BLOCKED" : "REVIEW");
   part.userData.manufacturingPlan=plan;
   return plan;
