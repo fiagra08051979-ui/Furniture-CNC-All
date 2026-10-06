@@ -1651,7 +1651,7 @@ function exportSheetLayout() {
     validate("Release Gate: выпуск PDF заблокирован. " + releaseGate.issues.join(" "), "error");
     return;
   }
-  const layout = buildSheetLayout(
+  const layout = releaseGate.sheetLayout || buildSheetLayout(
     Number($("sheetLength")?.value || 2800),
     Number($("sheetWidth")?.value || 2070),
     Number($("cutKerf")?.value || 4),
@@ -2042,7 +2042,8 @@ function runReleaseGate() {
     details,
     cuttingGroupsCount: cuttingGroups.length,
     sheetLayoutChecked: !!sheetLayout,
-    sheetCount: sheetLayout?.sheets?.length || 0
+    sheetCount: sheetLayout?.sheets?.length || 0,
+    sheetLayout
   };
 
   window._releaseGate = report;
