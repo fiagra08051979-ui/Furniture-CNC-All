@@ -2302,7 +2302,8 @@ function buildCncTechCard(part) {
     tool: "TBD — назначается технологом",
     spindle: "TBD — назначается технологом",
     feed: post.drillFeed,
-    operations: ops
+    operations: ops,
+    productionPacket: buildIfcProductionPacket(part)
   };
 }
 
