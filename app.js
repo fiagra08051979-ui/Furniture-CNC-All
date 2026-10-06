@@ -678,6 +678,7 @@ function renderIfcResult(result){
     "<div class='status'>IFC содержит объекты, но мебель IFC не обнаружена.</div>");
   window._ifcResult=result;
   window._ifcProjectObjects=mapIfcFurnitureToProject(result);
+  const g=$("ifcGeometry"); if(g) g.innerHTML="<b>IFC-геометрия</b><div>Точек: "+(result.geometry?.pointCount||0)+"; размещений: "+(result.geometry?.placementCount||0)+"</div>";
   const p=$("ifcProjectObjects");
   if(p) p.innerHTML="<b>Объекты проекта</b>"+(window._ifcProjectObjects.length ? "<ul>"+window._ifcProjectObjects.map(o=>"<li>#"+o.ifcId+" — "+o.name+"</li>").join("")+"</ul>" : "<div>Нет IFCFURNISHINGELEMENT.</div>");
 }
