@@ -26,7 +26,7 @@ const required = [
   ["размеры деталировки совпадают со спецификацией листа", app.includes("length: spec.length") && app.includes("width: spec.width") && app.includes("thickness: spec.thickness")],
   ["неподтвержденная IFC-толщина блокирует деталировку", app.includes("sheetSpecConfidence === \"review\"") && app.includes("толщина листа IFC не подтверждена")],
   ["IFC без кромки блокирует деталировку", app.includes("Array.isArray(u.edges) && u.edges.length !== 4") && app.includes("кромка IFC не определена")],
-  ["присадка без координат блокирует деталировку", app.includes("отверстие №" + (index + 1) + " без координат X/Y") && app.includes("holes.forEach")],
+  ["присадка без координат блокирует деталировку", app.includes("без координат X/Y") && app.includes("holes.forEach")],
   ["деталировка проверяет материал и количество", app.includes("не задан материал детали") && app.includes("некорректное количество детали")],
   ["Release Gate сверяет кромку раскроя с деталировкой", core.includes("Раскладка содержит кромку, не соответствующую деталировке") && core.includes("JSON.stringify(actualEdges)")],
   ["Release Gate проверяет состав деталировки", core.includes("неполные данные кромки") && core.includes("некорректное количество") && core.includes("отсутствует материал") && core.includes("отверстие без координат X/Y")],
