@@ -1,5 +1,6 @@
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
 import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js";
+import * as WebIFC from "web-ifc";
 
 const $ = (id) => document.getElementById(id);
 const viewer = $("viewer");
@@ -31,6 +32,243 @@ scene.add(root);
 const parts = [];
 let exploded = false;
 let projectVersion = "0.2";
+
+/* =========================
+   IFC → Furniture Core bridge
+   Геометрия IFC является источником истины.
+   Импорт не изменяет исходную форму детали.
+   ========================= */
+let ifcApi = null;
+let ifcModelId = null;
+let ifcImportedParts = [];
+
+function ifcScalar(value) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "object" && "value" in value) return value.value;
+  return value;
+}
+
+function vectorToArray(vector) {
+  if (!vector) return [];
+  const out = [];
+  if (typeof vector.size === "function" && typeof vector.get === "function") {
+    for (let i = 0; i < vector.size(); i++) out.push(vector.get(i));
+  } else if (Array.isArray(vector)) {
+    return vector;
+  }
+  return out;
+}
+
+async function ensureIfcApi() {
+  if (ifcApi) return ifcApi;
+  ifcApi = new WebIFC.IfcAPI();
+  ifcApi.SetWasmPath?.("https://cdn.jsdelivr.net/npm/web-ifc@0.0.77/");
+  await ifcApi.Init();
+  return ifcApi;
+}
+
+function closeIfcModel() {
+  if (ifcApi && ifcModelId !== null) {
+    try { ifcApi.CloseModel(ifcModelId); } catch {}
+  }
+  ifcModelId = null;
+  ifcImportedParts = [];
+}
+
+function makeIfcMesh(api, modelId, placedGeometry) {
+  const geometry = api.GetGeometry(modelId, placedGeometry.geometryExpressID);
+  const vertices = api.GetVertexArray(
+    geometry.GetVertexData(),
+    geometry.GetVertexDataSize()
+  );
+  const indices = api.GetIndexArray(
+    geometry.GetIndexData(),
+    geometry.GetIndexDataSize()
+  );
+
+  // web-ifc vertices are interleaved: XYZ + normal XYZ.
+  const positions = new Float32Array(vertices.length / 2);
+  const normals = new Float32Array(vertices.length / 2);
+
+  for (let i = 0, j = 0; i < vertices.length; i += 6, j += 3) {
+    positions[j] = vertices[i];
+    positions[j + 1] = vertices[i + 1];
+    positions[j + 2] = vertices[i + 2];
+    normals[j] = vertices[i + 3];
+    normals[j + 1] = vertices[i + 4];
+    normals[j + 2] = vertices[i + 5];
+  }
+
+  const buffer = new THREE.BufferGeometry();
+  buffer.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  buffer.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
+  buffer.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
+  buffer.computeBoundingBox();
+  buffer.computeBoundingSphere();
+
+  const color = placedGeometry.color
+    ? new THREE.Color(placedGeometry.color.x, placedGeometry.color.y, placedGeometry.color.z)
+    : new THREE.Color(0xc69b68);
+
+  const mesh = new THREE.Mesh(
+    buffer,
+    new THREE.MeshStandardMaterial({
+      color,
+      roughness: 0.68,
+      metalness: 0,
+      side: THREE.DoubleSide
+    })
+  );
+
+  mesh.matrixAutoUpdate = false;
+  mesh.matrix.fromArray(placedGeometry.flatTransformation);
+  mesh.matrixWorldNeedsUpdate = true;
+  return mesh;
+}
+
+function classifyIfcType(typeName) {
+  const type = String(typeName || "").toUpperCase();
+  if (type.includes("FURNITURE")) return "Мебель";
+  if (type.includes("FURNISHING")) return "Мебель";
+  if (type.includes("BUILDINGELEMENTPROXY")) return "Мебель / прокси";
+  return "IFC элемент";
+}
+
+async function importIfcIntoFurnitureCore(file) {
+  if (!file) return;
+
+  const target = $("ifcRecognition");
+  const geometryStatus = $("ifcGeometry");
+  const objectsStatus = $("ifcProjectObjects");
+
+  try {
+    target && (target.textContent = "Импорт IFC: чтение геометрии…");
+
+    const api = await ensureIfcApi();
+    closeIfcModel();
+
+    const data = new Uint8Array(await file.arrayBuffer());
+    ifcModelId = api.OpenModel(data, { COORDINATE_TO_ORIGIN: true });
+
+    if (ifcModelId === -1) {
+      throw new Error("IFC не удалось открыть.");
+    }
+
+    const candidateIds = new Set();
+    for (const name of ["IFCFURNITURE", "IFCFURNISHINGELEMENT", "IFCBUILDINGELEMENTPROXY"]) {
+      const code = WebIFC[name];
+      if (typeof code !== "number") continue;
+      vectorToArray(api.GetLineIDsWithType(ifcModelId, code)).forEach(id => candidateIds.add(id));
+    }
+
+    // Если IFC не классифицировал мебель отдельным типом, используем все
+    // геометрические элементы как резервный режим. Геометрия не меняется.
+    let expressIds = [...candidateIds];
+    if (!expressIds.length) {
+      expressIds = vectorToArray(api.GetAllLines(ifcModelId)).filter(id => {
+        try {
+          const line = api.GetLine(ifcModelId, id);
+          return Boolean(line && line.type && api.IsIfcElement?.(line.type));
+        } catch {
+          return false;
+        }
+      });
+    }
+
+    clearModel();
+    parts.length = 0;
+
+    let rendered = 0;
+    for (const expressId of expressIds) {
+      let line = null;
+      try { line = api.GetLine(ifcModelId, expressId); } catch {}
+
+      let flatMesh = null;
+      try { flatMesh = api.GetFlatMesh(ifcModelId, expressId); } catch {}
+      if (!flatMesh || !flatMesh.geometries || !flatMesh.geometries.size()) continue;
+
+      const name =
+        String(ifcScalar(line?.Name) || ifcScalar(line?.ObjectType) ||
+        ifcScalar(line?.Tag) || ("IFC элемент " + expressId));
+
+      const typeName = line?.type ? api.GetNameFromTypeCode(line.type) : "IFC";
+      const group = new THREE.Group();
+      group.name = name;
+
+      for (let i = 0; i < flatMesh.geometries.size(); i++) {
+        const placed = flatMesh.geometries.get(i);
+        const mesh = makeIfcMesh(api, ifcModelId, placed);
+        group.add(mesh);
+      }
+
+      const box = new THREE.Box3().setFromObject(group);
+      if (box.isEmpty()) continue;
+
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+
+      group.userData = {
+        source: "IFC",
+        expressId,
+        ifcType: typeName,
+        kind: classifyIfcType(typeName),
+        name,
+        width: size.x,
+        height: size.y,
+        depth: size.z,
+        quantity: 1,
+        material: $("material")?.value || "ldsp18",
+        edges: edgeLabels(),
+        base: center.clone(),
+        partNumber: ""
+      };
+
+      root.add(group);
+      parts.push(group);
+      ifcImportedParts.push(group);
+      rendered++;
+    }
+
+    if (!rendered) throw new Error("В IFC не найдены элементы с геометрией.");
+
+    assignPartNumbers();
+    renderPartsTable();
+    fitView();
+
+    if (target) target.textContent =
+      "IFC импортирован: " + rendered + " геометрических элементов. Геометрия сохранена строго по IFC.";
+
+    if (geometryStatus) geometryStatus.textContent =
+      "Реальная IFC-геометрия: " + rendered + " элементов.";
+
+    if (objectsStatus) objectsStatus.textContent =
+      "Типы IFC: " + [...new Set(ifcImportedParts.map(p => p.userData.ifcType))].join(", ");
+
+    if ($("projectName")) $("projectName").textContent = file.name;
+    if ($("status")) $("status").textContent = "IFC импортирован · геометрия является источником истины";
+
+    validate(
+      "IFC импортирован. Следующий расчёт выполняется поверх исходной геометрии, без её изменения.",
+      "ok"
+    );
+  } catch (error) {
+    console.error(error);
+    target && (target.textContent = "Ошибка IFC: " + (error?.message || error));
+    geometryStatus && (geometryStatus.textContent = "Геометрия IFC не импортирована.");
+    validate("Ошибка импорта IFC: " + (error?.message || error), "error");
+  }
+}
+
+$("ifcImport")?.addEventListener("click", async () => {
+  const file = $("ifcFile")?.files?.[0];
+  await importIfcIntoFurnitureCore(file);
+});
+
+$("ifcFile")?.addEventListener("change", async (event) => {
+  const file = event.target.files?.[0];
+  if (file) await importIfcIntoFurnitureCore(file);
+});
+
 
 function readParams() {
   return {
