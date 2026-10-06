@@ -15,13 +15,13 @@ const required = [
   ["карта раскроя PDF", app.includes("buildCuttingGroups") && app.includes("buildSheetLayout") && app.includes("buildCuttingPdfHtml") && app.includes("exportSheetLayout")],
   ["присадка и сверловка", app.includes("cuttingOperationList") && app.includes("drillingSchematic") && app.includes("shelfSupportDrilling")],
   ["кнопка PDF карты раскроя", html.includes("exportSheetLayout") && html.includes("Сформировать карту раскроя PDF")],
-  ["без вывода координат", !app.includes('"X, мм"') && !app.includes('"Y, мм"')]
+  ["координаты только в PDF", app.includes("x: Number.isFinite(Number(op.x))") && app.includes("X, мм") && app.includes("Y, мм")]
 ];
 
 const forbidden = [
   "CNC", "cnc", "ЧПУ", "G-code", "toolpath",
   "ManufacturingPlan", "productionPacket",
-  "exportDxf", "exportExcel", "exportPdf", "X, мм", "Y, мм", "Карта раскроя Excel", "xlsx",
+  "exportDxf", "exportExcel", "exportPdf", "Карта раскроя Excel", "xlsx",
   "Производственная карта", "постпроцессор"
 ];
 
