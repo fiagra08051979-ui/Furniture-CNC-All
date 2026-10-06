@@ -63,11 +63,11 @@ const ifcTechnologySnapshot = await page.evaluate(() => {
   return {
     revision: window._modelRevision,
     objectCount: Array.isArray(window._ifcProjectObjects) ? window._ifcProjectObjects.length : 0,
-    source: result?.source || "",
-    geometryLocked: Array.isArray(window._ifcProjectObjects) ? window._ifcProjectObjects.every(item => item?.geometryLocked !== false) : false
+    source: result?.format || "",
+    geometrySource: Array.isArray(window._ifcProjectObjects) ? window._ifcProjectObjects.every(item => item?.geometry?.source === "IFC geometry references / attributes") : false
   };
 });
-if (!(ifcTechnologySnapshot.objectCount > 0) || ifcTechnologySnapshot.source !== "IFC") {
+if (!(ifcTechnologySnapshot.objectCount > 0) || ifcTechnologySnapshot.source !== "IFC" || !ifcTechnologySnapshot.geometrySource) {
   throw new Error("После IFC импорта не сформировано доступное состояние IFC для проверки.");
 }
 
@@ -80,12 +80,12 @@ await page.waitForTimeout(500);
 const ifcTechnologyAfterRefresh = await page.evaluate(() => ({
   revision: window._modelRevision,
   objectCount: Array.isArray(window._ifcProjectObjects) ? window._ifcProjectObjects.length : 0,
-  source: window._ifcResult?.source || "",
-  geometryLocked: Array.isArray(window._ifcProjectObjects) ? window._ifcProjectObjects.every(item => item?.geometryLocked !== false) : false
+  source: window._ifcResult?.format || "",
+  geometrySource: Array.isArray(window._ifcProjectObjects) ? window._ifcProjectObjects.every(item => item?.geometry?.source === "IFC geometry references / attributes") : false
 }));
 if (ifcTechnologyAfterRefresh.objectCount !== ifcTechnologySnapshot.objectCount ||
     ifcTechnologyAfterRefresh.source !== "IFC" ||
-    !ifcTechnologyAfterRefresh.geometryLocked ||
+    !ifcTechnologyAfterRefresh.geometrySource ||
     Number(ifcTechnologyAfterRefresh.revision) <= Number(ifcRevisionBeforeRefresh)) {
   throw new Error("Обновление материала/кромки не сохранило IFC-технологическое состояние.");
 }
