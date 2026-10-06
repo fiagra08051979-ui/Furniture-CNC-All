@@ -647,6 +647,8 @@ function renderIfcResult(result){
     "<div class='status'>IFC содержит объекты, но мебель IFC не обнаружена.</div>");
   window._ifcResult=result;
   window._ifcProjectObjects=mapIfcFurnitureToProject(result);
+  const p=$("ifcProjectObjects");
+  if(p) p.innerHTML="<b>Объекты проекта</b>"+(window._ifcProjectObjects.length ? "<ul>"+window._ifcProjectObjects.map(o=>"<li>#"+o.ifcId+" — "+o.name+"</li>").join("")+"</ul>" : "<div>Нет IFCFURNISHINGELEMENT.</div>");
 }
 
 function importIfcFile(file){
