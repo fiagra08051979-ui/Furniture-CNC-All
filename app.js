@@ -1659,6 +1659,44 @@ function buildCuttingPdfHtml(layout) {
     sheetPages + detailPages + '</body></html>';
 }
 
+function runReleaseGate() {
+  const qc = window._constructionQC;
+  const canBuild = Boolean(qc && qc.status === "PASS" && parts.length);
+
+  const cuttingGroups = canBuild ? buildCuttingGroups() : [];
+  const sheetLayout = canBuild ? buildSheetLayout(
+    Number($("sheetLength")?.value || 2800),
+    Number($("sheetWidth")?.value || 2070),
+    Number($("cutKerf")?.value || 4),
+    Number($("sheetMargin")?.value || 10)
+  ) : null;
+
+  const partStates = parts.map(part => {
+    const u = part.userData || {};
+    return {
+      number: u.partNumber || "",
+      name: u.name || "",
+      sourceGeometry: u.source === "IFC" ? "IFC" : "Furniture Core",
+      geometryLocked: u.geometryLocked === true,
+      detailing: u.detailing || null
+    };
+  });
+
+  const report = evaluateReleaseGateState({
+    qc,
+    partsCount: parts.length,
+    partStates,
+    cuttingGroups,
+    sheetLayout
+  });
+
+  report.modelRevision = modelRevision;
+  report.sheetLayout = sheetLayout;
+  report.cuttingGroups = cuttingGroups;
+  window._releaseGate = report;
+  return report;
+}
+
 function exportSheetLayout() {
   const releaseGate = runReleaseGate();
   if (!releaseGate.passed) {
