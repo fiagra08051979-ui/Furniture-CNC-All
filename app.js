@@ -799,6 +799,47 @@ function frontView() {
   controls.update();
 }
 
+function dxfPair(code, value) { return code + "\n" + value + "\n"; }
+
+function buildPartDxf(part) {
+  const u = part.userData;
+  const w = Number(u.width), h = Number(u.height);
+  const lines = ["0","SECTION","2","HEADER","0","ENDSEC","0","SECTION","2","ENTITIES"];
+  const addLine = (x1,y1,x2,y2,layer="OUTLINE") => {
+    lines.push("0","LINE","8",layer,"10",x1,"20",y1,"30",0,"11",x2,"21",y2,"31",0);
+  };
+  addLine(-w/2,-h/2,w/2,-h/2);
+  addLine(w/2,-h/2,w/2,h/2);
+  addLine(w/2,h/2,-w/2,h/2);
+  addLine(-w/2,h/2,-w/2,-h/2);
+
+  const holes = [
+    ...(u.drilling || []),
+    ...(u.shelfSupportDrilling || [])
+  ];
+  holes.forEach(hole => {
+    const x = Number(hole.x) || 0, y = Number(hole.y) || 0;
+    const r = (Number(hole.diameter) || 5) / 2;
+    lines.push("0","CIRCLE","8","DRILLING","10",x,"20",y,"30",0,"40",r);
+  });
+  lines.push("0","ENDSEC","0","EOF");
+  return lines.join("\n");
+}
+
+function downloadDxf(part) {
+  const blob = new Blob([buildPartDxf(part)], {type:"application/dxf"});
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "detail-" + part.userData.partNumber + ".dxf";
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function exportAllDxf() {
+  parts.forEach(part => downloadDxf(part));
+  validate("DXF подготовлены для " + parts.length + " деталей.", "ok");
+}
+
 function exportExcel() {
   if (!window.XLSX) { validate("Модуль Excel недоступен.", "error"); return; }
   const rows = parts.map((part, i) => ({
@@ -858,6 +899,7 @@ $("material").addEventListener("change", build);
 $("exportExcel").addEventListener("click", exportExcel);
 if ($("exportCutting")) $("exportCutting").addEventListener("click", exportCuttingStructure);
 if ($("exportSheetLayout")) $("exportSheetLayout").addEventListener("click", exportSheetLayout);
+if ($("exportDxf")) $("exportDxf").addEventListener("click", exportAllDxf);
 if ($("showCuttingMap")) $("showCuttingMap").addEventListener("click", showCuttingMap);
 $("exportPdf").addEventListener("click", exportPdf);
 
