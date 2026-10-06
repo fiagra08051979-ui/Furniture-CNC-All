@@ -308,10 +308,18 @@ function addPart(name, kind, width, height, depth, position, quantity = 1, edges
     name, kind, width, height, depth, quantity,
     material: $("material").value,
     edges: edges || edgeLabels(),
-    base: position.clone()
+    base: position.clone(),
+    partNumber: ""
   };
   root.add(mesh);
   parts.push(mesh);
+}
+
+
+function assignPartNumbers() {
+  parts.forEach((part, index) => {
+    part.userData.partNumber = String(index + 1).padStart(3, "0");
+  });
 }
 
 function clearModel() {
@@ -428,6 +436,7 @@ function build() {
     part.userData.processing = buildDetailedProcessing(part);
   });
 
+  assignPartNumbers();
   exploded = false;
   $("explode").textContent = "Взрыв";
   $("partsCount").textContent = parts.length;
@@ -451,7 +460,7 @@ function renderPartsTable() {
   parts.forEach((part, index) => {
     const row = document.createElement("tr");
     row.innerHTML =
-      "<td>" + (index + 1) + "</td>" +
+      "<td>" + part.userData.partNumber + "</td>" +
       "<td>" + part.userData.name + "</td>" +
       "<td>" + part.userData.width.toFixed(0) + "</td>" +
       "<td>" + part.userData.height.toFixed(0) + "</td>" +
@@ -511,7 +520,7 @@ function frontView() {
 function exportExcel() {
   if (!window.XLSX) { validate("Модуль Excel недоступен.", "error"); return; }
   const rows = parts.map((part, i) => ({
-    "№": String(i + 1).padStart(3, "0"), "Деталь": part.userData.name,
+    "№": part.userData.partNumber, "Деталь": part.userData.name,
     "Тип": part.userData.kind, "Количество": part.userData.quantity,
     "Длина": Math.round(part.userData.width), "Ширина": Math.round(part.userData.height),
     "Глубина": Math.round(part.userData.depth), "Материал": part.userData.material,
@@ -542,7 +551,7 @@ function exportPdf() {
   doc.setFontSize(9); doc.text("Модель: " + readParams().width + " × " + readParams().height + " × " + readParams().depth + " мм", 14, 23);
   let y=31; doc.setFontSize(7);
   doc.text("№   Деталь                         Ш        В        Г        Материал        Кромка 1-4",14,y); y+=5;
-  parts.forEach((part,i)=>{ const u=part.userData; const line=(String(i+1).padStart(3,"0")+"   "+u.name).slice(0,42)+"   "+Math.round(u.width)+"   "+Math.round(u.height)+"   "+Math.round(u.depth)+"   "+u.material+"   "+u.edges.join(" / "); doc.text(line.slice(0,150),14,y); y+=4; if(y>195){doc.addPage();y=15;} });
+  parts.forEach((part,i)=>{ const u=part.userData; const line=(u.partNumber+"   "+u.name).slice(0,42)+"   "+Math.round(u.width)+"   "+Math.round(u.height)+"   "+Math.round(u.depth)+"   "+u.material+"   "+u.edges.join(" / "); doc.text(line.slice(0,150),14,y); y+=4; if(y>195){doc.addPage();y=15;} });
   doc.save("furniture-ai-specification.pdf");
 }
 
