@@ -1274,20 +1274,22 @@ function renderCuttingMap(layout) {
 
 function cuttingOperationList(part) {
   const u = part.userData;
-  return [
+  const sources = [
     ...(u.drilling || []),
     ...(u.bodyFasteners || []),
     ...(u.shelfSupportDrilling || []),
     ...(u.secondaryFasteners || []),
     ...((u.technology && u.technology.drilling) || [])
-  ].map((op, index) => ({
+  ];
+  return sources.map((op, index) => ({
     number: index + 1,
     type: op.operation || op.type || "Сверление",
     diameter: Number.isFinite(Number(op.diameter)) ? Number(op.diameter) : null,
     depth: Number.isFinite(Number(op.depth)) ? Number(op.depth) : null,
     x: Number.isFinite(Number(op.x)) ? Number(op.x) : null,
     y: Number.isFinite(Number(op.y)) ? Number(op.y) : null,
-    hardware: op.linkedHardware || op.linkedPart || op.type || ""
+    hardware: op.linkedHardware || op.linkedPart || op.type || "",
+    quantity: Number.isFinite(Number(op.quantity)) ? Number(op.quantity) : 1
   }));
 }
 
@@ -1298,32 +1300,33 @@ function edgeSummary(edges) {
 function drillingSchematic(part) {
   const u = part.userData;
   const ops = cuttingOperationList(part);
-  const W = 420, H = 220, pad = 22;
+  const W = 420, H = 240, pad = 28;
   const dw = Math.max(40, Number(u.width) || 40);
   const dh = Math.max(40, Number(u.height) || 40);
-  const sx = (W - pad*2) / dw;
-  const sy = (H - pad*2) / dh;
 
   const circles = ops.map((op, i) => {
-    const raw = part.userData.drilling?.[i] || part.userData.shelfSupportDrilling?.[i] ||
-      part.userData.bodyFasteners?.[i] || part.userData.secondaryFasteners?.[i];
-    const rx = Number(raw?.x);
-    const ry = Number(raw?.y);
-    const px = Number.isFinite(rx) ? Math.max(0.06, Math.min(0.94, (rx + dw/2) / dw)) : 0.18 + (i % 5) * 0.16;
-    const py = Number.isFinite(ry) ? Math.max(0.06, Math.min(0.94, (ry + dh/2) / dh)) : 0.18 + (Math.floor(i/5) % 4) * 0.18;
+    const rx = Number(op.x);
+    const ry = Number(op.y);
+    const px = Number.isFinite(rx) ? Math.max(0.03, Math.min(0.97, (rx + dw/2) / dw)) : 0.12 + (i % 6) * 0.15;
+    const py = Number.isFinite(ry) ? Math.max(0.03, Math.min(0.97, (ry + dh/2) / dh)) : 0.12 + (Math.floor(i/6) % 5) * 0.19;
     const cx = pad + px * (W - pad*2);
     const cy = pad + py * (H - pad*2);
     const r = Math.max(4, Math.min(10, Number(op.diameter || 6)));
+    const label = op.number + (op.quantity > 1 ? " ×"+op.quantity : "");
     return '<circle cx="' + cx.toFixed(1) + '" cy="' + cy.toFixed(1) +
       '" r="' + r.toFixed(1) + '" fill="none" stroke="#111827" stroke-width="2"/>' +
       '<text x="' + (cx+8).toFixed(1) + '" y="' + (cy-8).toFixed(1) +
-      '" font-size="10" fill="#111827">' + op.number + '</text>';
+      '" font-size="10" fill="#111827">' + label + '</text>';
   }).join("");
 
   return '<svg viewBox="0 0 '+W+' '+H+'" class="drilling-schematic">' +
     '<rect x="'+pad+'" y="'+pad+'" width="'+(W-pad*2)+'" height="'+(H-pad*2)+'" fill="#f8fafc" stroke="#334155" stroke-width="2"/>' +
+    '<line x1="'+pad+'" y1="'+(H-pad)+'" x2="'+(W-pad)+'" y2="'+(H-pad)+'" stroke="#94a3b8"/>' +
+    '<line x1="'+pad+'" y1="'+pad+'" x2="'+pad+'" y2="'+(H-pad)+'" stroke="#94a3b8"/>' +
     circles +
     '<text x="'+W/2+'" y="15" text-anchor="middle" font-size="12" font-weight="bold">Схема присадки · номера соответствуют перечню</text>' +
+    '<text x="'+(W/2)+'" y="'+(H-8)+'" text-anchor="middle" font-size="9" fill="#475569">X →</text>' +
+    '<text x="10" y="'+(H/2)+'" text-anchor="middle" font-size="9" fill="#475569" transform="rotate(-90 10 '+(H/2)+')">Y →</text>' +
     '</svg>';
 }
 
@@ -1336,16 +1339,17 @@ function buildCuttingPdfHtml(layout) {
       '<tr><td>'+op.number+'</td><td>'+op.type+'</td><td>'+
       (op.x ?? "—")+'</td><td>'+(op.y ?? "—")+'</td><td>'+
       (op.diameter ?? "—")+'</td><td>'+(op.depth ?? "—")+
-      '</td><td>'+op.hardware+'</td></tr>'
-    ).join("") : '<tr><td colspan="5">Присадка не задана</td></tr>';
+      '</td><td>'+op.quantity+'</td><td>'+op.hardware+'</td></tr>'
+    ).join("") : '<tr><td colspan="7">Присадка не задана</td></tr>';
 
     return '<section class="detail-page">' +
       '<h2>Деталь №'+u.partNumber+' — '+u.name+'</h2>' +
       '<div class="detail-meta"><b>Размер:</b> '+Math.round(u.width)+' × '+Math.round(u.height)+' × '+Math.round(u.depth)+' мм · '+
       '<b>Материал:</b> '+u.material+' · <b>Количество:</b> '+(u.quantity || 1)+'</div>' +
       '<div class="detail-meta"><b>Кромка:</b> '+edgeSummary(u.edges)+'</div>' +
+      '<div class="detail-meta"><b>Операций присадки:</b> '+ops.length+' · <b>Всего отверстий:</b> '+ops.reduce((sum, op) => sum + (op.quantity || 1), 0)+'</div>' +
       (ops.length ? drillingSchematic(part) : '<div class="no-drilling">Присадка и сверловка отсутствуют.</div>') +
-      '<table><thead><tr><th>№</th><th>Операция</th><th>X, мм</th><th>Y, мм</th><th>Ø, мм</th><th>Глубина, мм</th><th>Фурнитура / назначение</th></tr></thead><tbody>'+
+      '<table><thead><tr><th>№</th><th>Операция</th><th>X, мм</th><th>Y, мм</th><th>Ø, мм</th><th>Глубина, мм</th><th>Количество</th><th>Фурнитура / назначение</th></tr></thead><tbody>'+
       rows+'</tbody></table></section>';
   }).join("");
 
