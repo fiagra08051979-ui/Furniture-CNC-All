@@ -127,6 +127,7 @@ const contractChecks = [
   ["Release Gate сверяет состав деталей", app.includes("Количество состояний деталей не соответствует количеству деталей проекта")],
   ["Release Gate требует полный состав Construction QC", app.includes("Construction QC не содержит полный состав деталей проекта")],
   ["Release Gate отвергает устаревшую деталировку", app.includes("detailing относится к другой ревизии модели")],
+  ["Release Gate сверяет состав групп раскроя с деталировкой", core.includes("отсутствует запись в группах раскроя") && core.includes("Группа раскроя не соответствует деталировке детали") && core.includes("В группах раскроя присутствует деталь без готовой деталировки")],
   ["Release Gate проверяет источник геометрии деталировки", app.includes("источник геометрии деталировки не соответствует источнику модели")],
   ["Release Gate сверяет размещение с деталировкой", app.includes("Раскладка содержит размеры детали, не соответствующие деталировке")],
   ["раскладка сохраняет материал и толщину", app.includes("thickness: item.thickness") && app.includes("material: item.material")],
@@ -205,10 +206,4 @@ if (errors.length) {
 
 console.log("RELEASE GATE: PASS");
 
-assertions.push([
-  "Release Gate требует точную ревизию деталировки",
-  core.includes("Number(state.detailing.modelRevision) !== Number(modelRevision)") &&
-  core.includes('Construction QC не содержит полный состав деталей проекта.') &&
-  core.includes("qc.details.length !== Number(partsCount)")
-]);
 console.log("Проверено: AI, IFC, распознавание, 3D, Construction QC, Release Gate, раскладка листа, PDF-карта раскроя, присадка/сверловка и отсутствие CNC/Excel-производственного слоя.");
