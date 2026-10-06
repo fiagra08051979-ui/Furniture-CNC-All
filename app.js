@@ -1081,6 +1081,9 @@ function constructionChecksDetailed() {
       }
     });
     if (u.source === "IFC") {
+      (u.technology?.joints || []).forEach(joint => {
+        if (joint.status !== "ready") issues.push("IFC-соединение требует подтверждения: " + u.name + " / " + (joint.id || "joint"));
+      });
       (u.technology?.drilling || []).forEach(op => {
         if (op.status === "review") issues.push("IFC-присадка требует подтверждения базы: " + u.name + " / " + op.id);
         if (!Number.isFinite(op.depth) || op.depth <= 0) issues.push("Недопустимая глубина IFC-присадки: " + u.name + " / " + op.id);
