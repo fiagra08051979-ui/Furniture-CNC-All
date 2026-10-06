@@ -75,6 +75,16 @@ await page.waitForTimeout(300);
 const designCount = Number(await page.locator("#partsCount").textContent());
 if (!(designCount > 0)) throw new Error("Изменение материала/кромки разрушило параметрическую модель.");
 
+await page.locator("#shelfSupportType").selectOption({label:"Штифт Ø6"});
+await page.locator("#shelfFrontOffset").fill("40");
+await page.locator("#secondaryFastener").selectOption({label:"Дюбель + эксцентрик"});
+await page.locator("#build").click();
+await page.waitForTimeout(1000);
+const drillingSummary = await page.locator("#drillingSummary").textContent();
+if (!drillingSummary.includes("полкодержатели")) throw new Error("Цепочка Hardware/Drilling не дошла до сводки сверления.");
+const validationAfterHardware = await page.locator("#validation").textContent();
+if (validationAfterHardware.includes("PAGEERROR")) throw new Error("Ошибка после пересчёта Hardware/Drilling: " + validationAfterHardware);
+
 await page.locator("#sheetLength").fill("3000");
 await page.locator("#sheetWidth").fill("3000");
 await page.locator(".showCuttingMap").first().click();
