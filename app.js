@@ -2023,7 +2023,8 @@ function buildCncJob(part) {
     safeZ:readCncMachineSetup().safeZ,
     zeroPoint:readCncMachineSetup().origin || "top-center",
     operations:buildCncToolPlan(part),
-    manufacturingIntegrity:validateIfcManufacturingIntegrity(part)
+    manufacturingIntegrity:validateIfcManufacturingIntegrity(part),
+    preflight:manufacturingPreflight(part)
   };
 }
 
@@ -2037,7 +2038,7 @@ function optimizeCncOperationSequence(part) {
     const x=Number(op.x)||0, y=Number(op.y)||0;
     const travel=last ? Math.hypot(x-last.x,y-last.y) : 0;
     last={x,y};
-    return {...op, sequence:i+1, rapidTravel:Math.round(travel*100)/100, safeZ:5};
+    return {...op, sequence:i+1, rapidTravel:Math.round(travel*100)/100, safeZ:readCncMachineSetup().safeZ};
   });
 }
 
