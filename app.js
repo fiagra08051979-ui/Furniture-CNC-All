@@ -2143,10 +2143,12 @@ function buildCncOperations(part) {
       toolName:"Фреза Ø8 мм"
     });
   }
-  (u.drilling || []).forEach(h => add("DRILL","Сверление",{
+  const ifcDrilling = u.source === "IFC" ? (u.technology?.drilling || []).filter(h => h.status === "ready") : [];
+  [...(u.drilling || []), ...ifcDrilling].forEach(h => add("DRILL","Сверление",{
     x:Number(h.x)||0, y:Number(h.y)||0, z:Number(h.z)||0,
     diameter:Number(h.diameter)||0, depth:Number(h.depth)||0,
-    linkedHardware:h.linkedHardware || h.type || ""
+    linkedHardware:h.linkedHardware || h.type || "",
+    source:h.source || "Furniture Core"
   }));
   (u.bodyFasteners || []).forEach(h => add("DRILL","Крепёж корпуса",{
     x:Number(h.x)||0,y:Number(h.y)||0,z:Number(h.z)||0,
