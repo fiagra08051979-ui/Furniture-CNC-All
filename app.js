@@ -1425,17 +1425,23 @@ function buildSheetLayout(sheetLength, sheetWidth, kerf, margin) {
 
   const items = [];
   groups.forEach(group => {
-    for (let q = 0; q < group.quantity; q++) {
-      items.push({
-        groupNumber: group.groupNumber,
-        partNumber: group.partNumbers[q] || group.partNumbers[0] || "",
-        material: group.material,
-        length: group.length,
-        width: group.width,
-        thickness: group.thickness,
-        edges: group.edges
-      });
-    }
+    // Номер детали берём из конкретной записи деталировки.
+    // Нельзя индексировать group.partNumbers по общей quantity:
+    // quantity может быть больше числа исходных деталей.
+    group.details.forEach(detail => {
+      const quantity = Math.max(1, Number(detail.quantity || 1));
+      for (let q = 0; q < quantity; q++) {
+        items.push({
+          groupNumber: group.groupNumber,
+          partNumber: detail.number || "",
+          material: detail.material || group.material,
+          length: detail.length,
+          width: detail.width,
+          thickness: detail.thickness,
+          edges: [...(detail.edges || group.edges || [])]
+        });
+      }
+    });
   });
 
   items.sort((a, b) => (b.length * b.width) - (a.length * a.width));
