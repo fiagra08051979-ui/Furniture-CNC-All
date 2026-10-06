@@ -2015,18 +2015,19 @@ function exportCncJobManifest() {
 }
 
 function buildCncJob(part) {
-  const u = part.userData;
+  const plan=getCompiledManufacturingPlan(part);
   return {
-    partNumber:u.partNumber,
-    material:u.material || "Не задан",
-    thickness:Number(u.thickness || 0),
-    safeZ:readCncMachineSetup().safeZ,
-    zeroPoint:readCncMachineSetup().origin || "top-center",
-    operations:buildCncToolPlan(part),
-    operationJournal:buildCncOperationJournal(part),
-    manufacturingLifecycle:validateManufacturingLifecycle(part),
-    manufacturingIntegrity:validateIfcManufacturingIntegrity(part),
-    preflight:manufacturingPreflight(part)
+    partNumber:plan.partNumber,
+    material:plan.material,
+    thickness:plan.thickness,
+    safeZ:plan.machineSetup.safeZ,
+    zeroPoint:plan.machineSetup.origin || "top-center",
+    operations:plan.operations,
+    operationJournal:plan.operationJournal,
+    manufacturingLifecycle:plan.lifecycle,
+    manufacturingIntegrity:plan.manufacturingIntegrity,
+    preflight:plan.preflight,
+    manufacturingPlanStatus:plan.status
   };
 }
 
@@ -2381,6 +2382,39 @@ function validateManufacturingLifecycle(part) {
       op.lifecycleStatus==="REVIEW" ? "Требуется проверка технологом." :
       op.lifecycleStatus==="CANDIDATE" ? "Операция ещё не подтверждена." : "Операция прошла контроль."
   }));
+}
+
+function compileManufacturingPlan(part) {
+  const operations=buildCncToolPlan(part);
+  const journal=buildCncOperationJournal(part);
+  const integrity=validateIfcManufacturingIntegrity(part);
+  const preflight=manufacturingPreflight(part);
+  const lifecycle=validateManufacturingLifecycle(part);
+  const errors=[
+    ...integrity,
+    ...preflight
+  ].filter(i=>i.level==="error");
+  return {
+    version:"1.0",
+    partNumber:part.userData.partNumber,
+    source:part.userData.source || "Furniture Core",
+    material:part.userData.material || "Не задан",
+    thickness:Number(part.userData.thickness || 0),
+    machineSetup:readCncMachineSetup(),
+    operations,
+    operationJournal:journal,
+    manufacturingIntegrity:integrity,
+    preflight,
+    lifecycle,
+    status:errors.length ? "BLOCKED" : lifecycle.some(x=>x.status==="REVIEW") ? "REVIEW" : "READY"
+  };
+}
+
+function getCompiledManufacturingPlan(part) {
+  if(!part.userData) part.userData={};
+  const plan=compileManufacturingPlan(part);
+  part.userData.manufacturingPlan=plan;
+  return plan;
 }
 
 function buildCncOperationJournal(part) {
