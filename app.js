@@ -2269,9 +2269,10 @@ function assertManufacturingLifecycleReady(part) {
 }
 
 function buildCncProgram(part) {
+  const plan=getCompiledManufacturingPlan(part);
   assertManufacturingLifecycleReady(part);
   const u = part.userData;
-  const rawOps = buildCncOperations(part);
+  const rawOps = plan.operations;
   if (rawOps.some(op => op.type === "CONTOUR_BLOCKED" || op.type === "TECH_BLOCKED"))
     throw new Error("CNC export blocked: IFC technology is not confirmed.");
   const ops = rawOps.map(op => cncOperationWithTool(op, u.material));
