@@ -2406,8 +2406,24 @@ function buildCncTechCard(part) {
   };
 }
 
+function renderCncOperationJournal(part) {
+  const target=$("cncOperationJournal");
+  if(!target) return;
+  const journal=buildCncOperationJournal(part);
+  target.innerHTML="<b>Операционный журнал CNC · "+part.userData.partNumber+"</b>"+
+    (journal.length ? "<div>"+journal.map(op=>
+      "<div class='cnc-journal-row'><b>"+op.sequence+". "+op.id+"</b> · "+op.type+
+      " · "+op.preflightStatus+
+      " · "+(op.tool?.name || "инструмент не назначен")+
+      (op.coordinates.x!==null ? " · XYZ "+op.coordinates.x+";"+op.coordinates.y+";"+op.coordinates.z : "")+
+      "</div>").join("")+"</div>" :
+      "<div class='status ok'>Операций нет.</div>");
+  return journal;
+}
+
 function renderCncTechCard(part) {
   const card = buildCncTechCard(part);
+  renderCncOperationJournal(part);
   const target = $("cncTechCard");
   if (!target) return;
   target.innerHTML =
