@@ -100,9 +100,18 @@ function evaluateReleaseGateState({ qc, partsCount, partStates, cuttingGroups, s
 
   (partStates || []).forEach(state => {
     const id = state.number || state.name || "без номера";
+    if (!String(state.number || "").trim()) {
+      issues.push("Деталь " + id + ": отсутствует номер детали.");
+    }
     if (!state.detailing) {
       issues.push("Деталь " + id + ": отсутствует detailing.");
       return;
+    }
+    if (!String(state.detailing.number || "").trim()) {
+      issues.push("Деталь " + id + ": в detailing отсутствует номер детали.");
+    }
+    if (String(state.number || "").trim() !== String(state.detailing.number || "").trim()) {
+      issues.push("Деталь " + id + ": номер детали не соответствует номеру в detailing.");
     }
     if (state.detailing.status !== "ready") {
       issues.push("Деталь " + (state.detailing.number || id) + ": detailing не готов.");
