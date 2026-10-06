@@ -701,7 +701,11 @@ async function importIfcIntoFurnitureCore(file) {
     const ifcTechnologyOps = buildIfcTechnologyOperations();
     const ifcHardwareSchedule = buildIfcHardwareSchedule();
     ifcImportedParts.forEach(part => {
+      part.userData.ifcHardwareSchedule = ifcHardwareSchedule.filter(
+        item => item.partNumber === part.userData.partNumber
+      );
     });
+    const detailingPipeline = rebuildDetailingPipeline();
     renderPartsTable();
     fitView();
 
@@ -720,16 +724,19 @@ async function importIfcIntoFurnitureCore(file) {
       (recognition.lowConfidence ? " · требуют проверки: " + recognition.lowConfidence : " · неоднозначных деталей нет") +
       " · технология: готово " + technology.ready + ", на проверке " + technology.review +
       " · соединения-кандидаты: " + ifcTechnologyOps.joints.length +
-      " · позиции крепежа-кандидаты: " + ifcHardwareSchedule.length;
+      " · позиции крепежа-кандидаты: " + ifcHardwareSchedule.length +
+      " · деталировка: готово " + detailingPipeline.ready + ", на проверке " + detailingPipeline.review;
 
     if ($("projectName")) $("projectName").textContent = file.name;
     if ($("status")) $("status").textContent = "IFC импортирован · геометрия является источником истины";
 
     validate(
-      technology.review
-        ? "IFC импортирован. Распознавание завершено. Технология готова для " + technology.ready + " деталей; " + technology.review + " требуют проверки роли."
-        : "IFC импортирован. Распознавание и технологическая привязка завершены для всех деталей. Геометрия не изменена.",
-      technology.review ? "error" : "ok"
+      technology.review || detailingPipeline.review
+        ? "IFC импортирован. Проверка цепочки завершена: технология готова для " + technology.ready +
+          " деталей; " + technology.review + " требуют проверки роли; деталировка готова для " +
+          detailingPipeline.ready + ", на проверке " + detailingPipeline.review + "."
+        : "IFC импортирован. Цепочка конструкция → детали → присадка → деталировка → раскрой согласована. Геометрия не изменена.",
+      technology.review || detailingPipeline.review ? "error" : "ok"
     );
   } catch (error) {
     console.error(error);
@@ -1121,28 +1128,99 @@ function addPart(name, kind, width, height, depth, position, quantity = 1, edges
 
 function assignPartNumbers() {
   parts.forEach((part, index) => {
+    part.userData.partNumber = String(index + 1).padStart(3, "0");
+  });
+}
+
+/*
+ * Единая точка сборки цепочки:
+ * конструкция → деталь → присадка → деталировка → раскрой.
+ * Никаких новых геометрических данных здесь не создаётся.
+ * Источником размеров остаётся userData детали, а для IFC — исходная IFC-геометрия.
+ */
+function rebuildDetailingPipeline() {
+  const issues = [];
+  let ready = 0;
+  let review = 0;
+
+  parts.forEach(part => {
     const u = part.userData;
-    u.partNumber = String(index + 1).padStart(3, "0");
+    const processing = buildDetailedProcessing(part);
+    u.processing = processing;
+
+    const holes = [
+      ...(u.drilling || []),
+      ...(u.bodyFasteners || []),
+      ...(u.shelfSupportDrilling || []),
+      ...(u.secondaryFasteners || []),
+      ...((u.technology && u.technology.drilling) || [])
+    ];
+
+    const spec = getSheetSpec(part);
+    const sourceGeometry = u.source === "IFC" ? "IFC" : "Furniture Core";
+
+    const partIssues = [];
+    if (!u.partNumber) partIssues.push("нет номера детали");
+    if (![u.width, u.height, u.depth].every(v => Number.isFinite(Number(v)) && Number(v) > 0)) {
+      partIssues.push("некорректные габариты");
+    }
+    processing.forEach((op, index) => {
+      if (!op || !op.type) partIssues.push("операция №" + (index + 1) + " без типа");
+      if (op.type === "Сверление" || /сверлен|отверст/i.test(op.operation || "")) {
+        if (!Number.isFinite(Number(op.diameter)) || Number(op.diameter) <= 0) {
+          partIssues.push("присадка без диаметра");
+        }
+        if (!Number.isFinite(Number(op.depth)) || Number(op.depth) <= 0) {
+          partIssues.push("присадка без глубины");
+        }
+      }
+    });
+
+    const detailStatus = partIssues.length ? "review" : "ready";
+    if (detailStatus === "ready") ready++; else review++;
+    issues.push(...partIssues.map(issue => "Деталь " + (u.partNumber || u.name) + ": " + issue));
+
     u.detailing = {
       number: u.partNumber,
       name: u.name,
       length: Math.round(u.width),
       width: Math.round(u.height),
       thickness: Math.round(u.depth),
-      quantity: u.quantity,
+      quantity: Number(u.quantity || 1),
       material: u.material,
-      edges: [...u.edges],
-      processing: [...(u.processing || [])],
-      holes: [
-        ...(u.drilling || []),
-        ...(u.bodyFasteners || []),
-        ...(u.shelfSupportDrilling || []),
-        ...(u.secondaryFasteners || [])
-      ],
-      milling: (u.processing || []).filter(op => /фрез|паз|выбор/i.test(op.operation || "")),
-      notes: []
+      edges: [...(u.edges || [])],
+      processing: [...processing],
+      holes: [...holes],
+      milling: processing.filter(op => /фрез|паз|выбор/i.test(op.operation || "")),
+      construction: {
+        source: sourceGeometry,
+        role: u.recognizedKind || u.kind || "",
+        confidence: u.recognitionConfidence || "n/a",
+        jointCount: Number(u.technology?.jointCount || 0),
+        operationCount: processing.length
+      },
+      cutting: {
+        thickness: spec.thickness,
+        length: spec.length,
+        width: spec.width,
+        quantity: Number(u.quantity || 1),
+        eligible: detailStatus === "ready"
+      },
+      status: detailStatus,
+      notes: partIssues
+    };
+
+    u.detailingContinuity = {
+      construction: Boolean(u.kind || u.recognizedKind),
+      detail: Boolean(u.partNumber),
+      processingCount: processing.length,
+      holesCount: holes.length,
+      cuttingReady: detailStatus === "ready",
+      sourceGeometry
     };
   });
+
+  return { ready, review, issues: [...new Set(issues)] };
 }
 
 function getSheetSpec(part) {
@@ -1842,6 +1920,7 @@ function build() {
   });
 
   assignPartNumbers();
+  const detailingPipeline = rebuildDetailingPipeline();
   rebuildPartLabels();
   exploded = false;
   $("explode").textContent = "Взрыв";
@@ -1852,7 +1931,11 @@ function build() {
   const drillingCount = parts.reduce((sum, part) => sum + (part.userData.drilling?.length || 0), 0);
   const bodyFastenerCount = bodyFasteners.length;
   const shelfSupportCount = shelfSupportDrilling.length;
-  const constructionIssues = [...constructionChecks(bodyFasteners, shelfSupportDrilling, secondaryFasteners), ...constructionChecksDetailed()];
+  const constructionIssues = [
+    ...constructionChecks(bodyFasteners, shelfSupportDrilling, secondaryFasteners),
+    ...constructionChecksDetailed(),
+    ...detailingPipeline.issues
+  ];
   if ($("drillingSummary")) $("drillingSummary").textContent = drillingCount
     ? "Фасады: " + drillingCount + " отв. · корпус: " + bodyFastenerCount + " креплений · полкодержатели: " + shelfSupportCount
     : "Фасадное сверление не требуется. Корпус: " + bodyFastenerCount + " креплений.";
