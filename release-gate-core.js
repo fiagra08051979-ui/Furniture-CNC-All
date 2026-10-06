@@ -114,7 +114,11 @@ function evaluateReleaseGateState({ qc, partsCount, partStates, cuttingGroups, s
       issues.push("Деталь " + id + ": номер детали не соответствует номеру в detailing.");
     }
     if (state.detailing.status !== "ready") {
-      issues.push("Деталь " + (state.detailing.number || id) + ": detailing не готов.");
+      const detailNotes = Array.isArray(state.detailing.notes) ? state.detailing.notes.filter(Boolean) : [];
+      issues.push(
+        "Деталь " + (state.detailing.number || id) + ": detailing не готов." +
+        (detailNotes.length ? " Причины: " + detailNotes.join("; ") + "." : "")
+      );
     }
     if (Number(state.detailing.modelRevision) !== Number(modelRevision)) {
       issues.push("Деталь " + (state.detailing.number || id) + ": detailing относится к другой ревизии модели.");
