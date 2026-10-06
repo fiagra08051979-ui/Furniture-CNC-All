@@ -73,6 +73,8 @@
         <label>Ширина листа, мм<input id="sheetWidth" type="number" min="500" value="2070"></label>
         <label>Пропил, мм<input id="cutKerf" type="number" min="0" step="0.5" value="4"></label>
         <label>Отступ от края листа, мм<input id="sheetMargin" type="number" min="0" step="1" value="10"></label>
+        <label>Направление текстуры<select id="grainMode"><option value="нет">Нет</option><option value="по длине детали">По длине детали</option><option value="по ширине детали">По ширине детали</option></select></label>
+        <label><input id="allowRotation" type="checkbox" checked> Разрешить поворот деталей на 90°</label>
         <div class="row"><button id="exportSheetLayout">Карта раскроя</button></div>
         <h2>Крепление корпуса</h2>
         <label>Основной способ<select id="fastenerType"><option value="комбинированный">Конфирматы + стяжки</option><option value="конфирматы">Только конфирматы</option><option value="стяжки">Только стяжки</option></select></label>
