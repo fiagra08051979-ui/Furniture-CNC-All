@@ -98,6 +98,33 @@ function buildHardwareForFront(front) {
   };
 }
 
+
+function buildDrillingForFront(front) {
+  const u = front.userData;
+  const hw = u.hardware;
+  const tech = u.frontTechnology;
+  if (!hw || !tech) return [];
+  const cupDiameter = 35;
+  const cupDepth = 12.5;
+  const cupOffsetFromEdge = 21.5;
+  const plateOffsetFromEdge = 37;
+  const hingeRows = hw.mountingPositionsFromBottom || [];
+  const frontLeft = -u.width / 2;
+  const cupX = Math.round(frontLeft + cupOffsetFromEdge);
+  return hingeRows.map((y, index) => ({
+    id: "H" + (index + 1),
+    operation: "Чашка петли",
+    diameter: cupDiameter,
+    depth: cupDepth,
+    x: cupX,
+    y: Math.round(y),
+    z: Math.round(u.depth / 2),
+    edgeDistance: cupOffsetFromEdge,
+    plateOffsetFromEdge,
+    linkedHardware: "Петля фасада"
+  }));
+}
+
 function material() {
   const colors = {
     ldsp18: 0xc69b68,
@@ -227,6 +254,7 @@ function build() {
         betweenGap
       };
       parts[parts.length - 1].userData.hardware = buildHardwareForFront(parts[parts.length - 1]);
+      parts[parts.length - 1].userData.drilling = buildDrillingForFront(parts[parts.length - 1]);
     }
   }
 
@@ -236,6 +264,10 @@ function build() {
   $("summary").textContent = parts.length + " деталей · " + p.width + " × " + p.height + " × " + p.depth + " мм · фасадные зазоры " + p.frontGapTB + "/" + p.frontGapBetween + " мм";
 
   renderPartsTable();
+  const drillingCount = parts.reduce((sum, part) => sum + (part.userData.drilling?.length || 0), 0);
+  if ($("drillingSummary")) $("drillingSummary").textContent = drillingCount
+    ? "Рассчитано отверстий: " + drillingCount + " · чашка Ø35 мм · глубина 12,5 мм"
+    : "Сверление для выбранной конструкции не требуется.";
   validate("Модель построена: корпус, перегородки, полки и фасады.", "ok");
   fitView();
 }
@@ -317,7 +349,8 @@ function exportExcel() {
     "Ограничитель": part.userData.frontTechnology?.limiter || "",
     "Угол открывания": part.userData.frontTechnology?.openingAngle || "",
     "Петель": part.userData.hardware?.quantity || "",
-    "Позиции петель, мм": part.userData.hardware?.mountingPositionsFromBottom?.join("; ") || ""
+    "Позиции петель, мм": part.userData.hardware?.mountingPositionsFromBottom?.join("; ") || "",
+    "Сверление": part.userData.drilling?.map(h => h.operation + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ")").join(" | ") || ""
   }));
   const ws = XLSX.utils.json_to_sheet(rows); const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Деталировка");
