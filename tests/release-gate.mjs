@@ -19,6 +19,8 @@ const required = [
   ["утверждена визуализация мебели в интерьере", html.includes('id="interiorView"') && app.includes("function showInteriorView") && app.includes('name = "Визуализация интерьера"') && app.includes("Мебель вписана в интерьер.")],
   ["AI image распознает конструктивные элементы", app.includes("async function analyzeFurnitureImageMetadata") && app.includes("verticalPeaks") && app.includes("horizontalPeaks") && app.includes("params.sections") && app.includes("params.doors") && app.includes("params.shelves")],
   ["AI image применяет распознанную конструкцию", app.includes("function applyAiImageRecognition") && app.includes('aiImageApply') && app.includes("параметрическая модель построена.")],
+  ["очистка пересборки удаляет интерьерную сцену", app.includes("clearInteriorView();") && app.includes("function clearInteriorView")],
+  ["очистка пересборки удаляет IFC preview", app.includes('scene.getObjectByName("IFC Preview")') && app.includes('group.name="IFC Preview"')],
   ["AI текст", app.includes("recognizeFurnitureText") && app.includes("aiRecognize")],
   ["AI изображение", app.includes("analyzeFurnitureImageMetadata") && app.includes("aiImageAnalyze")],
   ["IFC", app.includes("web-ifc") && app.includes("importIfcIntoFurnitureCore")],
