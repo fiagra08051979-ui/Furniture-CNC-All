@@ -54,7 +54,7 @@ const required = [
   ["Construction QC блокирует IFC-соединение без подтверждения", app.includes('u.technology?.joints || []') && app.includes('IFC-соединение требует подтверждения')],
   ["IFC-порядок гарантирует QC после деталировки", app.indexOf("const detailingPipeline = rebuildDetailingPipeline();") < app.indexOf("const constructionQC = runConstructionQC(detailingPipeline);") && app.indexOf("const constructionQC = runConstructionQC(detailingPipeline);") < app.indexOf("const releaseGate = runReleaseGate();")],
   ["Release Gate runtime", app.includes("function runReleaseGate()") && app.includes("evaluateReleaseGateState") && app.includes("window._releaseGate") && app.includes("выпуск PDF заблокирован")],
-  ["Release Gate отвергает устаревший QC", core.includes("modelRevision") && core.includes("другой ревизии модели") && core.includes("qc?.modelRevision")],
+  ["Release Gate отвергает устаревший QC", core.includes("Number(qc.modelRevision)") && core.includes("Construction QC относится к другой ревизии модели.")],
   ["инвалидация Gate при пересборке", app.includes("let modelRevision = 0") && app.includes("window._constructionQC = null") && app.includes("window._releaseGate = null") && app.includes("report.modelRevision = modelRevision")],
   ["безопасное переключение IFC режима", app.includes("function build()") && app.includes("clearModel();\n  ifcMode = false;")],
   ["IFC материал меняется без пересборки геометрии", app.includes("function refreshIfcTechnology()") && app.includes('if (ifcMode) {\n    refreshIfcTechnology();\n    return;\n  }') && app.includes("applyIfcMaterial()")],
@@ -149,10 +149,10 @@ const gateContract = [
 ];
 
 const contractChecks = [
-  ["Release Gate имеет детерминированный evaluator", app.includes("function evaluateReleaseGateState")],
+  ["Release Gate имеет детерминированный evaluator", core.includes("function evaluateReleaseGateState")],
   ["Release Gate различает PASS/BLOCKED", core.includes('status: issues.length ? "BLOCKED" : "PASS"')],
   ["Release Gate учитывает REVIEW", core.includes('qc.status !== "PASS"')],
-  ["Release Gate учитывает overflow", app.includes("validateSheetLayout(sheetLayout)")],
+  ["Release Gate учитывает overflow", core.includes("function validateSheetLayout") && core.includes("if (placement.overflow)")],
   ["Release Gate сверяет состав деталей", core.includes("Количество состояний деталей не соответствует количеству деталей проекта")],
   ["Release Gate требует полный состав Construction QC", core.includes("Construction QC не содержит полный состав деталей проекта")],
   ["Release Gate отвергает устаревшую деталировку", core.includes("detailing относится к другой ревизии модели")],
