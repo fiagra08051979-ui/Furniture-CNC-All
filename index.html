@@ -75,7 +75,7 @@
         <label>Отступ от края листа, мм<input id="sheetMargin" type="number" min="0" step="1" value="10"></label>
         <label>Направление текстуры<select id="grainMode"><option value="нет">Нет</option><option value="по длине детали">По длине детали</option><option value="по ширине детали">По ширине детали</option></select></label>
         <label><input id="allowRotation" type="checkbox" checked> Разрешить поворот деталей на 90°</label>
-        <div class="row"><button id="exportSheetLayout">Карта раскроя</button></div>
+        <div class="row"><button id="exportSheetLayout">Карта раскроя Excel</button><button id="showCuttingMap">Показать карту</button></div><div id="cuttingMap" class="cutting-map" hidden></div>
         <h2>Крепление корпуса</h2>
         <label>Основной способ<select id="fastenerType"><option value="комбинированный">Конфирматы + стяжки</option><option value="конфирматы">Только конфирматы</option><option value="стяжки">Только стяжки</option></select></label>
         <label>Диаметр конфирмата, мм<input id="confirmatDiameter" type="number" min="5" max="8" step="0.5" value="7"></label>
