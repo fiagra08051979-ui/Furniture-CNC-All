@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import vm from "node:vm";
+import { evaluateReleaseGateState } from "../release-gate-core.js";
 
 const app = fs.readFileSync("app.js", "utf8");
 const html = fs.readFileSync("index.html", "utf8");
@@ -67,10 +68,13 @@ const errors = [];
 for (const [name, ok] of required) if (!ok) errors.push("Отсутствует: " + name);
 for (const [name, ok] of contractChecks) if (!ok) errors.push("Отсутствует контракт: " + name);
 for (const [name, state, expectedPass] of gateContract) {
-  // Contract scenarios are declarative fixtures; the runtime evaluator is additionally
-  // checked structurally because app.js depends on browser/Three.js globals.
-  if (expectedPass && !state.qc?.status) errors.push(name + ": некорректный PASS fixture");
-  if (!expectedPass && expectedPass !== false) errors.push(name + ": некорректный BLOCKED fixture");
+  const report = evaluateReleaseGateState({
+    ...state,
+    sheetLayout: state.sheetLayout || null
+  });
+  if (report.passed !== expectedPass) {
+    errors.push(name + ": ожидался " + (expectedPass ? "PASS" : "BLOCKED") + ", получен " + report.status);
+  }
 }
 for (const token of forbidden) if ((app + "\n" + html).toLowerCase().includes(token.toLowerCase())) {
   errors.push("Запрещённый производственный/CNC блок: " + token);
