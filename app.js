@@ -47,7 +47,10 @@ function readParams() {
     frontType: $("frontType").value,
     hingeType: $("hingeType").value,
     hingeLimiter: $("hingeLimiter").value,
-    openingAngle: Number($("openingAngle").value)
+    openingAngle: Number($("openingAngle").value),
+    fastenerType: $("fastenerType").value,
+    confirmatDiameter: Number($("confirmatDiameter").value),
+    connectorDiameter: Number($("connectorDiameter").value)
   };
 }
 
@@ -123,6 +126,44 @@ function buildDrillingForFront(front) {
     plateOffsetFromEdge,
     linkedHardware: "Петля фасада"
   }));
+}
+
+
+function buildBodyFasteners() {
+  const p = readParams();
+  const result = [];
+  const useConfirmat = p.fastenerType === "конфирматы" || p.fastenerType === "комбинированный";
+  const useConnector = p.fastenerType === "стяжки" || p.fastenerType === "комбинированный";
+  const verticals = parts.filter(part => part.userData.kind === "Вертикальная перегородка");
+  const horizontals = parts.filter(part => part.userData.kind === "Горизонтальная перегородка");
+  const sides = parts.filter(part => part.userData.kind === "Боковина");
+  const addJoint = (part, jointType, index, x, y, z) => result.push({
+    id: jointType === "Конфирмат" ? "C" + index : "K" + index,
+    type: jointType,
+    diameter: jointType === "Конфирмат" ? p.confirmatDiameter : p.connectorDiameter,
+    depth: jointType === "Конфирмат" ? Math.max(35, p.thickness * 2) : p.thickness,
+    x: Math.round(x), y: Math.round(y), z: Math.round(z),
+    linkedPart: part.userData.name
+  });
+  let n = 1;
+  verticals.forEach(part => {
+    const y1 = p.height * 0.28, y2 = p.height * 0.72;
+    if (useConfirmat) { addJoint(part, "Конфирмат", n++, part.position.x, y1, 0); addJoint(part, "Конфирмат", n++, part.position.x, y2, 0); }
+    if (useConnector) { addJoint(part, "Стяжка", n++, part.position.x, y1, 0); addJoint(part, "Стяжка", n++, part.position.x, y2, 0); }
+  });
+  horizontals.forEach(part => {
+    const x1 = -p.width * 0.28, x2 = p.width * 0.28;
+    if (useConfirmat) { addJoint(part, "Конфирмат", n++, x1, part.position.y, 0); addJoint(part, "Конфирмат", n++, x2, part.position.y, 0); }
+    if (useConnector) { addJoint(part, "Стяжка", n++, x1, part.position.y, 0); addJoint(part, "Стяжка", n++, x2, part.position.y, 0); }
+  });
+  if (sides.length && !verticals.length && !horizontals.length) {
+    // Базовые крепления корпуса даже для простого шкафа.
+    sides.forEach(side => {
+      if (useConfirmat) { addJoint(side, "Конфирмат", n++, side.position.x, p.height * 0.25, 0); addJoint(side, "Конфирмат", n++, side.position.x, p.height * 0.75, 0); }
+      if (useConnector) { addJoint(side, "Стяжка", n++, side.position.x, p.height * 0.25, 0); addJoint(side, "Стяжка", n++, side.position.x, p.height * 0.75, 0); }
+    });
+  }
+  return result;
 }
 
 function material() {
@@ -258,6 +299,9 @@ function build() {
     }
   }
 
+  const bodyFasteners = buildBodyFasteners();
+  parts.forEach(part => { part.userData.bodyFasteners = bodyFasteners.filter(h => h.linkedPart === part.userData.name); });
+
   exploded = false;
   $("explode").textContent = "Взрыв";
   $("partsCount").textContent = parts.length;
@@ -265,9 +309,10 @@ function build() {
 
   renderPartsTable();
   const drillingCount = parts.reduce((sum, part) => sum + (part.userData.drilling?.length || 0), 0);
+  const bodyFastenerCount = bodyFasteners.length;
   if ($("drillingSummary")) $("drillingSummary").textContent = drillingCount
-    ? "Рассчитано отверстий: " + drillingCount + " · чашка Ø35 мм · глубина 12,5 мм"
-    : "Сверление для выбранной конструкции не требуется.";
+    ? "Фасады: " + drillingCount + " отв. · корпус: " + bodyFastenerCount + " креплений"
+    : "Фасадное сверление не требуется. Корпус: " + bodyFastenerCount + " креплений.";
   validate("Модель построена: корпус, перегородки, полки и фасады.", "ok");
   fitView();
 }
@@ -350,7 +395,8 @@ function exportExcel() {
     "Угол открывания": part.userData.frontTechnology?.openingAngle || "",
     "Петель": part.userData.hardware?.quantity || "",
     "Позиции петель, мм": part.userData.hardware?.mountingPositionsFromBottom?.join("; ") || "",
-    "Сверление": part.userData.drilling?.map(h => h.operation + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ")").join(" | ") || ""
+    "Сверление": part.userData.drilling?.map(h => h.operation + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ")").join(" | ") || "",
+    "Крепёж корпуса": part.userData.bodyFasteners?.map(h => h.type + " Ø" + h.diameter + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || ""
   }));
   const ws = XLSX.utils.json_to_sheet(rows); const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Деталировка");
@@ -400,6 +446,9 @@ $("saveProject").addEventListener("click", () => {
   parameters.hingeType = $("hingeType").value;
   parameters.hingeLimiter = $("hingeLimiter").value;
   parameters.openingAngle = $("openingAngle").value;
+  parameters.fastenerType = $("fastenerType").value;
+  parameters.confirmatDiameter = $("confirmatDiameter").value;
+  parameters.connectorDiameter = $("connectorDiameter").value;
 
   const data = {
     version: projectVersion,
