@@ -103,6 +103,7 @@ const gateContract = [
   }, true],
   ["BLOCKED: QC REVIEW", {qc:{status:"REVIEW"},partsCount:1,partStates:[],cuttingGroups:[],sheetLayout:null}, false],
   ["BLOCKED: IFC low confidence → REVIEW → Release Gate", {qc:{status:"PASS"},partsCount:1,partStates:[{number:"001",sourceGeometry:"IFC",geometryLocked:true,recognitionConfidence:"low",detailing:{number:"001",status:"review",modelRevision:1,construction:{source:"IFC"},material:"ldsp18",quantity:1,edges:["PVC 1 мм","PVC 1 мм","нет","нет"],cutting:{length:600,width:400,thickness:18},holes:[]}}],cuttingGroups:[],sheetLayout:null,modelRevision:1}, false],
+  ["BLOCKED: IFC thickness REVIEW → Release Gate", {qc:{status:"PASS"},partsCount:1,partStates:[{number:"001",sourceGeometry:"IFC",geometryLocked:true,detailing:{number:"001",status:"review",modelRevision:1,construction:{source:"IFC"},material:"ldsp18",quantity:1,edges:["PVC 1 мм","PVC 1 мм","нет","нет"],cutting:{length:600,width:400,thickness:18},holes:[],notes:["толщина листа IFC не подтверждена"]}}],cuttingGroups:[],sheetLayout:null,modelRevision:1}, false],
   ["BLOCKED: detailing REVIEW", {
     qc:{status:"PASS"}, partsCount:1,
     partStates:[{number:"001",detailing:{number:"001",status:"review",cutting:{length:600,width:400,thickness:18},holes:[]}}],
