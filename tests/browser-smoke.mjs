@@ -57,7 +57,7 @@ await page.locator(".showCuttingMap").first().click();
 await page.waitForTimeout(300);
 const cuttingStatus = await page.locator("#validation").textContent();
 if (!cuttingStatus.includes("Карта раскроя показана из проверенной раскладки Release Gate")) {
-  throw new Error("Release Gate не пропустил проверенную карту раскроя.");
+  throw new Error("Release Gate не пропустил проверенную карту раскроя. Статус: " + cuttingStatus);
 }
 
 if (errors.length) throw new Error(errors.join("\n"));
