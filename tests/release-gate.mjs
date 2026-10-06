@@ -23,6 +23,7 @@ const required = [
   ["Release Gate runtime", app.includes("function runReleaseGate()") && app.includes("evaluateReleaseGateState") && app.includes("window._releaseGate") && app.includes("выпуск PDF заблокирован")],
   ["инвалидация Gate при пересборке", app.includes("let modelRevision = 0") && app.includes("window._constructionQC = null") && app.includes("window._releaseGate = null") && app.includes("report.modelRevision = modelRevision")],
   ["безопасное переключение IFC режима", app.includes("function build()") && app.includes("clearModel();\n  ifcMode = false;")],
+  ["сброс IFC при очистке модели", app.includes("function clearModel()") && app.includes("closeIfcModel();") && app.includes("ifcImportedParts = [];")],
   ["цепочка Construction QC → Release Gate", app.includes("runConstructionQC(detailingPipeline)") && app.includes("runReleaseGate()")],
   ["PDF читает деталировку", app.includes("const detailing = part.userData?.detailing") && app.includes("Array.isArray(detailing?.holes)") && app.includes("d.length") && app.includes("d.material") && app.includes("d.edges")],
   ["Release Gate проверяет раскладку листа", app.includes("function validateSheetLayout") && app.includes("placement.overflow") && app.includes("sheetLayoutChecked") && app.includes("buildSheetLayout(")],
