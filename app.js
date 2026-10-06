@@ -2019,6 +2019,11 @@ function buildCncJobManifest() {
       partNumber:plan.partNumber,
       groups:plan.toolTechnology || []
     })),
+    geometryToolpathValidation: plans.map(plan => ({
+      partNumber:plan.partNumber,
+      status:(plan.geometryToolpathValidation||[]).some(i=>i.level==="error") ? "BLOCKED" : "READY",
+      issues:plan.geometryToolpathValidation || []
+    })),
     toolpathValidation: plans.map(plan => ({
       partNumber:plan.partNumber,
       status:(plan.toolpathValidation||[]).some(i=>i.level==="error") ? "BLOCKED" : "READY",
@@ -3103,6 +3108,53 @@ function buildCncToolpaths(plan) {
   });
 }
 
+function pointInPolygon2D(point, polygon) {
+  let inside=false;
+  for(let i=0,j=polygon.length-1;i<polygon.length;j=i++) {
+    const xi=Number(polygon[i].x), yi=Number(polygon[i].y);
+    const xj=Number(polygon[j].x), yj=Number(polygon[j].y);
+    const intersect=((yi>point.y)!==(yj>point.y)) &&
+      point.x < (xj-xi)*(point.y-yi)/((yj-yi)||1e-12)+xi;
+    if(intersect) inside=!inside;
+  }
+  return inside;
+}
+
+function distancePointToSegment2D(p,a,b) {
+  const dx=b.x-a.x, dy=b.y-a.y;
+  const len2=dx*dx+dy*dy;
+  if(!len2) return Math.hypot(p.x-a.x,p.y-a.y);
+  const t=Math.max(0,Math.min(1,((p.x-a.x)*dx+(p.y-a.y)*dy)/len2));
+  return Math.hypot(p.x-(a.x+t*dx),p.y-(a.y+t*dy));
+}
+
+function validateToolpathAgainstGeometry(plan, part) {
+  const issues=[];
+  const u=part.userData||{};
+  const contour=u.ifcContour?.path;
+  if(!Array.isArray(contour) || contour.length<3) return issues;
+  const polygon=contour.map(p=>({x:Number(p.x)||0,y:Number(p.y)||0}));
+  const maxToolRadius=Math.max(...(plan.operations||[]).map(op=>Number(op.toolDiameter||op.diameter||6)/2),0);
+  (plan.toolpaths||[]).forEach(path=>{
+    if(path.type==="CONTOUR") {
+      path.points.forEach(p=>{
+        const inside=pointInPolygon2D(p,polygon);
+        if(!inside) issues.push({level:"error",code:"TOOLPATH_OUTSIDE_CONTOUR",message:"Траектория контура выходит за геометрию IFC.",operation:path.operationId});
+      });
+    } else if(path.type==="DRILL" || path.type==="MILL" || path.type==="POCKET") {
+      const p=path.points[0];
+      if(!pointInPolygon2D(p,polygon)) {
+        issues.push({level:"error",code:"TOOLPATH_OUTSIDE_PART",message:"Центр инструмента находится вне допустимого IFC-контура.",operation:path.operationId});
+      } else {
+        const edgeDistance=Math.min(...polygon.map((a,i)=>distancePointToSegment2D(p,a,polygon[(i+1)%polygon.length])));
+        const radius=Number((plan.operations||[]).find(o=>o.id===path.operationId)?.toolDiameter || 6)/2;
+        if(edgeDistance<radius) issues.push({level:"warning",code:"TOOL_RADIUS_EDGE",message:"Радиус инструмента приближается к краю детали.",operation:path.operationId});
+      }
+    }
+  });
+  return issues;
+}
+
 function validateCncToolpaths(plan) {
   const issues=[];
   const thickness=Number(plan.thickness)||0;
@@ -3243,7 +3295,8 @@ function getCompiledManufacturingPlan(part) {
   plan.motionSafety=validateCncMotionSafety(plan);
   plan.toolpaths=buildCncToolpaths(plan);
   plan.toolpathValidation=validateCncToolpaths(plan);
-  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation];
+  plan.geometryToolpathValidation=validateToolpathAgainstGeometry(plan,part);
+  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation];
   plan.machineReady=plan.validation.every(x=>x.level!=="error") &&
     plan.status==="READY" &&
     plan.lifecycle.every(x=>x.valid) &&
