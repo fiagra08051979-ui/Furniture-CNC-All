@@ -3215,27 +3215,71 @@ function classifyCncGeometryOperation(op) {
   return op.type || "OTHER";
 }
 
+function polygonSignedArea(points){
+  let a=0;
+  for(let i=0;i<points.length;i++){const p=points[i],q=points[(i+1)%points.length];a+=p.x*q.y-q.x*p.y;}
+  return a/2;
+}
+function polygonConvexity(points){
+  let sign=0;
+  for(let i=0;i<points.length;i++){
+    const a=points[i],b=points[(i+1)%points.length],c=points[(i+2)%points.length];
+    const z=(b.x-a.x)*(c.y-b.y)-(b.y-a.y)*(c.x-b.x);
+    if(Math.abs(z)<1e-8) continue;
+    const s=Math.sign(z); if(!sign) sign=s; else if(sign!==s) return false;
+  }
+  return true;
+}
+function offsetConvexPolygon(points, distance){
+  if(!Array.isArray(points)||points.length<3) return null;
+  const area=polygonSignedArea(points);
+  if(Math.abs(area)<1e-8 || !polygonConvexity(points)) return null;
+  const ccw=area>0, lines=[];
+  for(let i=0;i<points.length;i++){
+    const a=points[i],b=points[(i+1)%points.length];
+    const dx=b.x-a.x,dy=b.y-a.y,len=Math.hypot(dx,dy)||1;
+    const nx=ccw ? -dy/len : dy/len, ny=ccw ? dx/len : -dx/len;
+    lines.push({p:{x:a.x+nx*distance,y:a.y+ny*distance},n:{x:nx,y:ny}});
+  }
+  const out=[];
+  for(let i=0;i<lines.length;i++){
+    const l1=lines[(i+lines.length-1)%lines.length],l2=lines[i];
+    const det=l1.n.x*l2.n.y-l1.n.y*l2.n.x;
+    if(Math.abs(det)<1e-8) return null;
+    const dx=l2.p.x-l1.p.x,dy=l2.p.y-l1.p.y;
+    const t=(dx*l2.n.y-dy*l2.n.x)/det;
+    out.push({x:l1.p.x+l1.n.x*t,y:l1.p.y+l1.n.y*t});
+  }
+  return out;
+}
 function buildPocketPasses(op, plan, part) {
   const contour=part.userData?.ifcContour?.path;
   if(!Array.isArray(contour)||contour.length<3) return [];
-  const pts=contour.map(p=>({x:Number(p.x)||0,y:Number(p.y)||0}));
-  const cx=pts.reduce((a,p)=>a+p.x,0)/pts.length, cy=pts.reduce((a,p)=>a+p.y,0)/pts.length;
-  const tool=Number(op.toolDiameter||op.diameter||6);
-  const step=Math.max(0.5,Math.min(tool*0.5,Math.min(Number(part.userData?.width||100),Number(part.userData?.height||100))/4));
-  const width=Math.max(1,Math.min(Number(part.userData?.width||100),Number(part.userData?.height||100)));
-  const levels=Math.max(1,Math.ceil(width/(2*step)));
+  let pts=contour.map(p=>({x:Number(p.x)||0,y:Number(p.y)||0}));
+  if(pts.length>1 && pts[0].x===pts[pts.length-1].x && pts[0].y===pts[pts.length-1].y) pts=pts.slice(0,-1);
+  if(!polygonConvexity(pts)) {
+    op._pocketGeometryStatus="BLOCKED_NON_CONVEX";
+    return [];
+  }
+  const tool=Math.max(0.1,Number(op.toolDiameter||op.diameter||6));
+  const step=Math.max(0.1,Number(op.stepOver)||tool*0.4);
+  const radius=tool/2;
   const depth=Math.abs(Number(op.depth)||1);
-  const passes=Math.max(1,Math.ceil(depth/Math.max(1,tool*0.75)));
+  const tech=op.cuttingParameters||{};
+  const passDepth=Math.max(0.1,Math.abs(Number(tech.passDepth)||Number(op.passDepth)||depth));
+  const zPasses=Math.max(1,Math.ceil(depth/passDepth));
   const result=[];
-  for(let z=1;z<=passes;z++){
-    const depthZ=-Math.min(depth,depth*z/passes);
-    for(let r=0;r<levels;r++){
-      const scale=Math.max(0.1,1-(r*step)/Math.max(width/2,1));
-      const path=pts.map(p=>({x:cx+(p.x-cx)*scale,y:cy+(p.y-cy)*scale,z:depthZ}));
-      path.push({...path[0]});
-      result.push({operationId:op.id,type:"POCKET",strategy:"CONCENTRIC",pass:z,level:r,stepOver:step,points:path,source:"IFC_POCKET"});
+  for(let z=1;z<=zPasses;z++){
+    const depthZ=-Math.min(depth,z*passDepth);
+    for(let offset=radius,level=0;;offset+=step,level++){
+      const path=offsetConvexPolygon(pts,-offset);
+      if(!path || path.length<3 || Math.abs(polygonSignedArea(path))<0.01) break;
+      path.push({...path[0],z:depthZ});
+      for(let i=0;i<path.length-1;i++) path[i].z=depthZ;
+      result.push({operationId:op.id,type:"POCKET",strategy:"CONCENTRIC_OFFSET",pass:z,level,stepOver:step,toolDiameter:tool,depth:depthZ,points:path,closed:true,source:"IFC_POCKET"});
     }
   }
+  if(!result.length) op._pocketGeometryStatus="BLOCKED_TOOL_TOO_LARGE";
   return result;
 }
 
