@@ -1788,6 +1788,7 @@ function clearModel() {
   }
   parts.length = 0;
   ifcImportedParts = [];
+  closeIfcModel();
 }
 
 function parseIfcGeometry(source) {
