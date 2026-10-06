@@ -100,6 +100,17 @@ await page.locator("#sheetLength").fill("3000");
 await page.locator("#sheetWidth").fill("3000");
 await page.locator(".showCuttingMap").first().click();
 await page.waitForTimeout(300);
+const quantityCheck = await page.evaluate(() => {
+  const gate = window._releaseGate;
+  const details = gate?.gatedParts || [];
+  const expected = details.reduce((sum, part) => sum + Number(part?.detailing?.quantity || 1), 0);
+  const placements = (gate?.sheetLayout?.sheets || []).flatMap(sheet => sheet.placements || []);
+  return { expected, actual: placements.length };
+});
+if (quantityCheck.expected !== quantityCheck.actual) {
+  throw new Error("Количество экземпляров в раскрое не соответствует деталировке: " + quantityCheck.expected + " != " + quantityCheck.actual);
+}
+await page.waitForTimeout(300);
 const cuttingStatus = await page.locator("#validation").textContent();
 if (!cuttingStatus.includes("Карта раскроя показана из проверенной раскладки Release Gate")) {
   throw new Error("Release Gate не пропустил проверенную карту раскроя. Статус: " + cuttingStatus);
