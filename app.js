@@ -1627,9 +1627,9 @@ function drillingSchematic(part) {
     '</svg>';
 }
 
-function buildCuttingPdfHtml(layout) {
+function buildCuttingPdfHtml(layout, gatedParts = parts) {
   const projectName = $("projectName")?.textContent || "Furniture AI Designer";
-  const detailPages = parts.map(part => {
+  const detailPages = gatedParts.map(part => {
     const u = part.userData;
     const d = u.detailing;
     const ops = cuttingOperationList(part);
@@ -1716,6 +1716,11 @@ function runReleaseGate() {
   report.modelRevision = modelRevision;
   report.sheetLayout = sheetLayout;
   report.cuttingGroups = cuttingGroups;
+  report.gatedParts = parts.map(part => ({
+    partNumber: part.userData?.partNumber || "",
+    name: part.userData?.name || "",
+    detailing: structuredClone(part.userData?.detailing || null)
+  }));
   window._releaseGate = report;
   return report;
 }
@@ -1744,7 +1749,14 @@ function exportSheetLayout() {
   }
 
   printWindow.document.open();
-  printWindow.document.write(buildCuttingPdfHtml(layout));
+  const gatedParts = (releaseGate.gatedParts || []).map(snapshot => ({
+    userData: {
+      partNumber: snapshot.partNumber,
+      name: snapshot.name,
+      detailing: snapshot.detailing
+    }
+  }));
+  printWindow.document.write(buildCuttingPdfHtml(layout, gatedParts));
   printWindow.document.close();
   printWindow.focus();
   setTimeout(() => printWindow.print(), 250);
