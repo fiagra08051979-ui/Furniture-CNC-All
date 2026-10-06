@@ -1935,6 +1935,16 @@ function clearModel() {
   window._constructionQC = null;
   window._releaseGate = null;
 
+  clearInteriorView();
+  const oldIfcPreview = scene.getObjectByName("IFC Preview");
+  if (oldIfcPreview) {
+    scene.remove(oldIfcPreview);
+    oldIfcPreview.traverse(obj => {
+      if (obj.geometry?.dispose) obj.geometry.dispose();
+      if (obj.material?.dispose) obj.material.dispose();
+    });
+  }
+
   while (root.children.length) {
     const object = root.children.pop();
     if (object.geometry?.dispose) object.geometry.dispose();
@@ -1967,8 +1977,14 @@ function detectIfcLengthScale(source) {
 }
 
 function renderIfcGeometryPreview(result) {
-  const old=$("ifcPreviewGroup");
-  if(old) old.remove();
+  const old=scene.getObjectByName("IFC Preview");
+  if(old){
+    scene.remove(old);
+    old.traverse(obj => {
+      if (obj.geometry?.dispose) obj.geometry.dispose();
+      if (obj.material?.dispose) obj.material.dispose();
+    });
+  }
   if(!result?.geometry?.points?.length) return;
   const points=result.geometry.points;
   const scale=detectIfcLengthScale(result.sourceText||"");
