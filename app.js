@@ -3553,9 +3553,9 @@ function getCompiledManufacturingPlan(part) {
   plan.segmentToolpathValidation=validateToolpathSegmentsAgainstGeometry(plan,part);
   plan.toolRadiusCompensation=validateToolRadiusCompensation(plan,part);
   plan.toolpathClearance=validateToolpathClearance(plan,part);
-  plan.typedToolpathValidation=validateTypedCompensatedToolpaths(plan);\n    plan.passPlanValidation=validateCncPassPlan(plan);
-  plan.compensatedToolpaths=buildTypedCompensatedToolpaths(plan,part);
-  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance,...plan.typedToolpathValidation];
+  plan.typedToolpathValidation=validateTypedCompensatedToolpaths(plan);\n  plan.passPlanValidation=validateCncPassPlan(plan);
+  plan.compensatedToolpaths=buildTypedCompensatedToolpaths(plan,part);\n  plan.toolpaths=buildCncToolpaths(plan);\n  plan.passPlanValidation=validateCncPassPlan(plan);
+  plan.validation=[...plan.validation,...plan.toolChangeValidation,...plan.motionSafety,...plan.toolpathValidation,...plan.geometryToolpathValidation,...plan.segmentToolpathValidation,...plan.toolRadiusCompensation,...plan.toolpathClearance,...plan.typedToolpathValidation,...plan.passPlanValidation];
   plan.machineReady=plan.validation.every(x=>x.level!=="error") &&
     plan.status==="READY" &&
     plan.lifecycle.every(x=>x.valid) &&
