@@ -17,6 +17,8 @@ const required = [
   ["утвержден блок библиотеки внешних фасадов", html.includes('id="facadeManufacturer"') && html.includes('id="facadeModel"') && html.includes('id="facadeLibraryItem"') && app.includes("facadeLibrary")],
   ["дизайнерские параметры сохраняются в JSON", app.includes('parameters.lightingEnabled = $("lightingEnabled").value') && app.includes('parameters.countertopThickness = $("countertopThickness").value') && app.includes('parameters.facadeModel = $("facadeModel").value')],
   ["утверждена визуализация мебели в интерьере", html.includes('id="interiorView"') && app.includes("function showInteriorView") && app.includes('name = "Визуализация интерьера"') && app.includes("Мебель вписана в интерьер.")],
+  ["AI image распознает конструктивные элементы", app.includes("async function analyzeFurnitureImageMetadata") && app.includes("verticalPeaks") && app.includes("horizontalPeaks") && app.includes("params.sections") && app.includes("params.doors") && app.includes("params.shelves")],
+  ["AI image применяет распознанную конструкцию", app.includes("function applyAiImageRecognition") && app.includes('aiImageApply') && app.includes("параметрическая модель построена.")],
   ["AI текст", app.includes("recognizeFurnitureText") && app.includes("aiRecognize")],
   ["AI изображение", app.includes("analyzeFurnitureImageMetadata") && app.includes("aiImageAnalyze")],
   ["IFC", app.includes("web-ifc") && app.includes("importIfcIntoFurnitureCore")],
