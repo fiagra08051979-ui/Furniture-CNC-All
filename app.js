@@ -1707,7 +1707,8 @@ function runReleaseGate() {
     partsCount: parts.length,
     partStates,
     cuttingGroups,
-    sheetLayout
+    sheetLayout,
+    modelRevision
   });
 
   report.modelRevision = modelRevision;
