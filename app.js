@@ -814,7 +814,18 @@ function readParams() {
     connectorDiameter: Number($("connectorDiameter").value),
     secondaryFastener: $("secondaryFastener").value,
     dowelDiameter: Number($("dowelDiameter").value),
-    eccentricDiameter: Number($("eccentricDiameter").value)
+    eccentricDiameter: Number($("eccentricDiameter").value),
+    lightingEnabled: $("lightingEnabled").value,
+    lightingMount: $("lightingMount").value,
+    shelfLighting: $("shelfLighting").value,
+    countertopEnabled: $("countertopEnabled").value,
+    countertopThickness: Number($("countertopThickness").value),
+    countertopPostforming: $("countertopPostforming").value,
+    countertopCut: $("countertopCut").value,
+    countertopMaterial: $("countertopMaterial").value,
+    facadeManufacturer: $("facadeManufacturer").value.trim(),
+    facadeModel: $("facadeModel").value.trim(),
+    facadeLibraryItem: $("facadeLibraryItem").value
   };
 }
 
@@ -2126,6 +2137,25 @@ function build() {
 
   clearModel();
   ifcMode = false;
+  root.userData.designOptions = {
+    lighting: {
+      enabled: p.lightingEnabled,
+      mount: p.lightingMount,
+      shelfLighting: p.shelfLighting
+    },
+    countertop: {
+      enabled: p.countertopEnabled,
+      thickness: p.countertopThickness,
+      postforming: p.countertopPostforming,
+      cut: p.countertopCut,
+      material: p.countertopMaterial
+    },
+    facadeLibrary: {
+      item: p.facadeLibraryItem,
+      manufacturer: p.facadeManufacturer,
+      model: p.facadeModel
+    }
+  };
 
   const innerW = p.width - 2 * p.thickness;
   const innerH = p.height - 2 * p.thickness;
@@ -2419,6 +2449,17 @@ $("saveProject").addEventListener("click", () => {
   parameters.secondaryFastener = $("secondaryFastener").value;
   parameters.dowelDiameter = $("dowelDiameter").value;
   parameters.eccentricDiameter = $("eccentricDiameter").value;
+  parameters.lightingEnabled = $("lightingEnabled").value;
+  parameters.lightingMount = $("lightingMount").value;
+  parameters.shelfLighting = $("shelfLighting").value;
+  parameters.countertopEnabled = $("countertopEnabled").value;
+  parameters.countertopThickness = $("countertopThickness").value;
+  parameters.countertopPostforming = $("countertopPostforming").value;
+  parameters.countertopCut = $("countertopCut").value;
+  parameters.countertopMaterial = $("countertopMaterial").value;
+  parameters.facadeManufacturer = $("facadeManufacturer").value;
+  parameters.facadeModel = $("facadeModel").value;
+  parameters.facadeLibraryItem = $("facadeLibraryItem").value;
   const data = {version: projectVersion,name:"Furniture AI Designer",parameters};
   const url = URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}));
   const link=document.createElement("a"); link.href=url; link.download="furniture-ai-project.json"; link.click(); URL.revokeObjectURL(url);
