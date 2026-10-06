@@ -2829,10 +2829,10 @@ function buildPostprocessedProgram(part) {
   return lines.join("\n");
 }
 function buildCncTraceabilityJournal(program,plan){
-  const lines=String(program||"").split(/\\r?\\n/);
+  const lines=String(program||"").split(/\r?\n/);
   const rows=[]; let active=null;
   lines.forEach((line,index)=>{
-    const m=line.match(/^;\\s*(.+?)\\s+([^\\s]+)$/);
+    const m=line.match(/^;\s*(.+?)\s+([^\s]+)$/);
     if(m && m[1] && plan.operations?.some(o=>o.id===m[2])){
       const op=plan.operations.find(o=>o.id===m[2]);
       const group=(plan.technologyGroups||[]).find(g=>g.operations?.includes(op.id));
@@ -2848,6 +2848,52 @@ function buildCncTraceabilityJournal(program,plan){
     }
   });
   return rows.map((r,i)=>({...r,traceId:"GCODE-"+String(i+1).padStart(4,"0"),sourceGeometryReference:r.expressId!=null?"IFC ExpressID "+r.expressId:"Внутренняя геометрия"}));
+}
+
+function validateCncTraceCoordinates(program,plan){
+  const issues=[];
+  const journal=buildCncTraceabilityJournal(program,plan);
+  const compiled=plan.compiledToolpathProgram||[];
+  const grouped=new Map();
+  journal.forEach(row=>{
+    if(!grouped.has(row.operationId)) grouped.set(row.operationId,[]);
+    grouped.get(row.operationId).push(row);
+  });
+  const byOp=new Map();
+  compiled.forEach(path=>{
+    if(!byOp.has(path.operationId)) byOp.set(path.operationId,[]);
+    byOp.get(path.operationId).push(path);
+  });
+  const tolerance=0.02;
+  const near=(a,b)=>Math.abs(Number(a)-Number(b))<=tolerance;
+  (plan.operations||[]).forEach(op=>{
+    const expected=byOp.get(op.id)||[];
+    const actual=grouped.get(op.id)||[];
+    if(expected.length!==actual.length){
+      issues.push({level:"error",code:"GCODE_TRACE_PATH_COUNT_MISMATCH",message:"Количество траекторий G-кода не соответствует скомпилированным траекториям операции.",operation:op.id,expected:expected.length,actual:actual.length});
+      return;
+    }
+    expected.forEach((path,k)=>{
+      const row=actual[k];
+      const exp=path.points||[];
+      const got=row.points||[];
+      if(exp.length!==got.length){
+        issues.push({level:"error",code:"GCODE_TRACE_POINT_COUNT_MISMATCH",message:"Количество координат G-кода не соответствует скомпилированной траектории.",operation:op.id,trajectory:k+1,expected:exp.length,actual:got.length});
+        return;
+      }
+      exp.forEach((p,j)=>{
+        const q=got[j];
+        if(!q || !near(p.x,q.x) || !near(p.y,q.y) || !near(p.z,q.z)){
+          issues.push({level:"error",code:"GCODE_TRACE_COORDINATE_MISMATCH",message:"Координата G-кода не соответствует скомпилированной траектории.",operation:op.id,trajectory:k+1,point:j+1,expected:{x:p.x,y:p.y,z:p.z},actual:q||null});
+        }
+      });
+      const minZ=Math.min(...exp.map(p=>Number(p.z)).filter(Number.isFinite));
+      const gotMinZ=Math.min(...got.map(p=>Number(p.z)).filter(Number.isFinite));
+      if(Number.isFinite(minZ) && Number.isFinite(gotMinZ) && Math.abs(minZ-gotMinZ)>tolerance)
+        issues.push({level:"error",code:"GCODE_TRACE_DEPTH_MISMATCH",message:"Рабочая глубина G-кода не соответствует скомпилированной траектории.",operation:op.id,trajectory:k+1,expected:minZ,actual:gotMinZ});
+    });
+  });
+  return issues;
 }
 
 function validateCncTraceability(program,plan){
@@ -2876,7 +2922,7 @@ function validateCncTraceability(program,plan){
 
 function validateGeneratedCncProgram(program,plan){
   const issues=[];
-  const lines=String(program||"").split(/\\r?\\n/);
+  const lines=String(program||"").split(/\r?\  issues.push(...validateCncTraceCoordinates(program,plan));\nn/);
   let currentTool=null,currentRpm=null,currentFeed=null,currentSafeZ=null;
   const toolIds=new Set((plan.operations||[]).map(o=>o.toolId).filter(Boolean));
   lines.forEach((line,index)=>{
