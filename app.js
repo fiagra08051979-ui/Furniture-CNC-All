@@ -801,6 +801,32 @@ function frontView() {
 
 function dxfPair(code, value) { return code + "\n" + value + "\n"; }
 
+function buildMillingGeometry(part) {
+  const u = part.userData;
+  const ops = [];
+  (u.processing || []).filter(op => /паз|фрез|выбор|карман/i.test(op.operation || "")).forEach((op, i) => {
+    const width = Math.max(1, Number(op.width) || Number(op.diameter) || 6);
+    const length = Math.max(width, Number(op.length) || width);
+    const depth = Math.max(0.1, Number(op.depth) || 3);
+    const x = Number(op.x) || 0;
+    const y = Number(op.y) || 0;
+    ops.push({
+      id:"M"+(i+1), type:"POCKET",
+      operation:op.operation || "Фрезеровка",
+      partNumber:u.partNumber,
+      x,y,z:Number(op.z)||0,width,length,depth,
+      path:[
+        [x-length/2,y-width/2],
+        [x+length/2,y-width/2],
+        [x+length/2,y+width/2],
+        [x-length/2,y+width/2],
+        [x-length/2,y-width/2]
+      ]
+    });
+  });
+  return ops;
+}
+
 function buildCncOperations(part) {
   const u = part.userData;
   const ops = [];
@@ -840,13 +866,10 @@ function buildCncOperations(part) {
     x:Number(h.x)||0,y:Number(h.y)||0,z:Number(h.z)||0,
     diameter:Number(h.diameter)||0,depth:Number(h.depth)||0,linkedHardware:h.type
   }));
-  (u.processing || []).filter(op => /паз|фрез|выбор|карман/i.test(op.operation || "")).forEach(op =>
-    add("MILL","Фрезеровка",{
-      x:Number(op.x)||0,y:Number(op.y)||0,z:Number(op.z)||0,
-      diameter:Number(op.diameter)||0,depth:Number(op.depth)||0,
-      source:op.operation
-    })
-  );
+  buildMillingGeometry(part).forEach(m => add("POCKET",m.operation,{
+    x:m.x,y:m.y,z:m.z,width:m.width,length:m.length,depth:m.depth,
+    path:m.path,source:m.operation
+  }));
   return ops;
 }
 
@@ -1067,10 +1090,18 @@ function exportAllCnc() {
   validate("CNC-программы подготовлены для " + parts.length + " деталей.", "ok");
 }
 
+function addMillingEntities(lines, part) {
+  buildMillingGeometry(part).forEach(m => {
+    lines.push("0","LWPOLYLINE","8","MILLING","90",m.path.length,"70",1);
+    m.path.forEach(([x,y]) => lines.push("10",x,"20",y));
+  });
+}
+
 function buildPartDxf(part) {
   const u = part.userData;
   const w = Number(u.width), h = Number(u.height);
   const lines = ["0","SECTION","2","HEADER","9","$INSUNITS","70","4","0","ENDSEC","0","SECTION","2","ENTITIES"];
+  addMillingEntities(lines, part);
   const addLine = (x1,y1,x2,y2,layer="OUTLINE") => {
     lines.push("0","LINE","8",layer,"10",x1,"20",y1,"30",0,"11",x2,"21",y2,"31",0);
   };
