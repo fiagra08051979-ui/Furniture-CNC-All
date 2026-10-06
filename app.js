@@ -1275,6 +1275,13 @@ function rebuildDetailingPipeline() {
     if (![u.width, u.height, u.depth].every(v => Number.isFinite(Number(v)) && Number(v) > 0)) {
       partIssues.push("некорректные габариты");
     }
+    if (!String(u.material || "").trim()) {
+      partIssues.push("не задан материал детали");
+    }
+    const detailQuantity = Number(u.quantity || 1);
+    if (!Number.isFinite(detailQuantity) || detailQuantity < 1 || !Number.isInteger(detailQuantity)) {
+      partIssues.push("некорректное количество детали");
+    }
     if (u.source === "IFC" && u.sheetSpecConfidence === "review") {
       partIssues.push("толщина листа IFC не подтверждена выбранным материалом; требуется ручная проверка");
     }
