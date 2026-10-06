@@ -1165,6 +1165,15 @@ function constructionChecksDetailed() {
         issues.push("Отверстие слишком близко к базовой грани: " + u.name + " / " + h.id);
       }
     });
+    if (u.source === "IFC") {
+      (u.technology?.drilling || []).forEach(op => {
+        if (op.status === "review") issues.push("IFC-присадка требует подтверждения базы: " + u.name + " / " + op.id);
+        if (!Number.isFinite(op.depth) || op.depth <= 0) issues.push("Недопустимая глубина IFC-присадки: " + u.name + " / " + op.id);
+        if (op.depth > Math.max(0, Number(u.technology?.thicknessEstimate || 0) - 1)) {
+          issues.push("Глубина IFC-присадки превышает безопасную толщину детали: " + u.name + " / " + op.id);
+        }
+      });
+    }
     if (u.kind === "Полка" && u.width < 100) issues.push("Полка слишком узкая: " + u.name);
     if (u.kind === "Фасад" && (u.width < 100 || u.height < 200)) issues.push("Недопустимые габариты фасада: " + u.name);
   });
@@ -2041,6 +2050,10 @@ function cncCollisionChecks(part) {
       issues.push({level:"error",operation:op.sequence,message:"CNC-контур IFC не подтверждён: автоматический экспорт запрещён до проверки геометрии"});
       return;
     }
+    if (op.type === "TECH_BLOCKED") {
+      issues.push({level:"error",operation:op.sequence,message:"Технологическая присадка IFC не подтверждена: автоматический экспорт запрещён"});
+      return;
+    }
     if (op.x !== undefined && (Math.abs(Number(op.x)) > w/2 || Math.abs(Number(op.y)||0) > h/2)) {
       issues.push({level:"error",operation:op.sequence,message:"Операция выходит за границы детали"});
     }
@@ -2085,6 +2098,12 @@ function buildCncOperations(part) {
     ...data
   });
   if (u.source === "IFC") {
+    if (u.technology?.drillingStatus === "review") {
+      add("TECH_BLOCKED","Технологическая присадка IFC требует подтверждения базы",{
+        reason:"Направление сверления и базовая поверхность ещё не подтверждены",
+        source:"IFC technology"
+      });
+    }
     if (!u.geometryCncReady || !u.ifcContour?.path?.length) {
       add("CONTOUR_BLOCKED","Контур детали IFC — требуется проверка геометрии",{
         reason:u.ifcContour?.reason || "контур не подготовлен автоматически"
