@@ -700,6 +700,8 @@ async function importIfcIntoFurnitureCore(file) {
     const technology = buildIfcTechnologyState();
     assignPartNumbers();
     const ifcTechnologyOps = buildIfcTechnologyOperations();
+    technology.ready = ifcImportedParts.filter(part => part.userData.technology?.status === "ready").length;
+    technology.review = ifcImportedParts.filter(part => part.userData.technology?.status !== "ready").length;
     const ifcHardwareSchedule = buildIfcHardwareSchedule();
     ifcImportedParts.forEach(part => {
       part.userData.ifcHardwareSchedule = ifcHardwareSchedule.filter(
