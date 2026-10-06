@@ -67,6 +67,37 @@ function validateParams(p) {
   return "";
 }
 
+
+function recommendHinges(frontHeight, frontWidth) {
+  // Базовое технологическое правило MVP; 600×2200 мм -> 5 петель.
+  const byHeight = frontHeight <= 900 ? 2 :
+    frontHeight <= 1500 ? 3 :
+    frontHeight <= 1900 ? 4 :
+    frontHeight <= 2300 ? 5 :
+    frontHeight <= 2600 ? 6 : 7;
+  const widthAdjustment = frontWidth > 700 ? 1 : 0;
+  return Math.min(8, byHeight + widthAdjustment);
+}
+
+function buildHardwareForFront(front) {
+  const u = front.userData;
+  if (!u.frontTechnology) return null;
+  const count = recommendHinges(u.height, u.width);
+  const positions = Array.from({length: count}, (_, i) => {
+    const topMargin = Math.max(96, Math.min(150, u.height * 0.07));
+    if (count === 1) return Math.round(u.height / 2);
+    const usable = Math.max(1, u.height - 2 * topMargin);
+    return Math.round(topMargin + usable * i / (count - 1));
+  });
+  return {
+    hingeType: u.frontTechnology.hinge,
+    limiter: u.frontTechnology.limiter,
+    openingAngle: u.frontTechnology.openingAngle,
+    quantity: count,
+    mountingPositionsFromBottom: positions
+  };
+}
+
 function material() {
   const colors = {
     ldsp18: 0xc69b68,
@@ -195,6 +226,7 @@ function build() {
         topBottomGap: sideGap,
         betweenGap
       };
+      parts[parts.length - 1].userData.hardware = buildHardwareForFront(parts[parts.length - 1]);
     }
   }
 
@@ -221,7 +253,8 @@ function renderPartsTable() {
       "<td>" + part.userData.depth.toFixed(0) + "</td>" +
       "<td>" + part.userData.material.toUpperCase() + "</td>" +
       "<td>" + part.userData.edges.map(e => e || "—").join(" / ") + "</td>" +
-      "<td>" + part.userData.quantity + "</td>";
+      "<td>" + part.userData.quantity + "</td>" +
+      "<td>" + (part.userData.hardware?.quantity || "—") + "</td>";
     row.addEventListener("click", () => focusPart(part));
     body.appendChild(row);
   });
@@ -282,7 +315,9 @@ function exportExcel() {
     "Тип фасада": part.userData.frontTechnology?.type || "",
     "Петли": part.userData.frontTechnology?.hinge || "",
     "Ограничитель": part.userData.frontTechnology?.limiter || "",
-    "Угол открывания": part.userData.frontTechnology?.openingAngle || ""
+    "Угол открывания": part.userData.frontTechnology?.openingAngle || "",
+    "Петель": part.userData.hardware?.quantity || "",
+    "Позиции петель, мм": part.userData.hardware?.mountingPositionsFromBottom?.join("; ") || ""
   }));
   const ws = XLSX.utils.json_to_sheet(rows); const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Деталировка");
