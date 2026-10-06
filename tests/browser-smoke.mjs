@@ -55,6 +55,12 @@ if (!ifcStatus.includes("Реальная IFC-геометрия")) throw new Er
 const ifcObjects = await page.locator("#ifcProjectObjects").textContent();
 if (!ifcObjects.includes("Распознано:")) throw new Error("IFC runtime не завершил распознавание деталей.");
 
+const ifcValidation = await page.locator("#validation").textContent();
+if (!ifcValidation.includes("IFC импортирован")) throw new Error("IFC runtime не завершил импорт: " + ifcValidation);
+
+await page.locator("#build").click();
+await page.waitForTimeout(1000);
+
 await page.locator("#material").selectOption("mdf18");
 await page.waitForTimeout(300);
 await page.locator("#edge1").selectOption({label:"ABS 2 мм"});
