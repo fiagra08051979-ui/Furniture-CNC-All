@@ -32,7 +32,7 @@ scene.add(root);
 
 const parts = [];
 let exploded = false;
-let projectVersion = "0.2";
+let projectVersion = "1.0.0";
 let ifcMode = false;
 let modelRevision = 0;
 
