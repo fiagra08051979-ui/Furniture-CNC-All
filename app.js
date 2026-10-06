@@ -2479,7 +2479,16 @@ function buildPartDxf(part) {
   const u = part.userData;
   const w = Number(u.width), h = Number(u.height);
   const lines = ["0","SECTION","2","HEADER","9","$INSUNITS","70","4","0","ENDSEC","0","SECTION","2","ENTITIES"];
-  addMillingEntities(lines, part);
+  const addPolyline = (points, layer="OUTLINE") => {
+    if (!points || points.length < 2) return;
+    lines.push("0","LWPOLYLINE","8",layer,"90",points.length,"70",1);
+    points.forEach(([x,y]) => lines.push("10",Number(x),"20",Number(y)));
+  };
+  if (u.source === "IFC" && u.ifcContour?.ready && u.ifcContour.path?.length >= 3) {
+    addPolyline(u.ifcContour.path,"IFC_OUTLINE");
+  } else {
+    addMillingEntities(lines, part);
+  }
   const addLine = (x1,y1,x2,y2,layer="OUTLINE") => {
     lines.push("0","LINE","8",layer,"10",x1,"20",y1,"30",0,"11",x2,"21",y2,"31",0);
   };
@@ -2490,12 +2499,15 @@ function buildPartDxf(part) {
     lines.push("0","LWPOLYLINE","8",layer,"90",points.length,"70",1);
     points.forEach(([x,y]) => lines.push("10",x,"20",y));
   };
-  addLine(-w/2,-h/2,w/2,-h/2);
-  addLine(w/2,-h/2,w/2,h/2);
-  addLine(w/2,h/2,-w/2,h/2);
-  addLine(-w/2,h/2,-w/2,-h/2);
+  if (!(u.source === "IFC" && u.ifcContour?.ready && u.ifcContour.path?.length >= 3)) {
+    addLine(-w/2,-h/2,w/2,-h/2);
+    addLine(w/2,-h/2,w/2,h/2);
+    addLine(w/2,h/2,-w/2,h/2);
+    addLine(-w/2,h/2,-w/2,-h/2);
+  }
 
-  const holes = [...(u.drilling || []), ...(u.shelfSupportDrilling || []), ...(u.bodyFasteners || []), ...(u.secondaryFasteners || [])];
+  const ifcHoles = u.source === "IFC" ? (u.technology?.drilling || []).filter(h => h.status === "ready") : [];
+  const holes = [...(u.drilling || []), ...ifcHoles, ...(u.shelfSupportDrilling || []), ...(u.bodyFasteners || []), ...(u.secondaryFasteners || [])];
   holes.forEach(hole => {
     const x = Number(hole.x) || 0, y = Number(hole.y) || 0;
     const r = (Number(hole.diameter) || 5) / 2;
