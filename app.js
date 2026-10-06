@@ -3066,7 +3066,18 @@ function buildProductionOperationLinks(part) {
       gcodeLines:t.lineStart!=null && t.lineEnd!=null ? Math.max(0,t.lineEnd-t.lineStart+1) : 0,
       lifecycle:op.lifecycle,
       source:op.source,
-      pathPoints:op.pathPoints
+      pathPoints:op.pathPoints,
+      trajectories:(plan.compiledToolpathProgram||[]).filter(p=>p.operationId===op.operationId).map(p=>({
+        passNumber:p.passNumber,
+        pathIndex:p.pathIndex,
+        start:p.workStart,
+        end:p.workEnd
+      })),
+      coordinates:(()=>{
+        const paths=(plan.compiledToolpathProgram||[]).filter(p=>p.operationId===op.operationId);
+        const p=paths[0]?.workStart;
+        return p ? {x:p.x,y:p.y,z:p.z} : null;
+      })()
     };
   });
 }
@@ -3181,19 +3192,22 @@ function exportProductionPdf() {
     doc.setFontSize(11); doc.text("Технологические операции",tableX,60);
     let y=67;
     doc.setFontSize(7);
-    doc.text("№",tableX,y); doc.text("Операция",tableX+10,y); doc.text("Инстр.",tableX+58,y); doc.text("S",tableX+92,y); doc.text("F",tableX+108,y); doc.text("Z",tableX+124,y); doc.text("ExpressID",tableX+142,y); doc.text("G-код",tableX+172,y);
+    doc.text("№",tableX,y); doc.text("Операция",tableX+10,y); doc.text("Инстр.",tableX+52,y); doc.text("S",tableX+82,y); doc.text("F",tableX+96,y); doc.text("X/Y/Z",tableX+112,y); doc.text("Проход",tableX+143,y); doc.text("ExpressID",tableX+158,y); doc.text("G-код",tableX+190,y);
     y+=6;
     operationLinks.forEach((link)=>{
       if(y>275){ doc.addPage("a3","landscape"); y=18; }
       const op=passport.operations.find(x=>x.operationId===link.operationId)||{};
       doc.text(String(link.mapNumber),tableX,y);
       doc.text(String(link.operationId||"").slice(0,20),tableX+10,y);
-      doc.text(String(link.toolName||"—").slice(0,15),tableX+58,y);
-      doc.text(String(op.rpm??"—"),tableX+92,y);
-      doc.text(String(op.feed??"—"),tableX+108,y);
-      doc.text(String(op.depth??0),tableX+124,y);
-      doc.text(String(link.expressId??"—").slice(0,12),tableX+142,y);
-      doc.text(link.lineStart!=null ? (link.lineStart+"-"+link.lineEnd) : "—",tableX+172,y);
+      doc.text(String(link.toolName||"—").slice(0,13),tableX+52,y);
+      doc.text(String(op.rpm??"—"),tableX+82,y);
+      doc.text(String(op.feed??"—"),tableX+96,y);
+      const c=link.coordinates;
+      doc.text(c ? (Number(c.x).toFixed(1)+"/"+Number(c.y).toFixed(1)+"/"+Number(c.z).toFixed(1)) : "—",tableX+112,y);
+      const passes=link.trajectories?.map(t=>t.passNumber).join(",")||"—";
+      doc.text(String(passes).slice(0,8),tableX+143,y);
+      doc.text(String(link.expressId??"—").slice(0,11),tableX+158,y);
+      doc.text(link.lineStart!=null ? (link.lineStart+"-"+link.lineEnd) : "—",tableX+190,y);
       y+=5;
     });
     doc.setFontSize(9);
@@ -3755,8 +3769,14 @@ function buildCompiledToolpathProgram(plan,part){
     if(points.length<2) return;
     const toolId=path.toolId||op?.toolId||null;
     const depth=Number(path.depth||op?.depth||0);
+    const passNumber=Number.isFinite(Number(path.pass)) ? Number(path.pass) : (Number.isFinite(Number(path.level)) ? Number(path.level) : index+1);
+    const workPoints=points.map(p=>({x:Number(p.x)||0,y:Number(p.y)||0,z:Number.isFinite(Number(p.z))?Number(p.z):0}));
     result.push({
       sequence:index+1,operationId:path.operationId,type:path.type||op?.type||"OTHER",toolId,safeZ,depth,
+      passNumber,
+      pathIndex:index+1,
+      workStart:workPoints[0]||null,
+      workEnd:workPoints[workPoints.length-1]||null,
       points:[
         {x:Number(points[0].x)||0,y:Number(points[0].y)||0,z:safeZ},
         ...points.map(p=>({x:Number(p.x)||0,y:Number(p.y)||0,z:Number.isFinite(Number(p.z))?Number(p.z):0})),
