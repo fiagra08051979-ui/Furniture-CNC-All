@@ -707,7 +707,7 @@ async function importIfcIntoFurnitureCore(file) {
     });
     const detailingPipeline = rebuildDetailingPipeline();
     const constructionQC = runConstructionQC(detailingPipeline);
-  const releaseGate = runReleaseGate();
+    const releaseGate = runReleaseGate();
     renderPartsTable();
     fitView();
 
@@ -728,7 +728,8 @@ async function importIfcIntoFurnitureCore(file) {
       " · соединения-кандидаты: " + ifcTechnologyOps.joints.length +
       " · позиции крепежа-кандидаты: " + ifcHardwareSchedule.length +
       " · деталировка: готово " + detailingPipeline.ready + ", на проверке " + detailingPipeline.review +
-      " · Construction QC: " + constructionQC.status;
+      " · Construction QC: " + constructionQC.status +
+      " · Release Gate: " + releaseGate.status;
 
     if ($("projectName")) $("projectName").textContent = file.name;
     if ($("status")) $("status").textContent = "IFC импортирован · геометрия является источником истины";
