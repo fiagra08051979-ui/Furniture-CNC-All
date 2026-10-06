@@ -80,6 +80,12 @@ function evaluateReleaseGateState({ qc, partsCount, partStates, cuttingGroups, s
   if (!qc) issues.push("Construction QC не выполнен.");
   if (qc && qc.status !== "PASS") issues.push("Construction QC имеет статус REVIEW.");
   if (!(partsCount > 0)) issues.push("Нет деталей проекта.");
+  if (Array.isArray(partStates) && Number(partsCount) !== partStates.length) {
+    issues.push("Количество состояний деталей не соответствует количеству деталей проекта.");
+  }
+  if (qc?.details?.length && Array.isArray(partStates) && qc.details.length !== partStates.length) {
+    issues.push("Construction QC не содержит полный состав деталей проекта.");
+  }
 
   (partStates || []).forEach(state => {
     const id = state.number || state.name || "без номера";
