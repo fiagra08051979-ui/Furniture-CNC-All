@@ -1089,24 +1089,56 @@ function assignPartNumbers() {
   });
 }
 
+function getSheetSpec(part) {
+  const u = part.userData;
+  if (Number.isFinite(Number(u.sheetThickness)) &&
+      Number.isFinite(Number(u.sheetLength)) &&
+      Number.isFinite(Number(u.sheetWidth))) {
+    return {
+      thickness: Math.round(u.sheetThickness),
+      length: Math.round(u.sheetLength),
+      width: Math.round(u.sheetWidth)
+    };
+  }
+
+  const target = Number($("thickness")?.value || 18);
+  const dims = [
+    {axis:"width", value:Number(u.width)},
+    {axis:"height", value:Number(u.height)},
+    {axis:"depth", value:Number(u.depth)}
+  ].filter(d => Number.isFinite(d.value));
+  dims.sort((a,b) => Math.abs(a.value-target) - Math.abs(b.value-target));
+  const thickness = dims[0]?.value || target;
+  const remaining = dims.filter(d => d !== dims[0]).map(d => Math.round(d.value));
+  u.sheetThickness = Math.round(thickness);
+  u.sheetLength = remaining[0] || Math.round(u.width);
+  u.sheetWidth = remaining[1] || Math.round(u.height);
+  return {
+    thickness: u.sheetThickness,
+    length: u.sheetLength,
+    width: u.sheetWidth
+  };
+}
+
 function buildCuttingGroups() {
   const groups = new Map();
   parts.forEach(part => {
     const u = part.userData;
+    const spec = getSheetSpec(part);
     const key = [
       u.material,
-      Math.round(u.depth),
+      spec.thickness,
       u.edges.join("|"),
-      Math.round(u.width),
-      Math.round(u.height)
+      spec.length,
+      spec.width
     ].join("::");
     if (!groups.has(key)) {
       groups.set(key, {
         key,
         material: u.material,
-        thickness: Math.round(u.depth),
-        length: Math.round(u.width),
-        width: Math.round(u.height),
+        thickness: spec.thickness,
+        length: spec.length,
+        width: spec.width,
         edges: [...u.edges],
         quantity: 0,
         partNumbers: []
@@ -1373,7 +1405,7 @@ function buildCuttingPdfHtml(layout) {
       '<table><thead><tr><th>№ детали</th><th>Размер</th><th>Материал</th><th>Кромка</th></tr></thead><tbody>'+
       sheet.placements.map(p => {
         const part = parts.find(x => x.userData.partNumber === p.partNumber);
-        return '<tr><td>'+p.partNumber+'</td><td>'+Math.round(p.length)+' × '+Math.round(p.width)+' × '+Math.round(part?.userData?.depth || 0)+' мм</td><td>'+
+        return '<tr><td>'+p.partNumber+'</td><td>'+Math.round(p.length)+' × '+Math.round(p.width)+' × '+Math.round(part ? getSheetSpec(part).thickness : 0)+' мм</td><td>'+
           (part?.userData?.material || sheet.material)+'</td><td>'+edgeSummary(part?.userData?.edges || p.edges)+'</td></tr>';
       }).join("")+'</tbody></table></section>';
   }).join("");
