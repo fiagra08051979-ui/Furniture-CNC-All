@@ -22,6 +22,8 @@ const required = [
   ["Construction QC Gate", app.includes("runConstructionQC") && app.includes("window._constructionQC")],
   ["Construction QC требует готовую деталировку каждой детали", app.includes("unresolvedDetails") && app.includes("detailing: unresolvedDetails.length === 0") && app.includes("details: detailStatuses")],
   ["Construction QC требует связь каждой детали с раскроем", app.includes("missingCuttingLink") && app.includes("cuttingLink: missingCuttingLink.length === 0") && app.includes("cuttingEligible")],
+  ["раскрой строится только из деталировки", app.includes("const d = u.detailing") && app.includes("d.cutting.thickness") && app.includes("d.cutting.length") && app.includes("d.cutting.width")],
+  ["Release Gate проверяет состав раскроя против деталировки", core.includes("expectedDetailByKey") && core.includes("Раскладка не соответствует количеству детали") && core.includes("Раскладка содержит размеры детали, не соответствующие деталировке")],
   ["Construction QC защищает геометрию IFC", app.includes("geometrySourceErrors") && app.includes("ifcGeometryLocked: geometrySourceErrors.length === 0")],
   ["Release Gate runtime", app.includes("function runReleaseGate()") && app.includes("evaluateReleaseGateState") && app.includes("window._releaseGate") && app.includes("выпуск PDF заблокирован")],
   ["Release Gate отвергает устаревший QC", app.includes("modelRevision") && app.includes("другой ревизии модели") && app.includes("qc.modelRevision")],
