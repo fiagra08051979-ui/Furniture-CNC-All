@@ -2774,6 +2774,36 @@ function buildPostprocessedProgram(part) {
   lines.push("G0 Z"+Number(plan.machineSetup?.safeZ||5).toFixed(3),...post.footer);
   return lines.join("\n");
 }
+function buildCncTraceabilityJournal(program,plan){
+  const lines=String(program||"").split(/\\r?\\n/);
+  const rows=[]; let active=null;
+  lines.forEach((line,index)=>{
+    const m=line.match(/^;\\s*(.+?)\\s+([^\\s]+)$/);
+    if(m && m[1] && plan.operations?.some(o=>o.id===m[2])){
+      const op=plan.operations.find(o=>o.id===m[2]);
+      active={lineStart:index+1,lineEnd:index+1,operationId:op.id,toolId:op.toolId||null,type:op.type,
+        technologyGroupKey:[op.toolId||"НЕТ",plan.material||"НЕИЗВЕСТНО"].join("|"),expressId:op.expressId||null,source:op.source||plan.source};
+      rows.push(active);
+    } else if(active && line.trim() && !line.trim().startsWith(";")){
+      active.lineEnd=index+1;
+    }
+  });
+  return rows.map((r,i)=>({...r,traceId:"GCODE-"+String(i+1).padStart(4,"0")}));
+}
+function validateCncTraceability(program,plan){
+  const issues=[];
+  const journal=buildCncTraceabilityJournal(program,plan);
+  (plan.operations||[]).forEach(op=>{
+    if(!journal.some(x=>x.operationId===op.id))
+      issues.push({level:"error",code:"GCODE_ORPHAN_OPERATION",message:"Операция отсутствует в трассировке управляющей программы.",operation:op.id});
+  });
+  const ids=new Set();
+  journal.forEach(row=>{
+    if(ids.has(row.traceId)) issues.push({level:"error",code:"GCODE_TRACE_DUPLICATE",message:"Дублируется идентификатор трассировки.",operation:row.operationId});
+    ids.add(row.traceId);
+  });
+  return {issues,journal};
+}
 function validateGeneratedCncProgram(program,plan){
   const issues=[];
   const lines=String(program||"").split(/\\r?\\n/);
@@ -2805,8 +2835,9 @@ function buildValidatedCncProgram(part){
   const plan=getCompiledManufacturingPlan(part);
   const program=buildCncJobProgram(part);
   const validation=validateGeneratedCncProgram(program,plan);
-  if(validation.some(x=>x.level==="error")) throw new Error("ЧПУ заблокировано: проверка управляющей программы обнаружила ошибки.");
-  return {program,validation};
+  const traceability=validateCncTraceability(program,plan);
+  if(validation.some(x=>x.level==="error") || traceability.issues.some(x=>x.level==="error")) throw new Error("ЧПУ заблокировано: проверка управляющей программы обнаружила ошибки трассировки.");
+  return {program,validation,traceability};
 }
 function exportAllCnc() {
   const setupIssues = validateCncMachineSetup();
