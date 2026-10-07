@@ -99,6 +99,7 @@ await page.waitForTimeout(4000);
 const apartmentGeometry = await page.locator("#ifcGeometry").textContent();
 const apartmentObjects = await page.locator("#ifcProjectObjects").textContent();
 const apartmentValidation = await page.locator("#validation").textContent();
+console.log("APARTMENT_RECO_DEBUG", JSON.stringify(await page.evaluate(() => window._ifcRecognitionDebug)));
 const apartmentParts = await page.evaluate(() => Array.isArray(window._releaseGate?.gatedParts) ? window._releaseGate.gatedParts.length : -1);
 if (!apartmentGeometry.includes("Реальная IFC-геометрия: 11 элементов")) throw new Error("Реальный IFC не разложен на 11 геометрических компонентов: " + apartmentGeometry);
 if (!apartmentObjects.includes("Фурнитура / ножка: 4") || !apartmentObjects.includes("фурнитура: 4 ножек")) throw new Error("4 ножки не переведены в фурнитуру: " + apartmentObjects);
