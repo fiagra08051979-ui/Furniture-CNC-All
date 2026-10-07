@@ -306,6 +306,18 @@ function recognizeIfcPart({ name, typeName, size, center, overallBox }) {
   if (thinZ && nearBack) {
     return { kind:"Задняя стенка", label:"Задняя стенка", confidence:"medium", reason:"геометрия + положение" };
   }
+
+  // Для IFC-моделей с Z-up после нормализации фасад может быть тонким
+  // по Y и иметь большую ширину, но занимать только часть глубины корпуса.
+  const frontFacadeByGeometry =
+    thinY &&
+    sx > maxX * 0.75 &&
+    sz > maxZ * 0.3 &&
+    sz < maxZ * 0.6;
+
+  if (frontFacadeByGeometry) {
+    return { kind:"Фасад", label:"Фасад", confidence:"medium", reason:"геометрия фасада + ширина + глубина" };
+  }
   if (thinX && (nearLeft || nearRight)) {
     return { kind:"Боковина", label:"Боковина", confidence:"medium", reason:"геометрия + край корпуса" };
   }
