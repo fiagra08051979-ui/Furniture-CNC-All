@@ -702,7 +702,6 @@ function applyIfcRecognition() {
 
   const counters = {};
   let lowConfidence = 0;
-  window._ifcRecognitionDebug = [];
 
   ifcImportedParts.forEach((part, index) => {
     const u = part.userData;
@@ -753,13 +752,6 @@ function applyIfcRecognition() {
     u.depth = size.z;
     u.thickness = Math.min(size.x, size.y, size.z);
     u.recognitionIndex = index + 1;
-    window._ifcRecognitionDebug.push({
-      name:u.sourceName || u.name,
-      size:{x:size.x,y:size.y,z:size.z},
-      center:{x:center.x,y:center.y,z:center.z},
-      recognized:result.kind,
-      reason:result.reason
-    });
   });
 
   return { counts:counters, lowConfidence };
