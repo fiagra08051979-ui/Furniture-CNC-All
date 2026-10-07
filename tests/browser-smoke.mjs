@@ -207,6 +207,13 @@ if (!interiorViewer || interiorViewer.context !== "interior" || interiorViewer.e
 if (Math.abs(Number(interiorViewer.minY)) > 1) {
   throw new Error("После встраивания в интерьер IFC должен оставаться на уровне пола: minY=" + interiorViewer.minY);
 }
+
+await page.locator("#explode").click();
+await page.waitForTimeout(300);
+const explodedFromInterior = await page.evaluate(() => window._viewerState || null);
+if (!explodedFromInterior?.exploded || explodedFromInterior.hasInterior) {
+  throw new Error("При запуске взрывной схемы после интерьера сцена интерьера должна быть скрыта.");
+}
 const apartmentScheduleBeforeRefresh = apartmentScheduleByPart;
 await page.locator("#material").selectOption("mdf18");
 await page.waitForTimeout(500);
