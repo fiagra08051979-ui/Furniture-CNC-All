@@ -1514,7 +1514,12 @@ function rebuildDetailingPipeline() {
       partIssues.push("некорректное количество детали");
     }
     if (u.source === "IFC" && u.sheetSpecConfidence === "review") {
-      partIssues.push("толщина листа IFC не подтверждена выбранным материалом; требуется ручная проверка");
+      const sourceThickness = Number.isFinite(Number(u.sheetThickness)) ? Math.round(Number(u.sheetThickness)) : "не определена";
+      const materialThickness = Number.isFinite(Number(u.sheetMaterialThickness)) ? Math.round(Number(u.sheetMaterialThickness)) : "не определена";
+      partIssues.push(
+        "толщина IFC " + sourceThickness + " мм не совпадает с выбранным материалом " +
+        materialThickness + " мм; требуется ручная проверка"
+      );
     }
     processing.forEach((op, index) => {
       if (!op || !op.type) partIssues.push("операция №" + (index + 1) + " без типа");
@@ -1584,13 +1589,33 @@ function rebuildDetailingPipeline() {
 
 function getSheetSpec(part) {
   const u = part.userData;
-  const target = Number($("thickness")?.value || 18);
+  const materialValue = String($("material")?.value || "");
+  const materialMatch = materialValue.match(/^(ldsp|mdf|ply)(15|16|18|22|35)$/);
+  const materialThickness = materialMatch ? Number(materialMatch[2]) : null;
+  const uiThickness = Number($("thickness")?.value || 18);
+  // Для IFC подтверждение толщины должно относиться именно к выбранному
+  // материалу. Поле толщины интерфейса не может само по себе подтвердить
+  // исходную толщину IFC, если такого материала в библиотеке нет.
+  const target = u.source === "IFC" && Number.isFinite(materialThickness)
+    ? materialThickness
+    : uiThickness;
+  const strictIfcMatch = u.source === "IFC";
+
+  const confidenceFor = value => {
+    if (!Number.isFinite(Number(value)) || !Number.isFinite(target)) return "review";
+    return strictIfcMatch
+      ? (Math.abs(Number(value) - target) < 0.01 ? "high" : "review")
+      : (Math.abs(Number(value) - target) <= 2 ? "high" : "review");
+  };
+
   if (Number.isFinite(Number(u.sheetThickness)) &&
       Number.isFinite(Number(u.sheetLength)) &&
       Number.isFinite(Number(u.sheetWidth)) &&
       Number.isFinite(Number(u.sheetSpecTargetThickness)) &&
       Number(u.sheetSpecTargetThickness) === target) {
-    u.sheetSpecConfidence = Math.abs(Number(u.sheetThickness) - target) <= 2 ? "high" : "review";
+    u.sheetSpecConfidence = confidenceFor(u.sheetThickness);
+    u.sheetMaterialThickness = Number.isFinite(materialThickness) ? materialThickness : null;
+    u.sheetThicknessConfirmed = u.sheetSpecConfidence === "high";
     return {
       thickness: Math.round(u.sheetThickness),
       length: Math.round(u.sheetLength),
@@ -1598,6 +1623,7 @@ function getSheetSpec(part) {
       confidence: u.sheetSpecConfidence
     };
   }
+
   const dims = [
     {axis:"width", value:Number(u.width)},
     {axis:"height", value:Number(u.height)},
@@ -1610,7 +1636,9 @@ function getSheetSpec(part) {
   u.sheetLength = remaining[0] || Math.round(u.width);
   u.sheetWidth = remaining[1] || Math.round(u.height);
   u.sheetSpecTargetThickness = target;
-  u.sheetSpecConfidence = Math.abs(thickness - target) <= 2 ? "high" : "review";
+  u.sheetMaterialThickness = Number.isFinite(materialThickness) ? materialThickness : null;
+  u.sheetSpecConfidence = confidenceFor(thickness);
+  u.sheetThicknessConfirmed = u.sheetSpecConfidence === "high";
   return {
     thickness: u.sheetThickness,
     length: u.sheetLength,
