@@ -83,7 +83,7 @@ async function ensureIfcApi() {
 // Внутренние технологические размеры Furniture AI Designer — мм.
 // Нормализация единиц меняет только масштаб представления в мм,
 // исходные IFC-вершины и их топология не изменяются.
-function detectIfcLengthScale(api, modelId) {
+function detectIfcModelLengthScale(api, modelId) {
   const prefixFactor = {
     EXA: 1e18, PETA: 1e15, TERA: 1e12, GIGA: 1e9,
     MEGA: 1e6, KILO: 1e3, HECTO: 1e2, DECA: 1e1,
@@ -704,7 +704,7 @@ async function importIfcIntoFurnitureCore(file) {
 
     const data = new Uint8Array(await file.arrayBuffer());
     ifcModelId = api.OpenModel(data, { COORDINATE_TO_ORIGIN: true });
-    const ifcLengthScale = detectIfcLengthScale(api, ifcModelId);
+    const ifcLengthScale = detectIfcModelLengthScale(api, ifcModelId);
     console.info("IFC единицы: масштаб к мм =", ifcLengthScale);
 
     if (ifcModelId === -1) {
