@@ -2712,6 +2712,21 @@ function focusPart(part) {
   controls.update();
 }
 
+function publishViewerState(context = "model") {
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(root);
+  window._viewerState = {
+    context,
+    exploded,
+    empty: box.isEmpty(),
+    minY: box.isEmpty() ? null : Number(box.min.y.toFixed(3)),
+    maxY: box.isEmpty() ? null : Number(box.max.y.toFixed(3)),
+    width: box.isEmpty() ? 0 : Number(box.getSize(new THREE.Vector3()).x.toFixed(3)),
+    height: box.isEmpty() ? 0 : Number(box.getSize(new THREE.Vector3()).y.toFixed(3)),
+    depth: box.isEmpty() ? 0 : Number(box.getSize(new THREE.Vector3()).z.toFixed(3))
+  };
+}
+
 function fitView() {
   root.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(root);
@@ -2721,6 +2736,7 @@ function fitView() {
   controls.target.copy(center);
   camera.position.set(center.x + radius * 0.95, center.y + radius * 0.7, center.z + radius);
   controls.update();
+  publishViewerState("model");
 }
 
 function setExplode(on) {
@@ -2750,6 +2766,7 @@ function setExplode(on) {
 
   root.updateMatrixWorld(true);
   syncPartLabels();
+  publishViewerState(on ? "exploded" : "assembled");
 
   $("explode").textContent = on ? "Свернуть" : "Взрыв";
 }
@@ -2828,6 +2845,7 @@ function showInteriorView() {
   );
   controls.update();
   root.updateMatrixWorld(true);
+  publishViewerState("interior");
   validate("Мебель вписана в интерьер.", "ok");
 }
 
