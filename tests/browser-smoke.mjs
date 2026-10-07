@@ -79,6 +79,22 @@ if (!ifcGeometryTextBeforeRefresh.includes("Реальная IFC-геометр�
   throw new Error("После IFC импорта не подтверждена доступная реальная геометрия.");
 }
 
+
+
+await page.locator("#material").selectOption("mdf18");
+await page.waitForTimeout(300);
+for (const id of ["#edge1","#edge2","#edge3","#edge4"]) await page.locator(id).selectOption({label:"ABS 2 мм"});
+await page.waitForTimeout(500);
+
+const ifcGeometryTextAfterRefresh = await page.locator("#ifcGeometry").textContent();
+const ifcPartsCountAfterRefresh = Number(await page.locator("#partsCount").textContent());
+const ifcRevisionAfterRefresh = await page.evaluate(() => window._modelRevision);
+if (!ifcGeometryTextAfterRefresh.includes("Реальная IFC-геометрия") ||
+    ifcPartsCountAfterRefresh !== ifcPartsCountBeforeRefresh ||
+    Number(ifcRevisionAfterRefresh) <= Number(ifcRevisionBeforeRefresh)) {
+  throw new Error("Смена материала/кромки не сохранила IFC-геометрию или не обновила технологическую ревизию.");
+}
+
 // Реальный IFC квартиры: проверяем полный runtime-пайплайн 11 геометрических компонентов -> 7 деталей + 4 ножки-фурнитуры.
 await page.locator("#ifcFile").setInputFiles("tests/fixtures/apartment80.ifc");
 await page.locator("#ifcImport").click();
@@ -101,20 +117,6 @@ const apartmentPlacements = (apartmentGate.sheetLayout?.sheets || []).flatMap(sh
 if (apartmentPlacements.some(p => /ножка|HW-00/i.test(String(p?.partName || p?.partNumber || "")))) throw new Error("Ножка-фурнитура попала в раскрой.");
 if (!apartmentValidation.includes("IFC импортирован")) throw new Error("Реальный IFC не завершил импорт: " + apartmentValidation);
 
-
-await page.locator("#material").selectOption("mdf18");
-await page.waitForTimeout(300);
-for (const id of ["#edge1","#edge2","#edge3","#edge4"]) await page.locator(id).selectOption({label:"ABS 2 мм"});
-await page.waitForTimeout(500);
-
-const ifcGeometryTextAfterRefresh = await page.locator("#ifcGeometry").textContent();
-const ifcPartsCountAfterRefresh = Number(await page.locator("#partsCount").textContent());
-const ifcRevisionAfterRefresh = await page.evaluate(() => window._modelRevision);
-if (!ifcGeometryTextAfterRefresh.includes("Реальная IFC-геометрия") ||
-    ifcPartsCountAfterRefresh !== ifcPartsCountBeforeRefresh ||
-    Number(ifcRevisionAfterRefresh) <= Number(ifcRevisionBeforeRefresh)) {
-  throw new Error("Смена материала/кромки не сохранила IFC-геометрию или не обновила технологическую ревизию.");
-}
 
 await page.locator("#frontGapBetween").fill("2");
 await page.locator("#width").fill("2400");
