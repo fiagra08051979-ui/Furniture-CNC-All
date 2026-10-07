@@ -78,6 +78,62 @@ async function ensureIfcApi() {
   return ifcApi;
 }
 
+// Нормализация единиц IFC для Furniture Core.
+// IFC может хранить геометрию в метрах, миллиметрах, футах или дюймах.
+// Внутренние технологические размеры Furniture AI Designer — мм.
+// Нормализация единиц меняет только масштаб представления в мм,
+// исходные IFC-вершины и их топология не изменяются.
+function detectIfcLengthScale(api, modelId) {
+  const prefixFactor = {
+    EXA: 1e18, PETA: 1e15, TERA: 1e12, GIGA: 1e9,
+    MEGA: 1e6, KILO: 1e3, HECTO: 1e2, DECA: 1e1,
+    DECI: 1e-1, CENTI: 1e-2, MILLI: 1e-3,
+    MICRO: 1e-6, NANO: 1e-9
+  };
+
+  try {
+    const projects = api.GetLineIDsWithType(modelId, WebIFC.IFCPROJECT);
+    if (!projects || typeof projects.size !== "function" || projects.size() === 0) return 1;
+
+    const project = api.GetLine(modelId, projects.get(0));
+    const unitsId = ifcScalar(project?.UnitsInContext);
+    if (!unitsId) return 1;
+
+    const assignment = api.GetLine(modelId, unitsId);
+    const units = vectorToArray(assignment?.Units);
+
+    for (const unitRef of units) {
+      const unitId = ifcScalar(unitRef);
+      if (!unitId) continue;
+
+      const unit = api.GetLine(modelId, unitId);
+      const unitType = String(ifcScalar(unit?.UnitType) || "").toUpperCase();
+      if (unitType !== "LENGTHUNIT") continue;
+
+      const name = String(ifcScalar(unit?.Name) || "").toUpperCase();
+      const prefix = String(ifcScalar(unit?.Prefix) || "").toUpperCase();
+
+      if (name === "METRE" || name === "METER") {
+        const metresPerIfcUnit = prefix ? (prefixFactor[prefix] ?? 1) : 1;
+        return metresPerIfcUnit * 1000;
+      }
+      if (name === "FOOT" || name === "FEET") return 304.8;
+      if (name === "INCH") return 25.4;
+
+      const conversionId = ifcScalar(unit?.ConversionFactor);
+      if (conversionId) {
+        const conversion = api.GetLine(modelId, conversionId);
+        const value = Number(ifcScalar(conversion?.ValueComponent));
+        if (Number.isFinite(value) && value > 0) return value * 1000;
+      }
+    }
+  } catch (error) {
+    console.warn("Не удалось определить единицы IFC; используется масштаб 1.", error);
+  }
+
+  return 1;
+}
+
 function closeIfcModel() {
   if (ifcApi && ifcModelId !== null) {
     try { ifcApi.CloseModel(ifcModelId); } catch {}
@@ -648,6 +704,8 @@ async function importIfcIntoFurnitureCore(file) {
 
     const data = new Uint8Array(await file.arrayBuffer());
     ifcModelId = api.OpenModel(data, { COORDINATE_TO_ORIGIN: true });
+    const ifcLengthScale = detectIfcLengthScale(api, ifcModelId);
+    console.info("IFC единицы: масштаб к мм =", ifcLengthScale);
 
     if (ifcModelId === -1) {
       throw new Error("IFC не удалось открыть.");
@@ -690,6 +748,11 @@ async function importIfcIntoFurnitureCore(file) {
       const typeName = line?.type ? api.GetNameFromTypeCode(line.type) : "IFC";
       const group = new THREE.Group();
       group.name = name;
+
+      // WebIFC отдаёт координаты в единицах исходного IFC.
+      // Масштабируем только контейнер Three.js до миллиметров.
+      // Геометрия/вершины IFC остаются неизменными.
+      group.scale.setScalar(ifcLengthScale);
 
       for (let i = 0; i < flatMesh.geometries.size(); i++) {
         const placed = flatMesh.geometries.get(i);
