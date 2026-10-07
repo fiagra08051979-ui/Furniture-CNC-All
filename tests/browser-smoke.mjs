@@ -109,6 +109,14 @@ if (!apartmentObjects.includes("Release Gate:")) throw new Error("Release Gate �
 const apartmentGate = await page.evaluate(() => window._releaseGate);
 if (!apartmentGate || !Array.isArray(apartmentGate.gatedParts) || apartmentGate.gatedParts.length !== 7) throw new Error("Release Gate должен видеть только 7 мебельных деталей.");
 if (apartmentGate.gatedParts.some(part => part?.userData?.isHardware || part?.isHardware)) throw new Error("Ножка-фурнитура попала в gatedParts Release Gate.");
+console.log("APARTMENT_JOINT_DEBUG", JSON.stringify({
+  parts: apartmentGate.gatedParts.map(part => ({
+    number: part.userData?.partNumber,
+    name: part.userData?.name,
+    kind: part.userData?.recognizedKind,
+    joints: (part.userData?.technology?.joints || []).map(j => ({id:j.id,type:j.type,partA:j.partA,partB:j.partB,axis:j.contactAxis,gap:j.gapMm,center:j.contactCenter}))
+  }))
+}));
 const apartmentThicknessReviews = apartmentGate.gatedParts
   .flatMap(part => Array.isArray(part?.detailing?.notes) ? part.detailing.notes : [])
   .filter(note => String(note).includes("толщина IFC 20 мм не совпадает с выбранным материалом 18 мм"));
