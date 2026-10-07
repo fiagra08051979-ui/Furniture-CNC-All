@@ -52,6 +52,7 @@ let modelRevision = 0;
 let ifcApi = null;
 let ifcModelId = null;
 let ifcImportedParts = [];
+let ifcHardwareParts = [];
 
 function ifcScalar(value) {
   if (value === null || value === undefined) return "";
@@ -345,8 +346,7 @@ function buildIfcTechnologyState() {
     "Вертикальная перегородка",
     "Задняя стенка",
     "Фасад",
-    "Ящик",
-    "Опора"
+    "Ящик"
   ]);
 
   let ready = 0;
@@ -423,6 +423,16 @@ function buildIfcHardwareSchedule() {
       add("Крепёж корпуса",cabinetJoints.length*2,part,"Определено фактическое сопряжение деталей","candidate");
     }
   });
+
+  if (ifcHardwareParts.length) {
+    add(
+      "Мебельная ножка",
+      ifcHardwareParts.length,
+      ifcHardwareParts[0],
+      "Реальная IFC-геометрия распознана как четыре опорных элемента; переведено в фурнитуру",
+      "ready"
+    );
+  }
 
   return schedule;
 }
@@ -710,7 +720,33 @@ function applyIfcRecognition() {
   return { counts:counters, lowConfidence };
 }
 
-async function importIfcIntoFurnitureCore(file) {
+async function moveIfcSupportsToHardware() {
+  const supports = ifcImportedParts.filter(part => part.userData?.recognizedKind === "Опора");
+  if (!supports.length) return 0;
+
+  supports.forEach((part, index) => {
+    const u = part.userData;
+    u.isHardware = true;
+    u.hardwareCategory = "Фурнитура";
+    u.hardwareType = "Мебельная ножка";
+    u.kind = "Фурнитура";
+    u.recognizedKind = "Фурнитура";
+    u.recognitionReason = "IFC-геометрия + положение в нижнем углу";
+    u.hardwareNumber = "HW-" + String(index + 1).padStart(3, "0");
+    u.name = "Ножка " + (index + 1);
+    u.source = "IFC";
+    u.geometryLocked = true;
+    u.technology = null;
+    u.detailing = null;
+  });
+
+  ifcHardwareParts = supports;
+  ifcImportedParts = ifcImportedParts.filter(part => !part.userData?.isHardware);
+
+  return supports.length;
+}
+
+function importIfcIntoFurnitureCore(file) {
   if (!file) return;
 
   const target = $("ifcRecognition");
@@ -839,6 +875,11 @@ async function importIfcIntoFurnitureCore(file) {
     if (!rendered) throw new Error("В IFC не найдены элементы с геометрией.");
 
     const recognition = applyIfcRecognition();
+    const hardwareCount = moveIfcSupportsToHardware();
+    if (hardwareCount) {
+      recognition.counts["Фурнитура / ножка"] = hardwareCount;
+      delete recognition.counts["Опора"];
+    }
     ifcMode = true;
     syncIfcParametersFromRecognition();
     applyIfcMaterial();
@@ -848,9 +889,12 @@ async function importIfcIntoFurnitureCore(file) {
     technology.ready = ifcImportedParts.filter(part => part.userData.technology?.status === "ready").length;
     technology.review = ifcImportedParts.filter(part => part.userData.technology?.status !== "ready").length;
     const ifcHardwareSchedule = buildIfcHardwareSchedule();
-    ifcImportedParts.forEach(part => {
+    [...ifcImportedParts, ...ifcHardwareParts].forEach(part => {
+      const key = part.userData.isHardware
+        ? part.userData.hardwareNumber
+        : part.userData.partNumber;
       part.userData.ifcHardwareSchedule = ifcHardwareSchedule.filter(
-        item => item.partNumber === part.userData.partNumber
+        item => item.partNumber === key || item.partName === part.userData.name
       );
     });
     const detailingPipeline = rebuildDetailingPipeline();
@@ -1283,7 +1327,7 @@ function runConstructionQC(pipelineResult = { ready:0, review:0, issues:[] }) {
   ];
 
   const uniqueIssues = [...new Set(baseIssues.filter(Boolean))];
-  const detailStatuses = parts.map(part => ({
+  const detailStatuses = parts.filter(part => !part.userData?.isHardware).map(part => ({
     partNumber: part.userData.partNumber || "",
     name: part.userData.name || "",
     role: part.userData.recognizedKind || part.userData.kind || "",
@@ -1905,7 +1949,7 @@ function runReleaseGate() {
     Number($("sheetMargin")?.value || 10)
   ) : null;
 
-  const partStates = parts.map(part => {
+  const partStates = parts.filter(part => !part.userData?.isHardware).map(part => {
     const u = part.userData || {};
     return {
       number: u.partNumber || "",
@@ -1928,7 +1972,7 @@ function runReleaseGate() {
   report.modelRevision = modelRevision;
   report.sheetLayout = sheetLayout;
   report.cuttingGroups = cuttingGroups;
-  report.gatedParts = parts.map(part => ({
+  report.gatedParts = parts.filter(part => !part.userData?.isHardware).map(part => ({
     partNumber: part.userData?.partNumber || "",
     name: part.userData?.name || "",
     sourceGeometry: part.userData?.source === "IFC" ? "IFC" : "Furniture Core",
@@ -2029,11 +2073,11 @@ function rebuildPartLabels() {
     label.material.map?.dispose();
     label.material.dispose();
   });
-  parts.forEach(part => createPartLabel(part));
+  parts.filter(part => !part.userData?.isHardware).forEach(part => createPartLabel(part));
 }
 
 function syncPartLabels() {
-  parts.forEach(part => {
+  parts.filter(part => !part.userData?.isHardware).forEach(part => {
     const label = part.userData.label;
     if (!label) return;
     label.position.copy(part.position).add(new THREE.Vector3(
@@ -2068,6 +2112,7 @@ function clearModel() {
   }
   parts.length = 0;
   ifcImportedParts = [];
+  ifcHardwareParts = [];
   closeIfcModel();
 }
 
@@ -2520,7 +2565,7 @@ function renderPartsTable() {
     .map(option => '<option value="' + option.value + '">' + option.textContent + '</option>')
     .join("");
 
-  parts.forEach((part, index) => {
+  parts.filter(part => !part.userData?.isHardware).forEach((part, index) => {
     const row = document.createElement("tr");
     row.innerHTML =
       "<td>" + part.userData.partNumber + "</td>" +
@@ -2548,7 +2593,8 @@ function renderPartsTable() {
 }
 
 function applyPartMaterial(index, materialValue) {
-  const part = parts[index];
+  const furnitureParts = parts.filter(part => !part.userData?.isHardware);
+  const part = furnitureParts[index];
   if (!part || !materialValue) return;
 
   part.userData.material = materialValue;
