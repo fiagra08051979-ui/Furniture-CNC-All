@@ -671,6 +671,12 @@ function applyIfcRecognition() {
     const size = box.getSize(new THREE.Vector3());
     const center = box.getCenter(new THREE.Vector3());
 
+    console.info("IFC_RECOGNITION_GEOMETRY", {
+      componentIndex: u.componentIndex,
+      name: u.name,
+      size: { x:size.x, y:size.y, z:size.z },
+      center: { x:center.x, y:center.y, z:center.z }
+    });
     const result = recognizeIfcPart({
       name: u.sourceName || u.name,
       typeName: u.ifcType,
