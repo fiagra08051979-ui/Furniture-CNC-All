@@ -2723,7 +2723,8 @@ function publishViewerState(context = "model") {
     maxY: box.isEmpty() ? null : Number(box.max.y.toFixed(3)),
     width: box.isEmpty() ? 0 : Number(box.getSize(new THREE.Vector3()).x.toFixed(3)),
     height: box.isEmpty() ? 0 : Number(box.getSize(new THREE.Vector3()).y.toFixed(3)),
-    depth: box.isEmpty() ? 0 : Number(box.getSize(new THREE.Vector3()).z.toFixed(3))
+    depth: box.isEmpty() ? 0 : Number(box.getSize(new THREE.Vector3()).z.toFixed(3)),
+    hasInterior: Boolean(interiorGroup)
   };
 }
 
@@ -2740,6 +2741,7 @@ function fitView() {
 }
 
 function setExplode(on) {
+  if (on) clearInteriorView();
   exploded = on;
 
   // Взрывная схема должна работать одинаково для параметрической и IFC-модели.
