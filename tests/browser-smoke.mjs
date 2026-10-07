@@ -69,12 +69,34 @@ if (!ifcObjects.includes("Распознано:")) throw new Error("IFC runtime 
 const ifcValidation = await page.locator("#validation").textContent();
 if (!ifcValidation.includes("IFC импортирован")) throw new Error("IFC runtime не завершил импорт: " + ifcValidation);
 
-// Реальный IFC квартиры: проверяем полный runtime-пайплайн 11 геометрических компонентов -> 7 деталей + 4 ножки-фурнитуры.\nawait page.locator("#ifcFile").setInputFiles("tests/fixtures/apartment80.ifc");\nawait page.locator("#ifcImport").click();\nawait page.waitForTimeout(4000);\nconst apartmentGeometry = await page.locator("#ifcGeometry").textContent();\nconst apartmentObjects = await page.locator("#ifcProjectObjects").textContent();\nconst apartmentValidation = await page.locator("#validation").textContent();\nconst apartmentParts = Number(await page.locator("#partsCount").textContent());\nif (!apartmentGeometry.includes("Реальная IFC-геометрия: 11 элементов")) throw new Error("Реальный IFC не разложен на 11 геометрических компонентов: " + apartmentGeometry);\nif (!apartmentObjects.includes("Фурнитура / ножка: 4") || !apartmentObjects.includes("фурнитура: 4 ножек")) throw new Error("4 ножки не переведены в фурнитуру: " + apartmentObjects);\nif (apartmentParts !== 7) throw new Error("Ожидалось 7 мебельных деталей после исключения 4 ножек, получено: " + apartmentParts);\nif (!apartmentObjects.includes("деталировка:")) throw new Error("IFC-деталировка не дошла до статуса.");\nif (!apartmentObjects.includes("Construction QC:")) throw new Error("Construction QC не дошёл до статуса.");\nif (!apartmentObjects.includes("Release Gate:")) throw new Error("Release Gate не дошёл до статуса.");\nconst apartmentGate = await page.evaluate(() => window._releaseGate);\nif (!apartmentGate || !Array.isArray(apartmentGate.gatedParts) || apartmentGate.gatedParts.length !== 7) throw new Error("Release Gate должен видеть только 7 мебельных деталей.");\nif (apartmentGate.gatedParts.some(part => part?.userData?.isHardware || part?.isHardware)) throw new Error("Ножка-фурнитура попала в gatedParts Release Gate.");\nconst apartmentPlacements = (apartmentGate.sheetLayout?.sheets || []).flatMap(sheet => sheet.placements || []);\nif (apartmentPlacements.some(p => /ножка|HW-00/i.test(String(p?.partName || p?.partNumber || "")))) throw new Error("Ножка-фурнитура попала в раскрой.");\nif (!apartmentValidation.includes("IFC импортирован")) throw new Error("Реальный IFC не завершил импорт: " + apartmentValidation);\n\nconst ifcGeometryTextBeforeRefresh = await page.locator("#ifcGeometry").textContent();
+const ifcGeometryTextBeforeRefresh = await page.locator("#ifcGeometry").textContent();
 const ifcPartsCountBeforeRefresh = Number(await page.locator("#partsCount").textContent());
 const ifcRevisionBeforeRefresh = await page.evaluate(() => window._modelRevision);
 if (!ifcGeometryTextBeforeRefresh.includes("Реальная IFC-геометрия") || !(ifcPartsCountBeforeRefresh > 0)) {
   throw new Error("После IFC импорта не подтверждена доступная реальная геометрия.");
 }
+
+// Реальный IFC квартиры: проверяем полный runtime-пайплайн 11 геометрических компонентов -> 7 деталей + 4 ножки-фурнитуры.
+await page.locator("#ifcFile").setInputFiles("tests/fixtures/apartment80.ifc");
+await page.locator("#ifcImport").click();
+await page.waitForTimeout(4000);
+const apartmentGeometry = await page.locator("#ifcGeometry").textContent();
+const apartmentObjects = await page.locator("#ifcProjectObjects").textContent();
+const apartmentValidation = await page.locator("#validation").textContent();
+const apartmentParts = Number(await page.locator("#partsCount").textContent());
+if (!apartmentGeometry.includes("Реальная IFC-геометрия: 11 элементов")) throw new Error("Реальный IFC не разложен на 11 геометрических компонентов: " + apartmentGeometry);
+if (!apartmentObjects.includes("Фурнитура / ножка: 4") || !apartmentObjects.includes("фурнитура: 4 ножек")) throw new Error("4 ножки не переведены в фурнитуру: " + apartmentObjects);
+if (apartmentParts !== 7) throw new Error("Ожидалось 7 мебельных деталей после исключения 4 ножек, получено: " + apartmentParts);
+if (!apartmentObjects.includes("деталировка:")) throw new Error("IFC-деталировка не дошла до статуса.");
+if (!apartmentObjects.includes("Construction QC:")) throw new Error("Construction QC не дошёл до статуса.");
+if (!apartmentObjects.includes("Release Gate:")) throw new Error("Release Gate не дошёл до статуса.");
+const apartmentGate = await page.evaluate(() => window._releaseGate);
+if (!apartmentGate || !Array.isArray(apartmentGate.gatedParts) || apartmentGate.gatedParts.length !== 7) throw new Error("Release Gate должен видеть только 7 мебельных деталей.");
+if (apartmentGate.gatedParts.some(part => part?.userData?.isHardware || part?.isHardware)) throw new Error("Ножка-фурнитура попала в gatedParts Release Gate.");
+const apartmentPlacements = (apartmentGate.sheetLayout?.sheets || []).flatMap(sheet => sheet.placements || []);
+if (apartmentPlacements.some(p => /ножка|HW-00/i.test(String(p?.partName || p?.partNumber || "")))) throw new Error("Ножка-фурнитура попала в раскрой.");
+if (!apartmentValidation.includes("IFC импортирован")) throw new Error("Реальный IFC не завершил импорт: " + apartmentValidation);
+
 
 await page.locator("#material").selectOption("mdf18");
 await page.waitForTimeout(300);
