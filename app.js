@@ -720,7 +720,7 @@ function applyIfcRecognition() {
   return { counts:counters, lowConfidence };
 }
 
-async function moveIfcSupportsToHardware() {
+function moveIfcSupportsToHardware() {
   const supports = ifcImportedParts.filter(part => part.userData?.recognizedKind === "Опора");
   if (!supports.length) return 0;
 
