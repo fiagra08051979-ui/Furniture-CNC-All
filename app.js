@@ -247,7 +247,10 @@ function recognizeIfcPart({ name, typeName, size, center, overallBox }) {
   const smallSupport =
     minDim <= 8 &&
     Math.max(sx, sy, sz) <= 80 &&
-    center.y <= overallMin.y + Math.max(sy * 1.5, maxY * 0.06);
+    (
+      Math.abs(center.x - overallMin.x) <= Math.max(sx, maxX * 0.12) ||
+      Math.abs(overallMax.x - center.x) <= Math.max(sx, maxX * 0.12)
+    );
 
   if (smallSupport) {
     return { kind:"Опора", label:"Опора", confidence:"high", reason:"геометрия + положение в нижнем углу" };
@@ -671,13 +674,6 @@ function applyIfcRecognition() {
     const size = box.getSize(new THREE.Vector3());
     const center = box.getCenter(new THREE.Vector3());
 
-    if (u.componentIndex >= 6) {
-      console.info("IFC_LEG_DEBUG", JSON.stringify({
-        componentIndex:u.componentIndex,
-        size:{x:Number(size.x.toFixed(1)),y:Number(size.y.toFixed(1)),z:Number(size.z.toFixed(1))},
-        center:{x:Number(center.x.toFixed(1)),y:Number(center.y.toFixed(1)),z:Number(center.z.toFixed(1))}
-      }));
-    }
     const result = recognizeIfcPart({
       name: u.sourceName || u.name,
       typeName: u.ifcType,
