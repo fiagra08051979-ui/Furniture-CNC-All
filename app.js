@@ -664,7 +664,22 @@ function refreshIfcTechnology() {
   applyIfcMaterial();
   buildIfcTechnologyState();
   buildIfcTechnologyOperations();
-  const ifcHardwareSchedule = buildIfcHardwareSchedule();
+  // Состав IFC-фурнитуры не зависит от смены материала/кромки.
+  // Сохраняем предыдущий runtime-снимок, если новый расчёт семантически идентичен,
+  // чтобы обновление технологии не разрывало ссылки на hardware schedule.
+  const previousIfcHardwareSchedule = Array.isArray(window._ifcHardwareSchedule)
+    ? window._ifcHardwareSchedule
+    : [];
+  const rebuiltIfcHardwareSchedule = buildIfcHardwareSchedule();
+  const scheduleKey = item => [
+    item.type, item.quantity, item.partNumber, item.partName,
+    item.role, item.status, item.reason, item.source
+  ].join("|");
+  const previousScheduleKey = previousIfcHardwareSchedule.map(scheduleKey).join("||");
+  const rebuiltScheduleKey = rebuiltIfcHardwareSchedule.map(scheduleKey).join("||");
+  const ifcHardwareSchedule = previousScheduleKey === rebuiltScheduleKey
+    ? previousIfcHardwareSchedule
+    : rebuiltIfcHardwareSchedule;
   window._ifcHardwareSchedule = ifcHardwareSchedule;
   [...ifcImportedParts, ...ifcHardwareParts].forEach(part => {
     const key = part.userData.isHardware
