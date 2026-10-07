@@ -663,7 +663,17 @@ function refreshIfcTechnology() {
   applyIfcMaterial();
   buildIfcTechnologyState();
   buildIfcTechnologyOperations();
-  buildIfcHardwareSchedule();
+  const ifcHardwareSchedule = buildIfcHardwareSchedule();
+  [...ifcImportedParts, ...ifcHardwareParts].forEach(part => {
+    const key = part.userData.isHardware
+      ? part.userData.hardwareNumber
+      : part.userData.partNumber;
+    part.userData.ifcHardwareSchedule = part.userData.isHardware
+      ? ifcHardwareSchedule.filter(item => item.type === "Мебельная ножка")
+      : ifcHardwareSchedule.filter(
+          item => item.partNumber === key || item.partName === part.userData.name
+        );
+  });
   const detailingPipeline = rebuildDetailingPipeline();
   const constructionQC = runConstructionQC(detailingPipeline);
   const releaseGate = runReleaseGate();
