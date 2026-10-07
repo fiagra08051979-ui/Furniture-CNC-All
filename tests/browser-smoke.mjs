@@ -11,6 +11,25 @@ page.on("console", message => {
 
 await page.goto("http://127.0.0.1:5173/", { waitUntil: "networkidle", timeout: 60000 });
 
+const canvasCount = await page.locator("#viewer canvas").count();
+if (canvasCount !== 1) throw new Error("3D-окно не создано.");
+const initialRender = await page.evaluate(() => {
+  const canvas = document.querySelector("#viewer canvas");
+  return {
+    width: canvas?.width || 0,
+    height: canvas?.height || 0,
+    hasRenderer: !!canvas
+  };
+});
+if (!initialRender.hasRenderer || initialRender.width <= 0 || initialRender.height <= 0) {
+  throw new Error("Three.js renderer не вывел рабочее 3D-окно: " + JSON.stringify(initialRender));
+}
+const initialParams = await page.evaluate(() =>
+  ["width","height","depth","thickness","sections","shelves","fixedPartitions","doors","frontGapTB","frontGapBetween"]
+    .map(id => document.getElementById(id)?.value || "")
+);
+if (initialParams.some(Boolean)) throw new Error("Новый проект не должен содержать предзаполненные параметры шкафа: " + JSON.stringify(initialParams));
+
 await page.locator("#sheetLength").fill("3000");
 await page.locator("#sheetWidth").fill("3000");
 await page.locator("#build").click();
