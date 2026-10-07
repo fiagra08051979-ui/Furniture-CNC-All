@@ -430,7 +430,7 @@ function buildIfcHardwareSchedule() {
       ifcHardwareParts.length,
       ifcHardwareParts[0],
       "Реальная IFC-геометрия распознана как четыре опорных элемента; переведено в фурнитуру",
-      "ready"
+      "candidate"
     );
   }
 
@@ -924,6 +924,7 @@ function importIfcIntoFurnitureCore(file) {
       " · технология: готово " + technology.ready + ", на проверке " + technology.review +
       " · соединения-кандидаты: " + ifcTechnologyOps.joints.length +
       " · позиции крепежа-кандидаты: " + ifcHardwareSchedule.length +
+      " · фурнитура: " + ifcHardwareParts.length + " ножек" +
       " · деталировка: готово " + detailingPipeline.ready + ", на проверке " + detailingPipeline.review +
       " · Construction QC: " + constructionQC.status +
       " · Release Gate: " + releaseGate.status;
