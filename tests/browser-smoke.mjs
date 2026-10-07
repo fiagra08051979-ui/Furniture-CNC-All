@@ -110,12 +110,14 @@ const apartmentGate = await page.evaluate(() => window._releaseGate);
 if (!apartmentGate || !Array.isArray(apartmentGate.gatedParts) || apartmentGate.gatedParts.length !== 7) throw new Error("Release Gate должен видеть только 7 мебельных деталей.");
 if (apartmentGate.gatedParts.some(part => part?.userData?.isHardware || part?.isHardware)) throw new Error("Ножка-фурнитура попала в gatedParts Release Gate.");
 console.log("APARTMENT_JOINT_DEBUG", JSON.stringify({
-  parts: apartmentGate.gatedParts.map(part => ({
-    number: part.userData?.partNumber,
-    name: part.userData?.name,
-    kind: part.userData?.recognizedKind,
-    joints: (part.userData?.technology?.joints || []).map(j => ({id:j.id,type:j.type,partA:j.partA,partB:j.partB,axis:j.contactAxis,gap:j.gapMm,center:j.contactCenter}))
-  }))
+  partStates: apartmentGate.partStates?.map(part => ({
+    number: part.number,
+    source: part.sourceGeometry,
+    detailingStatus: part.detailing?.status,
+    notes: part.detailing?.notes,
+    construction: part.detailing?.construction
+  })),
+  qc: apartmentGate.qc
 }));
 const apartmentThicknessReviews = apartmentGate.gatedParts
   .flatMap(part => Array.isArray(part?.detailing?.notes) ? part.detailing.notes : [])
