@@ -253,10 +253,6 @@ function recognizeIfcPart({ name, typeName, size, center, overallBox }) {
     (
       Math.abs(center.x - overallMin.x) <= Math.max(sx, maxX * 0.12) ||
       Math.abs(overallMax.x - center.x) <= Math.max(sx, maxX * 0.12)
-    ) &&
-    (
-      Math.abs(center.z - overallMin.z) <= Math.max(sz, maxZ * 0.12) ||
-      Math.abs(overallMax.z - center.z) <= Math.max(sz, maxZ * 0.12)
     );
 
   if (smallSupport) {
