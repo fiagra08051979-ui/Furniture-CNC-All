@@ -300,13 +300,6 @@ function recognizeIfcPart({ name, typeName, size, center, overallBox }) {
   const nearFront = Math.abs(overallMax.z - center.z) <= Math.max(sz * 1.2, maxZ * 0.05);
   const nearBack = Math.abs(center.z - overallMin.z) <= Math.max(sz * 1.2, maxZ * 0.05);
 
-  if (thinZ && nearFront) {
-    return { kind:"Фасад", label:"Фасад", confidence:"medium", reason:"геометрия + положение" };
-  }
-  if (thinZ && nearBack) {
-    return { kind:"Задняя стенка", label:"Задняя стенка", confidence:"medium", reason:"геометрия + положение" };
-  }
-
   // WebIFC сохраняет геометрию компонента в IFC Z-up системе координат.
   // Для распознавания используем фактическую геометрию IFC: Z — вертикаль,
   // Y — глубина, X — ширина. Это не изменяет исходную геометрию.
@@ -316,7 +309,7 @@ function recognizeIfcPart({ name, typeName, size, center, overallBox }) {
   const nearBackY = Math.abs(center.y - overallMin.y) <= Math.max(sy * 1.2, maxY * 0.05);
 
   const horizontalCabinetPanel =
-    sz <= plateTol &&
+    thinZ &&
     sx > maxX * 0.75 &&
     sy > maxY * 0.7;
 
@@ -343,14 +336,11 @@ function recognizeIfcPart({ name, typeName, size, center, overallBox }) {
     sz > maxZ * 0.3 &&
     sz < maxZ * 0.6 &&
     nearFrontY;
-    thinY &&
-    sx > maxX * 0.75 &&
-    sz > maxZ * 0.3 &&
-    sz < maxZ * 0.6;
 
   if (frontFacadeByGeometry) {
     return { kind:"Фасад", label:"Фасад", confidence:"high", reason:"IFC Z-up: фронтальная плоскость корпуса" };
   }
+
   if (thinX && (nearLeft || nearRight)) {
     return { kind:"Боковина", label:"Боковина", confidence:"medium", reason:"геометрия + край корпуса" };
   }
