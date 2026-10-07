@@ -307,31 +307,49 @@ function recognizeIfcPart({ name, typeName, size, center, overallBox }) {
     return { kind:"Задняя стенка", label:"Задняя стенка", confidence:"medium", reason:"геометрия + положение" };
   }
 
-  // Полноразмерная горизонтальная панель корпуса должна классифицироваться
-  // раньше геометрического правила фасада. У фасада глубина существенно меньше
-  // глубины корпуса, поэтому это правило не затрагивает реальные фронты.
+  // WebIFC сохраняет геометрию компонента в IFC Z-up системе координат.
+  // Для распознавания используем фактическую геометрию IFC: Z — вертикаль,
+  // Y — глубина, X — ширина. Это не изменяет исходную геометрию.
+  const nearBottomZ = Math.abs(center.z - overallMin.z) <= Math.max(sz * 0.8, maxZ * 0.04);
+  const nearTopZ = Math.abs(overallMax.z - center.z) <= Math.max(sz * 0.8, maxZ * 0.04);
+  const nearFrontY = Math.abs(overallMax.y - center.y) <= Math.max(sy * 1.2, maxY * 0.05);
+  const nearBackY = Math.abs(center.y - overallMin.y) <= Math.max(sy * 1.2, maxY * 0.05);
+
   const horizontalCabinetPanel =
+    sz <= plateTol &&
+    sx > maxX * 0.75 &&
+    sy > maxY * 0.7;
+
+  if (horizontalCabinetPanel && nearBottomZ) {
+    return { kind:"Дно", label:"Дно", confidence:"high", reason:"IFC Z-up: горизонтальная панель + нижняя граница" };
+  }
+  if (horizontalCabinetPanel && nearTopZ) {
+    return { kind:"Крышка", label:"Крышка", confidence:"high", reason:"IFC Z-up: горизонтальная панель + верхняя граница" };
+  }
+
+  const rearWallByGeometry =
     thinY &&
     sx > maxX * 0.75 &&
-    sz > maxZ * 0.7;
+    sz > maxZ * 0.7 &&
+    nearBackY;
 
-  if (horizontalCabinetPanel && nearBottom) {
-    return { kind:"Дно", label:"Дно", confidence:"high", reason:"горизонтальная панель корпуса + нижняя граница" };
-  }
-  if (horizontalCabinetPanel && nearTop) {
-    return { kind:"Крышка", label:"Крышка", confidence:"high", reason:"горизонтальная панель корпуса + верхняя граница" };
+  if (rearWallByGeometry) {
+    return { kind:"Задняя стенка", label:"Задняя стенка", confidence:"high", reason:"IFC Z-up: задняя плоскость корпуса" };
   }
 
-  // Для IFC-моделей с Z-up после нормализации фасад может быть тонким
-  // по Y и иметь большую ширину, но занимать только часть глубины корпуса.
   const frontFacadeByGeometry =
+    thinY &&
+    sx > maxX * 0.75 &&
+    sz > maxZ * 0.3 &&
+    sz < maxZ * 0.6 &&
+    nearFrontY;
     thinY &&
     sx > maxX * 0.75 &&
     sz > maxZ * 0.3 &&
     sz < maxZ * 0.6;
 
   if (frontFacadeByGeometry) {
-    return { kind:"Фасад", label:"Фасад", confidence:"medium", reason:"геометрия фасада + ширина + глубина" };
+    return { kind:"Фасад", label:"Фасад", confidence:"high", reason:"IFC Z-up: фронтальная плоскость корпуса" };
   }
   if (thinX && (nearLeft || nearRight)) {
     return { kind:"Боковина", label:"Боковина", confidence:"medium", reason:"геометрия + край корпуса" };
