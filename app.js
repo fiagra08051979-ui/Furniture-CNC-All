@@ -245,15 +245,9 @@ function recognizeIfcPart({ name, typeName, size, center, overallBox }) {
   // является опорой/ножкой. Проверяем это до правил для дна,
   // чтобы четыре реальные опоры не классифицировались как "Дно".
   const smallSupport =
-    minDim <= Math.max(plateTol, 8) &&
-    sx <= maxX * 0.2 &&
-    sz <= maxZ * 0.2 &&
-    sy <= maxY * 0.12 &&
-    center.y <= overallMin.y + Math.max(sy * 1.5, maxY * 0.04) &&
-    (
-      Math.abs(center.x - overallMin.x) <= Math.max(sx, maxX * 0.12) ||
-      Math.abs(overallMax.x - center.x) <= Math.max(sx, maxX * 0.12)
-    );
+    minDim <= 8 &&
+    Math.max(sx, sy, sz) <= 80 &&
+    center.y <= overallMin.y + Math.max(sy * 1.5, maxY * 0.06);
 
   if (smallSupport) {
     return { kind:"Опора", label:"Опора", confidence:"high", reason:"геометрия + положение в нижнем углу" };
