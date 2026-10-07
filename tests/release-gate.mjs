@@ -38,7 +38,7 @@ const required = [
   ["Construction QC требует связь каждой детали с раскроем", app.includes("missingCuttingLink") && app.includes("cuttingLink: missingCuttingLink.length === 0") && app.includes("cuttingEligible")],
   ["раскрой строится только из деталировки", app.includes("const d = u.detailing") && app.includes("d.cutting.thickness") && app.includes("d.cutting.length") && app.includes("d.cutting.width")],
   ["размеры деталировки совпадают со спецификацией листа", app.includes("length: spec.length") && app.includes("width: spec.width") && app.includes("thickness: spec.thickness")],
-  ["неподтвержденная IFC-толщина блокирует деталировку", app.includes("sheetSpecConfidence === \"review\"") && app.includes("толщина листа IFC не подтверждена")],
+  ["неподтвержденная IFC-толщина блокирует деталировку", app.includes("sheetSpecConfidence === \"review\"") && app.includes("толщина IFC") && app.includes("не совпадает с выбранным материалом")],
   ["IFC без кромки блокирует деталировку", app.includes('u.source === "IFC"') && app.includes("u.edges.length !== 4") && app.includes("кромка IFC не определена")],
   ["присадка без координат блокирует деталировку", app.includes("без координат X/Y") && app.includes("holes.forEach")],
   ["деталировка проверяет материал и количество", app.includes("не задан материал детали") && app.includes("некорректное количество детали")],
