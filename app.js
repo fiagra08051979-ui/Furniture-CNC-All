@@ -397,7 +397,7 @@ function buildIfcHardwareSchedule() {
       id:"IFC-HW-"+String(schedule.length+1).padStart(3,"0"),
       type,
       quantity:Math.max(1,Math.round(quantity)),
-      partNumber:part.userData.partNumber || "",
+      partNumber:part.userData.hardwareNumber || part.userData.partNumber || "",
       partName:part.userData.name,
       role:part.userData.recognizedKind || part.userData.kind,
       status,
@@ -742,6 +742,9 @@ async function moveIfcSupportsToHardware() {
 
   ifcHardwareParts = supports;
   ifcImportedParts = ifcImportedParts.filter(part => !part.userData?.isHardware);
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (parts[i].userData?.isHardware) parts.splice(i, 1);
+  }
 
   return supports.length;
 }
@@ -893,9 +896,11 @@ function importIfcIntoFurnitureCore(file) {
       const key = part.userData.isHardware
         ? part.userData.hardwareNumber
         : part.userData.partNumber;
-      part.userData.ifcHardwareSchedule = ifcHardwareSchedule.filter(
-        item => item.partNumber === key || item.partName === part.userData.name
-      );
+      part.userData.ifcHardwareSchedule = part.userData.isHardware
+        ? ifcHardwareSchedule.filter(item => item.type === "Мебельная ножка")
+        : ifcHardwareSchedule.filter(
+            item => item.partNumber === key || item.partName === part.userData.name
+          );
     });
     const detailingPipeline = rebuildDetailingPipeline();
     const constructionQC = runConstructionQC(detailingPipeline);
