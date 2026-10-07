@@ -23,7 +23,7 @@
     <aside class="sidebar">
       <section>
 <h2>Furniture AI</h2>
-<textarea id="aiPrompt" rows="4" placeholder="Например: Сделай шкаф 2400×2400×600, 3 секции, 6 полок и 4 фасада, ЛДСП 18 мм"></textarea>
+<textarea id="aiPrompt" rows="4" placeholder="Опишите мебель и её параметры — например: шкаф, тумба, пенал..."></textarea>
 <div class="row"><button id="aiRecognize" class="primary">Распознать</button><button id="aiApply">Создать модель</button></div>
 <div id="aiRecognition" class="status"></div>
 </section><section><h2>AI: эскиз / фото</h2><label>Загрузить изображение<input id="aiImageFile" type="file" accept="image/png,image/jpeg,image/webp,image/bmp"></label><div class="row"><button id="aiImageAnalyze" class="primary">Распознать конструкцию</button></div><div id="aiImageRecognition" class="status"></div></section><section><h2>IFC / BIM</h2><label>Загрузить IFC<input id="ifcFile" type="file" accept=".ifc"></label><div class="row"><button id="ifcImport" class="primary">Импортировать IFC</button></div><div id="ifcRecognition" class="status"></div><div id="ifcProjectObjects" class="status"></div><div id="ifcGeometry" class="status"></div></section><section>
@@ -129,7 +129,7 @@
     </aside>
 
     <section class="stage">
-      <div class="stage-head"><span id="projectName">Новый шкаф</span><span id="status">Параметрическая модель</span></div>
+      <div class="stage-head"><span id="projectName">Новый проект</span><span id="status">Параметры не заданы</span></div>
       <div id="viewer"></div>
       <div class="hint">ЛКМ — выбор · ПКМ/Shift — вращение/панорамирование · колесо — масштаб</div>
     </section>
