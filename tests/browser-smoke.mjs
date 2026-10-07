@@ -17,6 +17,15 @@ await page.waitForTimeout(1500);
 const count = Number(await page.locator("#partsCount").textContent());
 if (!(count > 0)) throw new Error("После построения не появились детали.");
 
+const gateBeforeInterior = await page.evaluate(() => ({
+  status: window._releaseGate?.status || null,
+  passed: window._releaseGate?.passed === true,
+  modelRevision: window._releaseGate?.modelRevision ?? null
+}));
+if (!gateBeforeInterior.passed || gateBeforeInterior.status !== "PASS") {
+  throw new Error("Визуализация интерьера запущена без успешного Release Gate: " + JSON.stringify(gateBeforeInterior));
+}
+
 await page.locator("#explode").click();
 await page.locator("#resetExplode").click();
 await page.locator("#frontView").click();
