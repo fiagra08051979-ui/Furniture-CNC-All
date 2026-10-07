@@ -11,6 +11,8 @@ page.on("console", message => {
 
 await page.goto("http://127.0.0.1:5173/", { waitUntil: "networkidle", timeout: 60000 });
 
+await page.locator("#sheetLength").fill("3000");
+await page.locator("#sheetWidth").fill("3000");
 await page.locator("#build").click();
 await page.waitForTimeout(1500);
 
