@@ -448,7 +448,9 @@ function buildIfcTechnologyOperations() {
   };
 
   const overlapLength = (aMin,aMax,bMin,bMax) => Math.max(0, Math.min(aMax,bMax)-Math.max(aMin,bMin));
-  // Расстояние между интервалами не должно становиться отрицательным при пересечении.\n  // Отрицательное значение ломает выбор оси контакта и скрывает реальные IFC-соединения.\n  const axisGap = (aMin,aMax,bMin,bMax) => Math.max(0, bMin-aMax, aMin-bMax);
+  // Расстояние между интервалами не должно становиться отрицательным при пересечении.
+  // Отрицательное значение ломает выбор оси контакта и скрывает реальные IFC-соединения.
+  const axisGap = (aMin,aMax,bMin,bMax) => Math.max(0, bMin-aMax, aMin-bMax);
 
   for(let i=0;i<boxes.length;i++){
     const A=boxes[i];
