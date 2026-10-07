@@ -240,6 +240,28 @@ function recognizeIfcPart({ name, typeName, size, center, overallBox }) {
   const minDim = Math.min(sx, sy, sz);
   const plateTol = Math.max(Math.min(maxX, maxY, maxZ) * 0.08, minDim * 1.35);
 
+  // Небольшой горизонтальный элемент в нижней зоне и у угла корпуса
+  // является опорой/ножкой. Проверяем это до правил для дна,
+  // чтобы четыре реальные опоры не классифицировались как "Дно".
+  const smallSupport =
+    minDim <= Math.max(plateTol, 8) &&
+    sx <= maxX * 0.2 &&
+    sz <= maxZ * 0.2 &&
+    sy <= maxY * 0.12 &&
+    center.y <= overallMin.y + Math.max(sy * 1.5, maxY * 0.04) &&
+    (
+      Math.abs(center.x - overallMin.x) <= Math.max(sx, maxX * 0.12) ||
+      Math.abs(overallMax.x - center.x) <= Math.max(sx, maxX * 0.12)
+    ) &&
+    (
+      Math.abs(center.z - overallMin.z) <= Math.max(sz, maxZ * 0.12) ||
+      Math.abs(overallMax.z - center.z) <= Math.max(sz, maxZ * 0.12)
+    );
+
+  if (smallSupport) {
+    return { kind:"Опора", label:"Опора", confidence:"high", reason:"геометрия + положение в нижнем углу" };
+  }
+
   // 1. Наиболее надёжный источник — семантика IFC/имя объекта.
   if (containsAny(text, ["фасад", "дверь", "дверца", "front", "door", "facade"])) {
     return { kind:"Фасад", label:"Фасад", confidence:"high", reason:"имя/тип IFC" };
@@ -764,6 +786,11 @@ async function importIfcIntoFurnitureCore(file) {
         const group = new THREE.Group();
 
         group.name = name + " · компонент " + (componentIndex + 1);
+
+        // IFC использует Z-up, Furniture Core — Y-up.
+        // Меняем только систему координат отображения контейнера:
+        // IFC-вёршины и flatTransformation остаются неизменными.
+        group.rotation.x = -Math.PI / 2;
         group.scale.setScalar(ifcLengthScale);
         group.add(mesh);
 
