@@ -434,22 +434,23 @@ function buildIfcHardwareSchedule() {
     });
   };
 
-  ifcImportedParts.forEach(part=>{
-    const u=part.userData;
-    const joints=u.technology?.joints || [];
-    const shelfJoints=joints.filter(j=>/полки/i.test(j.type));
-    const cabinetJoints=joints.filter(j=>!/полки/i.test(j.type));
+  const jointParts = new Map();
 
-    if (u.recognizedKind==="Фасад") {
-      const count = u.height > 1900 ? 5 : u.height > 1500 ? 4 : u.height > 900 ? 3 : 2;
-      add("Петля с доводчиком",count,part,"Количество предварительно рассчитано по фактической высоте IFC","candidate");
-    }
-    if (shelfJoints.length) {
-      add("Полкодержатель / штифт",shelfJoints.length*2,part,"Определено фактическое сопряжение полки с корпусом","candidate");
-    }
-    if (cabinetJoints.length) {
-      add("Крепёж корпуса",cabinetJoints.length*2,part,"Определено фактическое сопряжение деталей","candidate");
-    }
+  ifcImportedParts.forEach(part => {
+    const joints = part.userData.technology?.joints || [];
+    if (!joints.length) return;
+    const uniqueIds = new Set(joints.map(j => j.id));
+    jointParts.set(part, uniqueIds.size);
+  });
+
+  jointParts.forEach((quantity, part) => {
+    add(
+      "Крепёж соединения",
+      quantity,
+      part,
+      "Геометрическое сопряжение деталей подтверждено IFC; тип крепежа и его количество по типоразмеру не определены",
+      "candidate"
+    );
   });
 
   if (ifcHardwareParts.length) {
