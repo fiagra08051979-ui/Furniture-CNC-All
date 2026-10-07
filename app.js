@@ -307,6 +307,21 @@ function recognizeIfcPart({ name, typeName, size, center, overallBox }) {
     return { kind:"Задняя стенка", label:"Задняя стенка", confidence:"medium", reason:"геометрия + положение" };
   }
 
+  // Полноразмерная горизонтальная панель корпуса должна классифицироваться
+  // раньше геометрического правила фасада. У фасада глубина существенно меньше
+  // глубины корпуса, поэтому это правило не затрагивает реальные фронты.
+  const horizontalCabinetPanel =
+    thinY &&
+    sx > maxX * 0.75 &&
+    sz > maxZ * 0.7;
+
+  if (horizontalCabinetPanel && nearBottom) {
+    return { kind:"Дно", label:"Дно", confidence:"high", reason:"горизонтальная панель корпуса + нижняя граница" };
+  }
+  if (horizontalCabinetPanel && nearTop) {
+    return { kind:"Крышка", label:"Крышка", confidence:"high", reason:"горизонтальная панель корпуса + верхняя граница" };
+  }
+
   // Для IFC-моделей с Z-up после нормализации фасад может быть тонким
   // по Y и иметь большую ширину, но занимать только часть глубины корпуса.
   const frontFacadeByGeometry =
