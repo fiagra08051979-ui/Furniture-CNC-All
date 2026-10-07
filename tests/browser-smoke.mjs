@@ -30,6 +30,13 @@ const initialParams = await page.evaluate(() =>
 );
 if (initialParams.some(Boolean)) throw new Error("Новый проект не должен содержать предзаполненные параметры шкафа: " + JSON.stringify(initialParams));
 
+for (const [id, value] of Object.entries({
+  width:"2400", height:"2200", depth:"600", thickness:"18",
+  sections:"3", shelves:"6", fixedPartitions:"0",
+  doors:"3", frontGapTB:"2", frontGapBetween:"3"
+})) {
+  await page.locator("#" + id).fill(value);
+}
 await page.locator("#sheetLength").fill("3000");
 await page.locator("#sheetWidth").fill("3000");
 await page.locator("#build").click();
