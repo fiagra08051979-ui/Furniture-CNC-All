@@ -733,6 +733,7 @@ async function importIfcIntoFurnitureCore(file) {
     }
 
     let rendered = 0;
+    let componentCount = 0;
     for (const expressId of expressIds) {
       let line = null;
       try { line = api.GetLine(ifcModelId, expressId); } catch {}
@@ -746,52 +747,65 @@ async function importIfcIntoFurnitureCore(file) {
         ifcScalar(line?.Tag) || ("IFC элемент " + expressId));
 
       const typeName = line?.type ? api.GetNameFromTypeCode(line.type) : "IFC";
-      const group = new THREE.Group();
-      group.name = name;
 
-      // WebIFC отдаёт координаты в единицах исходного IFC.
-      // Масштабируем только контейнер Three.js до миллиметров.
-      // Геометрия/вершины IFC остаются неизменными.
-      group.scale.setScalar(ifcLengthScale);
-
-      for (let i = 0; i < flatMesh.geometries.size(); i++) {
-        const placed = flatMesh.geometries.get(i);
+      /*
+       * Один IFC product может содержать несколько геометрических
+       * компонентов (например, Archicad export с "Split complex elements: Off").
+       * Каждый placed geometry является отдельным источником реальной формы.
+       * Поэтому компоненты не объединяем в одну Furniture Part.
+       *
+       * Важно: mesh и его flatTransformation берутся напрямую из WebIFC.
+       * Мы только создаём отдельный Three.js-контейнер и масштабируем его
+       * к внутренним мм Furniture Core. Вершины IFC не пересчитываются.
+       */
+      for (let componentIndex = 0; componentIndex < flatMesh.geometries.size(); componentIndex++) {
+        const placed = flatMesh.geometries.get(componentIndex);
         const mesh = makeIfcMesh(api, ifcModelId, placed);
+        const group = new THREE.Group();
+
+        group.name = name + " · компонент " + (componentIndex + 1);
+        group.scale.setScalar(ifcLengthScale);
         group.add(mesh);
+
+        const box = new THREE.Box3().setFromObject(group);
+        if (box.isEmpty()) continue;
+
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+
+        group.userData = {
+          source: "IFC",
+          expressId,
+          componentIndex: componentIndex + 1,
+          componentCount: flatMesh.geometries.size(),
+          ifcType: typeName,
+          kind: classifyIfcType(typeName),
+          recognizedKind: classifyIfcType(typeName),
+          recognitionConfidence: "pending",
+          recognitionReason: "ожидает геометрической классификации",
+          sourceName: name,
+          name: group.name,
+          width: size.x,
+          height: size.y,
+          depth: size.z,
+          thickness: Math.min(size.x, size.y, size.z),
+          quantity: 1,
+          material: $("material")?.value || "ldsp18",
+          edges: edgeLabels(),
+          base: center.clone(),
+          partNumber: ""
+        };
+
+        root.add(group);
+        parts.push(group);
+        ifcImportedParts.push(group);
+        rendered++;
+        componentCount++;
       }
-
-      const box = new THREE.Box3().setFromObject(group);
-      if (box.isEmpty()) continue;
-
-      const size = box.getSize(new THREE.Vector3());
-      const center = box.getCenter(new THREE.Vector3());
-
-      group.userData = {
-        source: "IFC",
-        expressId,
-        ifcType: typeName,
-        kind: classifyIfcType(typeName),
-        recognizedKind: classifyIfcType(typeName),
-        recognitionConfidence: "pending",
-        recognitionReason: "ожидает геометрической классификации",
-        sourceName: name,
-        name,
-        width: size.x,
-        height: size.y,
-        depth: size.z,
-        thickness: Math.min(size.x, size.y, size.z),
-        quantity: 1,
-        material: $("material")?.value || "ldsp18",
-        edges: edgeLabels(),
-        base: center.clone(),
-        partNumber: ""
-      };
-
-      root.add(group);
-      parts.push(group);
-      ifcImportedParts.push(group);
-      rendered++;
     }
+
+    // rendered = реальные геометрические детали, componentCount оставлен
+    // отдельным счётчиком для диагностики сложных IFC products.
 
     if (!rendered) throw new Error("В IFC не найдены элементы с геометрией.");
 
