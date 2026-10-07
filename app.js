@@ -2858,10 +2858,22 @@ $("aiImageAnalyze")?.addEventListener("click", async () => {
 document.querySelectorAll(".exportSheetLayout").forEach(button => button.addEventListener("click", exportSheetLayout));
 document.querySelectorAll(".showCuttingMap").forEach(button => button.addEventListener("click", showCuttingMap));
 $("newProject").addEventListener("click", () => {
-  [2400, 2200, 600, 18, 3, 6, 0, 3, 2, 3].forEach((value, i) => {
-    $("width height depth thickness sections shelves fixedPartitions doors frontGapTB frontGapBetween".split(" ")[i]).value = value;
-  });
-  build();
+  const ids = ["width","height","depth","thickness","sections","shelves","fixedPartitions","doors","frontGapTB","frontGapBetween"];
+  ids.forEach(id => { if ($(id)) $(id).value = ""; });
+  clearModel();
+  ifcMode = false;
+  ifcImportedParts = [];
+  ifcHardwareParts = [];
+  $("partsCount").textContent = "0";
+  $("partsList").innerHTML = "";
+  $("summary").textContent = "—";
+  $("projectName").textContent = "Новый проект";
+  $("status").textContent = "Параметры не заданы";
+  $("drillingSummary").textContent = "Сверление будет рассчитано после построения.";
+  validate("Новый проект: введите параметры мебели и нажмите «Построить».", "ok");
+  controls.target.set(0, 0, 0);
+  camera.position.set(3200, 2600, 3800);
+  controls.update();
 });
 $("saveProject").addEventListener("click", () => {
   const ids = ["width", "height", "depth", "thickness", "sections", "shelves", "fixedPartitions", "doors", "frontGapTB", "frontGapBetween"];
@@ -2912,4 +2924,12 @@ function resize(){
   const width=viewer.clientWidth,height=viewer.clientHeight;
   camera.aspect=width/Math.max(height,1); camera.updateProjectionMatrix(); renderer.setSize(width,height);
 }
-window.addEventListener("resize",resize); resize();
+window.addEventListener("resize",resize);
+resize();
+
+function renderLoop() {
+  controls.update();
+  renderer.render(scene, camera);
+  requestAnimationFrame(renderLoop);
+}
+renderLoop();
