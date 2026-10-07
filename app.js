@@ -749,7 +749,7 @@ function moveIfcSupportsToHardware() {
   return supports.length;
 }
 
-function importIfcIntoFurnitureCore(file) {
+async function importIfcIntoFurnitureCore(file) {
   if (!file) return;
 
   const target = $("ifcRecognition");
