@@ -6,16 +6,15 @@
   <meta name="description" content="Furniture AI Designer — параметрическое проектирование корпусной мебели, 3D и взрывные схемы.">
   <title>Furniture AI Designer</title>
   <link rel="stylesheet" href="./styles.css">
-  <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
-  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js","web-ifc":"https://cdn.jsdelivr.net/npm/web-ifc@0.0.77/web-ifc-api.js"}}</script>
+
 </head>
 <body>
   <header class="topbar">
     <div class="brand"><div class="logo">F</div><div><strong>Furniture AI Designer</strong><small>Проектирование корпусной мебели</small></div></div>
     <div class="toolbar">
-      <button id="newProject">Новый проект</button><button id="exportCutting">Раскрой</button>
-      <button id="saveProject">Сохранить JSON</button><button id="exportExcel">Excel</button><button id="exportDxf">DXF</button><button id="exportCnc">CNC</button><button id="exportCncTech">CNC-карта</button><button id="exportCncManifest">CNC Job</button><select id="cncPostprocessor" title="Постпроцессор"><option value="generic">Universal G-code</option><option value="biesse">Biesse</option><option value="homag">Homag</option><option value="scm">SCM</option></select><button id="exportPdf">PDF</button>
+      <button id="newProject">Новый проект</button>
+      <button id="saveProject">Сохранить JSON</button>
       <label class="file-button">Загрузить JSON<input id="loadProject" type="file" accept=".json"></label>
     </div>
   </header>
@@ -24,21 +23,21 @@
     <aside class="sidebar">
       <section>
 <h2>Furniture AI</h2>
-<textarea id="aiPrompt" rows="4" placeholder="Например: Сделай шкаф 2400×2400×600, 3 секции, 6 полок и 4 фасада, ЛДСП 18 мм"></textarea>
+<textarea id="aiPrompt" rows="4" placeholder="Опишите мебель и её параметры — например: шкаф, тумба, пенал..."></textarea>
 <div class="row"><button id="aiRecognize" class="primary">Распознать</button><button id="aiApply">Создать модель</button></div>
 <div id="aiRecognition" class="status"></div>
 </section><section><h2>AI: эскиз / фото</h2><label>Загрузить изображение<input id="aiImageFile" type="file" accept="image/png,image/jpeg,image/webp,image/bmp"></label><div class="row"><button id="aiImageAnalyze" class="primary">Распознать конструкцию</button></div><div id="aiImageRecognition" class="status"></div></section><section><h2>IFC / BIM</h2><label>Загрузить IFC<input id="ifcFile" type="file" accept=".ifc"></label><div class="row"><button id="ifcImport" class="primary">Импортировать IFC</button></div><div id="ifcRecognition" class="status"></div><div id="ifcProjectObjects" class="status"></div><div id="ifcGeometry" class="status"></div></section><section>
         <h2>Параметры шкафа</h2>
-        <label>Ширина, мм<input id="width" type="number" min="200" step="1" value="2400"></label>
-        <label>Высота, мм<input id="height" type="number" min="200" step="1" value="2200"></label>
-        <label>Глубина, мм<input id="depth" type="number" min="200" step="1" value="600"></label>
-        <label>Толщина, мм<input id="thickness" type="number" min="8" step="1" value="18"></label>
-        <label>Секций<input id="sections" type="number" min="1" max="12" step="1" value="3"></label>
-        <label>Съёмных полок<input id="shelves" type="number" min="0" max="30" step="1" value="6"></label>
-        <label>Горизонтальных перегородок<input id="fixedPartitions" type="number" min="0" max="12" step="1" value="0"></label>
-        <label>Зазор фасадов, верх/низ, мм<input id="frontGapTB" type="number" min="0" max="20" step="0.5" value="2"></label>
-        <label>Зазор между фасадами, мм<input id="frontGapBetween" type="number" min="0" max="20" step="0.5" value="3"></label>
-        <label>Фасадов<input id="doors" type="number" min="0" max="12" step="1" value="3"></label>
+        <label>Ширина, мм<input id="width" type="number" min="200" step="1" value=""></label>
+        <label>Высота, мм<input id="height" type="number" min="200" step="1" value=""></label>
+        <label>Глубина, мм<input id="depth" type="number" min="200" step="1" value=""></label>
+        <label>Толщина, мм<input id="thickness" type="number" min="8" step="1" value=""></label>
+        <label>Секций<input id="sections" type="number" min="1" max="12" step="1" value=""></label>
+        <label>Съёмных полок<input id="shelves" type="number" min="0" max="30" step="1" value=""></label>
+        <label>Горизонтальных перегородок<input id="fixedPartitions" type="number" min="0" max="12" step="1" value=""></label>
+        <label>Зазор фасадов, верх/низ, мм<input id="frontGapTB" type="number" min="0" max="20" step="0.5" value=""></label>
+        <label>Зазор между фасадами, мм<input id="frontGapBetween" type="number" min="0" max="20" step="0.5" value=""></label>
+        <label>Фасадов<input id="doors" type="number" min="0" max="12" step="1" value=""></label>
         <div class="row">
           <button class="primary" id="build">Построить</button>
           <button id="explode">Взрыв</button>
@@ -47,16 +46,22 @@
           <button id="resetExplode">Собрать</button>
           <button id="frontView">Фасад</button>
           <button id="isoView">Изометрия</button>
+          <button id="interiorView">Вписать в интерьер</button>
         </div>
       </section>
 
       <section>
         <h2>Материал</h2>
         <select id="material">
-          <option value="ldsp18">ЛДСП 18 мм</option>
           <option value="ldsp16">ЛДСП 16 мм</option>
+          <option value="ldsp18">ЛДСП 18 мм</option>
+          <option value="ldsp22">ЛДСП 22 мм</option>
+          <option value="ldsp35">ЛДСП 35 мм</option>
+          <option value="mdf16">МДФ 16 мм</option>
           <option value="mdf18">МДФ 18 мм</option>
+          <option value="ply15">Фанера 15 мм</option>
           <option value="ply18">Фанера 18 мм</option>
+          <option value="ply22">Фанера 22 мм</option>
         </select>
         <h2>Технология фасадов</h2>
         <label>Тип фасада<select id="frontType"><option value="накладной">Накладной</option><option value="вкладной">Вкладной</option></select></label>
@@ -65,11 +70,34 @@
         <label>Угол открывания<select id="openingAngle"><option value="110">110°</option><option value="95">95°</option><option value="180">180°</option></select></label>
         <h2>Кромка по сторонам детали</h2>
         <div class="edge-grid">
-          <label>Сторона 1<select id="edge1"><option>ABS 2 мм</option><option>ABS 1 мм</option><option>PVC 2 мм</option><option>PP 1 мм</option><option>Без кромки</option></select></label>
+          <label>Сторона 1<select id="edge1"><option>ABS 0.8 мм</option><option>ABS 1 мм</option><option>ABS 2 мм</option><option>PVC 1 мм</option><option>PVC 2 мм</option><option>PP 1 мм</option><option>PP 2 мм</option><option>Без кромки</option></select></label>
           <label>Сторона 2<select id="edge2"><option>ABS 2 мм</option><option>ABS 1 мм</option><option>PVC 2 мм</option><option>PP 1 мм</option><option>Без кромки</option></select></label>
           <label>Сторона 3<select id="edge3"><option>ABS 2 мм</option><option>ABS 1 мм</option><option>PVC 2 мм</option><option>PP 1 мм</option><option>Без кромки</option></select></label>
           <label>Сторона 4<select id="edge4"><option>ABS 2 мм</option><option>ABS 1 мм</option><option>PVC 2 мм</option><option>PP 1 мм</option><option>Без кромки</option></select></label>
         </div>
+      </section>
+
+      <section>
+        <h2>Освещение</h2>
+        <label>Освещение мебели<select id="lightingEnabled"><option value="нет">Без освещения</option><option value="есть">С освещением</option></select></label>
+        <label>Тип монтажа<select id="lightingMount"><option value="накладное">Накладное</option><option value="внутреннее">Внутреннее (с фрезеровкой)</option></select></label>
+        <label>Освещение полок<select id="shelfLighting"><option value="нет">Без освещения</option><option value="есть">С освещением</option></select></label>
+      </section>
+
+      <section>
+        <h2>Столешница</h2>
+        <label>Столешница<select id="countertopEnabled"><option value="нет">Без столешницы</option><option value="есть">Со столешницей</option></select></label>
+        <label>Толщина, мм<input id="countertopThickness" type="number" min="35" max="50" step="1" value="40"></label>
+        <label>Постформинг<select id="countertopPostforming"><option value="нет">Без постформинга</option><option value="есть">С постформингом</option></select></label>
+        <label>Тип выреза<select id="countertopCut"><option value="через планку">Через планку</option><option value="еврозапил">Еврозапил</option></select></label>
+        <label>Материал<select id="countertopMaterial"><option value="агломерат">Агломерат</option><option value="лдсп">ЛДСП</option><option value="пластик">Пластиковая столешница</option><option value="hp">HP-панель 12–20 мм</option><option value="акрил">Акриловая столешница</option></select></label>
+      </section>
+
+      <section>
+        <h2>Библиотека внешних фасадов</h2>
+        <label>Производитель<input id="facadeManufacturer" type="text" placeholder="Производитель"></label>
+        <label>Модель / артикул<input id="facadeModel" type="text" placeholder="Модель или артикул"></label>
+        <label>Фасад<select id="facadeLibraryItem"><option value="внешний фасад">Внешний фасад</option></select></label>
       </section>
 
       <section>
@@ -78,9 +106,9 @@
         <label>Ширина листа, мм<input id="sheetWidth" type="number" min="500" value="2070"></label>
         <label>Пропил, мм<input id="cutKerf" type="number" min="0" step="0.5" value="4"></label>
         <label>Отступ от края листа, мм<input id="sheetMargin" type="number" min="0" step="1" value="10"></label>
-        <label>Направление текстуры<select id="grainMode"><option value="нет">Нет</option><option value="по длине детали">По длине детали</option><option value="по ширине детали">По ширине детали</option></select></label>
-        <label><input id="allowRotation" type="checkbox" checked> Разрешить поворот деталей на 90°</label>
-        <div class="row"><button id="exportSheetLayout">Карта раскроя Excel</button><button id="showCuttingMap">Показать карту</button></div><div id="cuttingMap" class="cutting-map" hidden></div>
+        <div class="row"><button class="exportSheetLayout">Сформировать карту раскроя PDF</button><button class="showCuttingMap">Показать карту</button></div>
+        <div class="status">Финальный производственный документ для изготовителя. ЧПУ-программа и управление станком выполняются вне Furniture AI Designer.</div>
+        <div id="cuttingMap" class="cutting-map" hidden></div>
         <h2>Крепление корпуса</h2>
         <label>Основной способ<select id="fastenerType"><option value="комбинированный">Конфирматы + стяжки</option><option value="конфирматы">Только конфирматы</option><option value="стяжки">Только стяжки</option></select></label>
         <label>Диаметр конфирмата, мм<input id="confirmatDiameter" type="number" min="5" max="8" step="0.5" value="7"></label>
@@ -96,12 +124,12 @@
 
       <section>
         <h2>Проверка</h2>
-        <div id="validation" class="validation">Готово к построению.</div>
+        <div id="validation" class="validation">Введите параметры мебели и нажмите «Построить».</div>
       </section>
     </aside>
 
     <section class="stage">
-      <div class="stage-head"><span id="projectName">Новый шкаф</span><span id="status">Параметрическая модель</span></div>
+      <div class="stage-head"><span id="projectName">Новый проект</span><span id="status">Параметры не заданы</span></div>
       <div id="viewer"></div>
       <div class="hint">ЛКМ — выбор · ПКМ/Shift — вращение/панорамирование · колесо — масштаб</div>
     </section>
@@ -118,17 +146,10 @@
   </main>
 
   <footer class="statusbar">
-    <span>Furniture AI Designer v0.1</span>
+    <span>Furniture AI Designer v1.0.0</span>
     <span id="summary">—</span>
   </footer>
 
   <script type="module" src="./app.js"></script>
-<div class="status"><b>Настройки CNC</b><br>
-<label>Единицы <select id="cncUnits"><option value="mm">мм</option></select></label>
-<label>Нулевая точка <select id="cncOrigin"><option value="top-center">верх детали / центр XY</option><option value="bottom-left">низ детали / левый нижний угол</option></select></label>
-<label>Safe Z <input id="cncSafeZ" type="number" value="5" step="0.5"></label>
-<label>Рабочий Z <input id="cncWorkZ" type="number" value="0" step="0.1"></label>
-<label>Подача <input id="cncFeed" type="number" value="300" step="50"></label>
-<label>Обороты шпинделя <input id="cncSpindle" type="number" value="18000" step="500"></label>
-</div><div id="cncTechCard" class="status"></div><div id="cncOperationsTable" class="status"></div><div id="cncPreflight" class="status"></div><div id="cncSetupValidation" class="status"></div></body>
+</body>
 </html>

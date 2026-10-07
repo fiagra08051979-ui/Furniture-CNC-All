@@ -1,7 +1,16 @@
+import { validateSheetLayout, evaluateReleaseGateState } from "./release-gate-core.js";
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
 import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js";
+import * as WebIFC from "web-ifc";
 
 const $ = (id) => document.getElementById(id);
+
+function validate(message, type = "ok") {
+  const element = $("validation");
+  if (!element) return;
+  element.textContent = String(message || "");
+  element.className = "validation " + (type === "error" ? "error" : "ok");
+}
 const viewer = $("viewer");
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xdfe4e9);
@@ -27,10 +36,999 @@ scene.add(grid);
 
 const root = new THREE.Group();
 scene.add(root);
+let interiorGroup = null;
 
 const parts = [];
 let exploded = false;
-let projectVersion = "0.2";
+let projectVersion = "1.0.0";
+let ifcMode = false;
+let modelRevision = 0;
+
+/* =========================
+   IFC → Furniture Core bridge
+   Геометрия IFC является источником истины.
+   Импорт не изменяет исходную форму детали.
+   ========================= */
+let ifcApi = null;
+let ifcModelId = null;
+let ifcImportedParts = [];
+let ifcHardwareParts = [];
+window._ifcHardwareSchedule = [];
+
+function ifcScalar(value) {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "object" && "value" in value) return value.value;
+  return value;
+}
+
+function vectorToArray(vector) {
+  if (!vector) return [];
+  const out = [];
+  if (typeof vector.size === "function" && typeof vector.get === "function") {
+    for (let i = 0; i < vector.size(); i++) out.push(vector.get(i));
+  } else if (Array.isArray(vector)) {
+    return vector;
+  }
+  return out;
+}
+
+async function ensureIfcApi() {
+  if (ifcApi) return ifcApi;
+  ifcApi = new WebIFC.IfcAPI();
+  ifcApi.SetWasmPath?.("https://cdn.jsdelivr.net/npm/web-ifc@0.0.77/");
+  await ifcApi.Init();
+  return ifcApi;
+}
+
+// Нормализация единиц IFC для Furniture Core.
+// IFC может хранить геометрию в метрах, миллиметрах, футах или дюймах.
+// Внутренние технологические размеры Furniture AI Designer — мм.
+// Нормализация единиц меняет только масштаб представления в мм,
+// исходные IFC-вершины и их топология не изменяются.
+function detectIfcModelLengthScale(api, modelId) {
+  const prefixFactor = {
+    EXA: 1e18, PETA: 1e15, TERA: 1e12, GIGA: 1e9,
+    MEGA: 1e6, KILO: 1e3, HECTO: 1e2, DECA: 1e1,
+    DECI: 1e-1, CENTI: 1e-2, MILLI: 1e-3,
+    MICRO: 1e-6, NANO: 1e-9
+  };
+
+  try {
+    const projects = api.GetLineIDsWithType(modelId, WebIFC.IFCPROJECT);
+    if (!projects || typeof projects.size !== "function" || projects.size() === 0) return 1;
+
+    const project = api.GetLine(modelId, projects.get(0));
+    const unitsId = ifcScalar(project?.UnitsInContext);
+    if (!unitsId) return 1;
+
+    const assignment = api.GetLine(modelId, unitsId);
+    const units = vectorToArray(assignment?.Units);
+
+    for (const unitRef of units) {
+      const unitId = ifcScalar(unitRef);
+      if (!unitId) continue;
+
+      const unit = api.GetLine(modelId, unitId);
+      const unitType = String(ifcScalar(unit?.UnitType) || "").toUpperCase();
+      if (unitType !== "LENGTHUNIT") continue;
+
+      const name = String(ifcScalar(unit?.Name) || "").toUpperCase();
+      const prefix = String(ifcScalar(unit?.Prefix) || "").toUpperCase();
+
+      // web-ifc выдаёт координаты геометрии в метрах независимо от
+      // исходного префикса IFC единицы. Furniture Core работает в мм.
+      // Поэтому после подтверждения LENGTHUNIT переводим результат в мм.
+      if (name === "METRE" || name === "METER" || name === "FOOT" || name === "FEET" || name === "INCH") {
+        return 1000;
+      }
+
+      const conversionId = ifcScalar(unit?.ConversionFactor);
+      if (conversionId) {
+        const conversion = api.GetLine(modelId, conversionId);
+        const value = Number(ifcScalar(conversion?.ValueComponent));
+        if (Number.isFinite(value) && value > 0) return value * 1000;
+      }
+    }
+  } catch (error) {
+    console.warn("Не удалось определить единицы IFC; используется масштаб 1.", error);
+  }
+
+  return 1;
+}
+
+function closeIfcModel() {
+  if (ifcApi && ifcModelId !== null) {
+    try { ifcApi.CloseModel(ifcModelId); } catch {}
+  }
+  ifcModelId = null;
+  ifcImportedParts = [];
+}
+
+function makeIfcMesh(api, modelId, placedGeometry) {
+  const geometry = api.GetGeometry(modelId, placedGeometry.geometryExpressID);
+  const vertices = api.GetVertexArray(
+    geometry.GetVertexData(),
+    geometry.GetVertexDataSize()
+  );
+  const indices = api.GetIndexArray(
+    geometry.GetIndexData(),
+    geometry.GetIndexDataSize()
+  );
+
+  // web-ifc vertices are interleaved: XYZ + normal XYZ.
+  const positions = new Float32Array(vertices.length / 2);
+  const normals = new Float32Array(vertices.length / 2);
+
+  for (let i = 0, j = 0; i < vertices.length; i += 6, j += 3) {
+    positions[j] = vertices[i];
+    positions[j + 1] = vertices[i + 1];
+    positions[j + 2] = vertices[i + 2];
+    normals[j] = vertices[i + 3];
+    normals[j + 1] = vertices[i + 4];
+    normals[j + 2] = vertices[i + 5];
+  }
+
+  const buffer = new THREE.BufferGeometry();
+  buffer.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  buffer.setAttribute("normal", new THREE.BufferAttribute(normals, 3));
+  buffer.setIndex(new THREE.BufferAttribute(new Uint32Array(indices), 1));
+  buffer.computeBoundingBox();
+  buffer.computeBoundingSphere();
+
+  const color = placedGeometry.color
+    ? new THREE.Color(placedGeometry.color.x, placedGeometry.color.y, placedGeometry.color.z)
+    : new THREE.Color(0xc69b68);
+
+  const mesh = new THREE.Mesh(
+    buffer,
+    new THREE.MeshStandardMaterial({
+      color,
+      roughness: 0.68,
+      metalness: 0,
+      side: THREE.DoubleSide
+    })
+  );
+
+  mesh.matrixAutoUpdate = false;
+  mesh.matrix.fromArray(placedGeometry.flatTransformation);
+  mesh.matrixWorldNeedsUpdate = true;
+  return mesh;
+}
+
+function classifyIfcType(typeName) {
+  const type = String(typeName || "").toUpperCase();
+  if (type.includes("FURNITURE")) return "Мебель";
+  if (type.includes("FURNISHING")) return "Мебель";
+  if (type.includes("BUILDINGELEMENTPROXY")) return "Мебель / прокси";
+  return "IFC элемент";
+}
+
+function normalizeIfcText(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[_\-./]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function containsAny(text, words) {
+  return words.some(word => text.includes(word));
+}
+
+/*
+ * Распознавание детали выполняется поверх реальной IFC-геометрии.
+ * Приоритет:
+ * 1. явное имя/тип IFC;
+ * 2. ориентация и положение bounding box;
+ * 3. резервная классификация.
+ *
+ * Никакого изменения вершин/трансформаций исходной IFC-модели здесь нет.
+ */
+function recognizeIfcPart({ name, typeName, size, center, overallBox }) {
+  const text = normalizeIfcText(name + " " + typeName);
+  const overallSize = overallBox.getSize(new THREE.Vector3());
+  const overallMin = overallBox.min;
+  const overallMax = overallBox.max;
+
+  const maxX = Math.max(overallSize.x, 1);
+  const maxY = Math.max(overallSize.y, 1);
+  const maxZ = Math.max(overallSize.z, 1);
+
+  const sx = Math.max(size.x, 0.01);
+  const sy = Math.max(size.y, 0.01);
+  const sz = Math.max(size.z, 0.01);
+
+  const minDim = Math.min(sx, sy, sz);
+  const plateTol = Math.max(Math.min(maxX, maxY, maxZ) * 0.08, minDim * 1.35);
+
+  // Небольшой горизонтальный элемент в нижней зоне и у угла корпуса
+  // является опорой/ножкой. Проверяем это до правил для дна,
+  // чтобы четыре реальные опоры не классифицировались как "Дно".
+  const smallSupport =
+    minDim <= 8 &&
+    Math.max(sx, sy, sz) <= 80 &&
+    (
+      Math.abs(center.x - overallMin.x) <= Math.max(sx, maxX * 0.12) ||
+      Math.abs(overallMax.x - center.x) <= Math.max(sx, maxX * 0.12)
+    );
+
+  if (smallSupport) {
+    return { kind:"Опора", label:"Опора", confidence:"high", reason:"геометрия + положение в нижнем углу" };
+  }
+
+  // 1. Наиболее надёжный источник — семантика IFC/имя объекта.
+  if (containsAny(text, ["фасад", "дверь", "дверца", "front", "door", "facade"])) {
+    return { kind:"Фасад", label:"Фасад", confidence:"high", reason:"имя/тип IFC" };
+  }
+  if (containsAny(text, ["задняя стенка", "задник", "задняя", "back panel", "back wall", "rear"])) {
+    return { kind:"Задняя стенка", label:"Задняя стенка", confidence:"high", reason:"имя/тип IFC" };
+  }
+  if (containsAny(text, ["боковина", "side panel", "side"])) {
+    return { kind:"Боковина", label:"Боковина", confidence:"high", reason:"имя/тип IFC" };
+  }
+  if (containsAny(text, ["крышка", "верх", "top", "lid"])) {
+    return { kind:"Крышка", label:"Крышка", confidence:"high", reason:"имя/тип IFC" };
+  }
+  if (containsAny(text, ["дно", "низ", "bottom", "base"])) {
+    return { kind:"Дно", label:"Дно", confidence:"high", reason:"имя/тип IFC" };
+  }
+  if (containsAny(text, ["полка", "shelf"])) {
+    return { kind:"Полка", label:"Полка", confidence:"high", reason:"имя/тип IFC" };
+  }
+  if (containsAny(text, ["горизонтальная перегород", "horizontal partition", "hpartition"])) {
+    return { kind:"Горизонтальная перегородка", label:"Горизонтальная перегородка", confidence:"high", reason:"имя/тип IFC" };
+  }
+  if (containsAny(text, ["вертикальная перегород", "vertical partition", "vpartition"])) {
+    return { kind:"Вертикальная перегородка", label:"Вертикальная перегородка", confidence:"high", reason:"имя/тип IFC" };
+  }
+  if (containsAny(text, ["ящик", "drawer", "выдвижн"])) {
+    return { kind:"Ящик", label:"Ящик", confidence:"high", reason:"имя/тип IFC" };
+  }
+  if (containsAny(text, ["ножка", "опора", "leg", "foot"])) {
+    return { kind:"Опора", label:"Опора", confidence:"high", reason:"имя/тип IFC" };
+  }
+
+  // 2. Геометрическая классификация для IFC без понятных имён.
+  const thinX = sx <= plateTol && sy > maxY * 0.45;
+  const thinY = sy <= plateTol && sx > maxX * 0.45;
+  const thinZ = sz <= plateTol && sx > maxX * 0.45 && sy > maxY * 0.35;
+
+  const nearLeft = Math.abs(center.x - overallMin.x) <= Math.max(sx * 0.8, maxX * 0.04);
+  const nearRight = Math.abs(overallMax.x - center.x) <= Math.max(sx * 0.8, maxX * 0.04);
+  const nearBottom = Math.abs(center.y - overallMin.y) <= Math.max(sy * 0.8, maxY * 0.04);
+  const nearTop = Math.abs(overallMax.y - center.y) <= Math.max(sy * 0.8, maxY * 0.04);
+  const nearFront = Math.abs(overallMax.z - center.z) <= Math.max(sz * 1.2, maxZ * 0.05);
+  const nearBack = Math.abs(center.z - overallMin.z) <= Math.max(sz * 1.2, maxZ * 0.05);
+
+  // WebIFC сохраняет геометрию компонента в IFC Z-up системе координат.
+  // Для распознавания используем фактическую геометрию IFC: Z — вертикаль,
+  // Y — глубина, X — ширина. Это не изменяет исходную геометрию.
+  const nearBottomZ = Math.abs(center.z - overallMin.z) <= Math.max(sz * 0.8, maxZ * 0.04);
+  const nearTopZ = Math.abs(overallMax.z - center.z) <= Math.max(sz * 0.8, maxZ * 0.04);
+  const nearFrontY = Math.abs(overallMax.y - center.y) <= Math.max(sy * 1.2, maxY * 0.05);
+  const nearBackY = Math.abs(center.y - overallMin.y) <= Math.max(sy * 1.2, maxY * 0.05);
+
+  const horizontalCabinetPanel =
+    thinZ &&
+    sx > maxX * 0.75 &&
+    sy > maxY * 0.7;
+
+  if (horizontalCabinetPanel && nearBottomZ) {
+    return { kind:"Дно", label:"Дно", confidence:"high", reason:"IFC Z-up: горизонтальная панель + нижняя граница" };
+  }
+  if (horizontalCabinetPanel && nearTopZ) {
+    return { kind:"Крышка", label:"Крышка", confidence:"high", reason:"IFC Z-up: горизонтальная панель + верхняя граница" };
+  }
+
+  const rearWallByGeometry =
+    thinY &&
+    sx > maxX * 0.75 &&
+    sz > maxZ * 0.7 &&
+    nearBackY;
+
+  if (rearWallByGeometry) {
+    return { kind:"Задняя стенка", label:"Задняя стенка", confidence:"high", reason:"IFC Z-up: задняя плоскость корпуса" };
+  }
+
+  const frontFacadeByGeometry =
+    thinY &&
+    sx > maxX * 0.75 &&
+    sz > maxZ * 0.3 &&
+    sz < maxZ * 0.6 &&
+    nearFrontY;
+
+  if (frontFacadeByGeometry) {
+    return { kind:"Фасад", label:"Фасад", confidence:"high", reason:"IFC Z-up: фронтальная плоскость корпуса" };
+  }
+
+  if (thinX && (nearLeft || nearRight)) {
+    return { kind:"Боковина", label:"Боковина", confidence:"medium", reason:"геометрия + край корпуса" };
+  }
+  if (thinX) {
+    return { kind:"Вертикальная перегородка", label:"Вертикальная перегородка", confidence:"medium", reason:"геометрия" };
+  }
+  if (thinY && nearBottom) {
+    return { kind:"Дно", label:"Дно", confidence:"medium", reason:"геометрия + нижняя граница" };
+  }
+  if (thinY && nearTop) {
+    return { kind:"Крышка", label:"Крышка", confidence:"medium", reason:"геометрия + верхняя граница" };
+  }
+  if (thinY) {
+    return { kind:"Полка", label:"Полка", confidence:"medium", reason:"горизонтальная геометрия" };
+  }
+
+  return { kind:"Нестандартная деталь", label:"Нестандартная деталь", confidence:"low", reason:"неоднозначная геометрия" };
+}
+
+
+
+function buildIfcTechnologyState() {
+  if (!ifcImportedParts.length) return { ready:0, review:0 };
+
+  const readyRoles = new Set([
+    "Боковина",
+    "Крышка",
+    "Дно",
+    "Полка",
+    "Горизонтальная перегородка",
+    "Вертикальная перегородка",
+    "Задняя стенка",
+    "Фасад",
+    "Ящик"
+  ]);
+
+  let ready = 0;
+  let review = 0;
+
+  ifcImportedParts.forEach(part => {
+    const u = part.userData;
+    const box = new THREE.Box3().setFromObject(part);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+
+    const thickness = Math.min(size.x, size.y, size.z);
+    const role = u.recognizedKind || u.kind;
+
+    u.geometryLocked = true;
+    u.sourceGeometry = "IFC";
+    u.technology = {
+      role,
+      status: readyRoles.has(role) && u.recognitionConfidence !== "low" ? "ready" : "review",
+      confidence: u.recognitionConfidence,
+      geometry: {
+        min: { x:box.min.x, y:box.min.y, z:box.min.z },
+        max: { x:box.max.x, y:box.max.y, z:box.max.z },
+        size: { x:size.x, y:size.y, z:size.z },
+        center: { x:center.x, y:center.y, z:center.z }
+      },
+      thicknessEstimate: Number(thickness.toFixed(2)),
+      thicknessSource: "минимальный габарит IFC",
+      editable: false,
+      note: "Технологические операции рассчитываются поверх исходной IFC-геометрии; вершины IFC не изменяются."
+    };
+
+    if (u.technology.status === "ready") ready++;
+    else review++;
+  });
+
+  return { ready, review };
+}
+
+
+function buildIfcHardwareSchedule() {
+  const schedule = [];
+  if (!ifcImportedParts.length) return schedule;
+
+  const add = (type, quantity, part, reason, status="candidate") => {
+    if (!quantity) return;
+    schedule.push({
+      id:"IFC-HW-"+String(schedule.length+1).padStart(3,"0"),
+      type,
+      quantity:Math.max(1,Math.round(quantity)),
+      partNumber:part.userData.hardwareNumber || part.userData.partNumber || "",
+      partName:part.userData.name,
+      role:part.userData.recognizedKind || part.userData.kind,
+      status,
+      reason,
+      source:"IFC topology"
+    });
+  };
+
+  const uniqueJointIds = new Set();
+  let jointPart = null;
+  ifcImportedParts.forEach(part => {
+    const joints = part.userData.technology?.joints || [];
+    joints.forEach(joint => {
+      if (!uniqueJointIds.has(joint.id)) {
+        uniqueJointIds.add(joint.id);
+        jointPart = jointPart || part;
+      }
+    });
+  });
+
+  if (uniqueJointIds.size && jointPart) {
+    add(
+      "Крепёж соединения",
+      uniqueJointIds.size,
+      jointPart,
+      "Геометрические сопряжения подтверждены IFC; тип крепежа и типоразмер не определены",
+      "candidate"
+    );
+  }
+
+  if (ifcHardwareParts.length) {
+    add(
+      "Мебельная ножка",
+      ifcHardwareParts.length,
+      ifcHardwareParts[0],
+      "Реальная IFC-геометрия распознана как опорные элементы; переведено в фурнитуру",
+      "candidate"
+    );
+  }
+
+  return schedule;
+}
+
+function buildIfcTechnologyOperations() {
+  const result = { joints: [], operations: 0, review: 0 };
+  if (!ifcImportedParts.length) return result;
+
+  const boxes = ifcImportedParts.map(part => ({
+    part,
+    box: new THREE.Box3().setFromObject(part),
+    size: new THREE.Vector3()
+  }));
+  boxes.forEach(x => x.box.getSize(x.size));
+
+  const compatible = (a,b) => {
+    const pair = new Set([a,b]);
+    return (
+      pair.has("Боковина") && (pair.has("Полка") || pair.has("Горизонтальная перегородка") || pair.has("Крышка") || pair.has("Дно") || pair.has("Вертикальная перегородка"))
+    ) || (
+      pair.has("Вертикальная перегородка") && (pair.has("Крышка") || pair.has("Дно") || pair.has("Горизонтальная перегородка") || pair.has("Полка"))
+    );
+  };
+
+  const overlapLength = (aMin,aMax,bMin,bMax) => Math.max(0, Math.min(aMax,bMax)-Math.max(aMin,bMin));
+  // Расстояние между интервалами не должно становиться отрицательным при пересечении.
+  // Отрицательное значение ломает выбор оси контакта и скрывает реальные IFC-соединения.
+  const axisGap = (aMin,aMax,bMin,bMax) => Math.max(0, bMin-aMax, aMin-bMax);
+
+  for(let i=0;i<boxes.length;i++){
+    const A=boxes[i];
+    const ua=A.part.userData;
+    ua.technology.operations=[];
+    ua.technology.joints=[];
+    ua.technology.edgeOperations=(ua.edges||[]).map((edge,index)=>({
+      type:"Кромление",
+      edge:index+1,
+      material:edge,
+      status:"ready",
+      source:"IFC-параметр",
+      note:"Кромка назначена как технологический атрибут; IFC-геометрия не изменяется."
+    }));
+    ua.technology.operations.push(...ua.technology.edgeOperations);
+    result.operations += ua.technology.edgeOperations.length;
+  }
+
+  for(let i=0;i<boxes.length;i++){
+    for(let j=i+1;j<boxes.length;j++){
+      const A=boxes[i], B=boxes[j];
+      const ua=A.part.userData, ub=B.part.userData;
+      const ka=ua.recognizedKind||ua.kind, kb=ub.recognizedKind||ub.kind;
+      if(!compatible(ka,kb)) continue;
+
+      const gaps=[
+        axisGap(A.box.min.x,A.box.max.x,B.box.min.x,B.box.max.x),
+        axisGap(A.box.min.y,A.box.max.y,B.box.min.y,B.box.max.y),
+        axisGap(A.box.min.z,A.box.max.z,B.box.min.z,B.box.max.z)
+      ];
+      const overlap=[
+        overlapLength(A.box.min.x,A.box.max.x,B.box.min.x,B.box.max.x),
+        overlapLength(A.box.min.y,A.box.max.y,B.box.min.y,B.box.max.y),
+        overlapLength(A.box.min.z,A.box.max.z,B.box.min.z,B.box.max.z)
+      ];
+      const contactAxis=gaps.indexOf(Math.min(...gaps));
+      const other=overlap.filter((_,idx)=>idx!==contactAxis);
+      const hasContact=gaps[contactAxis] <= 2 && other.every(v=>v >= 20);
+
+      if(!hasContact) continue;
+
+      const minBox=new THREE.Vector3(
+        Math.max(A.box.min.x,B.box.min.x),
+        Math.max(A.box.min.y,B.box.min.y),
+        Math.max(A.box.min.z,B.box.min.z)
+      );
+      const maxBox=new THREE.Vector3(
+        Math.min(A.box.max.x,B.box.max.x),
+        Math.min(A.box.max.y,B.box.max.y),
+        Math.min(A.box.max.z,B.box.max.z)
+      );
+      const center=minBox.add(maxBox).multiplyScalar(0.5);
+
+      const roleSet=new Set([ka,kb]);
+      const jointType=roleSet.has("Полка") ? "Соединение полки с корпусом" :
+        roleSet.has("Крышка") ? "Соединение крышки с корпусом" :
+        roleSet.has("Дно") ? "Соединение дна с корпусом" :
+        "Соединение перегородки с корпусом";
+
+      const joint={
+        id:"IFC-J"+(result.joints.length+1),
+        type:jointType,
+        status:"candidate",
+        confidence:"medium",
+        partA:ua.partNumber || ua.name,
+        partB:ub.partNumber || ub.name,
+        roleA:ka,
+        roleB:kb,
+        contactAxis:["X","Y","Z"][contactAxis],
+        gapMm:Number(gaps[contactAxis].toFixed(2)),
+        contactCenter:{x:Number(center.x.toFixed(2)),y:Number(center.y.toFixed(2)),z:Number(center.z.toFixed(2))},
+        source:"IFC bounding boxes",
+        hardwareRecommendation: "Тип крепежа не определён по IFC; требуется подтверждение технологии",
+        note:"Кандидат соединения определён по фактическому пересечению/контакту IFC. Отверстия не генерируются автоматически до подтверждения базы и направления сверления."
+      };
+
+      ua.technology.joints.push(joint);
+      ub.technology.joints.push(joint);
+      ua.technology.operations.push({
+        type:"Соединение",
+        operation:joint.type,
+        status:"candidate",
+        linkedPart:ub.partNumber || ub.name,
+        contactCenter:joint.contactCenter,
+        contactAxis:joint.contactAxis,
+        hardwareRecommendation:joint.hardwareRecommendation
+      });
+      ub.technology.operations.push({
+        type:"Соединение",
+        operation:joint.type,
+        status:"candidate",
+        linkedPart:ua.partNumber || ua.name,
+        contactCenter:joint.contactCenter,
+        contactAxis:joint.contactAxis,
+        hardwareRecommendation:joint.hardwareRecommendation
+      });
+      result.joints.push(joint);
+      result.operations += 2;
+      result.review += 2;
+    }
+  }
+
+  ifcImportedParts.forEach(part=>{
+    const u=part.userData;
+    u.technology.jointCount=u.technology.joints.length;
+    u.technology.operationCount=u.technology.operations.length;
+    const hasUnconfirmedJoint = u.technology.joints.some(j=>j.status !== "ready");
+    if (hasUnconfirmedJoint) u.technology.status = "review";
+  });
+
+  return result;
+}
+
+function syncIfcParametersFromRecognition() {
+  if (!ifcImportedParts.length) return;
+
+  const overall = new THREE.Box3();
+  ifcImportedParts.forEach(part => overall.union(new THREE.Box3().setFromObject(part)));
+  const size = overall.getSize(new THREE.Vector3());
+
+  const setNumber = (id, value) => {
+    const el = $(id);
+    if (!el || !Number.isFinite(value) || value <= 0) return;
+    el.value = Math.round(value);
+  };
+
+  const recognized = ifcImportedParts.map(p => p.userData.recognizedKind);
+  const count = kind => recognized.filter(x => x === kind).length;
+
+  // Эти параметры становятся производными от IFC, а не от шаблона нового шкафа.
+  setNumber("width", size.x);
+  setNumber("height", size.y);
+  setNumber("depth", size.z);
+
+  const verticalPartitions = count("Вертикальная перегородка");
+  const shelves = count("Полка");
+  const fixedHorizontals = count("Горизонтальная перегородка");
+  const facades = count("Фасад");
+
+  if ($("sections")) $("sections").value = Math.max(1, verticalPartitions + 1);
+  if ($("shelves")) $("shelves").value = shelves;
+  if ($("fixedPartitions")) $("fixedPartitions").value = fixedHorizontals;
+  if ($("doors")) $("doors").value = facades;
+
+  if ($("summary")) {
+    $("summary").textContent =
+      "IFC · " + Math.round(size.x) + " × " + Math.round(size.y) + " × " + Math.round(size.z) +
+      " мм · " + ifcImportedParts.length + " элементов · технология привязана к IFC";
+  }
+}
+
+function refreshIfcTechnology() {
+  if (!ifcMode || !ifcImportedParts.length) return;
+
+  modelRevision++;
+  window._modelRevision = modelRevision;
+  window._constructionQC = null;
+  window._releaseGate = null;
+
+  const selectedMaterial = $("material")?.value || "ldsp18";
+  const selectedEdges = edgeLabels();
+
+  ifcImportedParts.forEach(part => {
+    part.userData.material = selectedMaterial;
+    part.userData.edges = [...selectedEdges];
+  });
+
+  applyIfcMaterial();
+  buildIfcTechnologyState();
+  buildIfcTechnologyOperations();
+  // Состав IFC-фурнитуры не зависит от смены материала/кромки.
+  // Сохраняем предыдущий runtime-снимок, если новый расчёт семантически идентичен,
+  // чтобы обновление технологии не разрывало ссылки на hardware schedule.
+  const previousIfcHardwareSchedule = Array.isArray(window._ifcHardwareSchedule)
+    ? window._ifcHardwareSchedule
+    : [];
+  const rebuiltIfcHardwareSchedule = buildIfcHardwareSchedule();
+  const scheduleKey = item => [
+    item.type, item.quantity, item.partNumber, item.partName,
+    item.role, item.status, item.reason, item.source
+  ].join("|");
+  const previousScheduleKey = previousIfcHardwareSchedule.map(scheduleKey).join("||");
+  const rebuiltScheduleKey = rebuiltIfcHardwareSchedule.map(scheduleKey).join("||");
+  const ifcHardwareSchedule = previousScheduleKey === rebuiltScheduleKey
+    ? previousIfcHardwareSchedule
+    : rebuiltIfcHardwareSchedule;
+  window._ifcHardwareSchedule = ifcHardwareSchedule;
+  [...ifcImportedParts, ...ifcHardwareParts].forEach(part => {
+    const key = part.userData.isHardware
+      ? part.userData.hardwareNumber
+      : part.userData.partNumber;
+    part.userData.ifcHardwareSchedule = part.userData.isHardware
+      ? ifcHardwareSchedule.filter(item => item.type === "Мебельная ножка")
+      : ifcHardwareSchedule.filter(
+          item => item.partNumber === key || item.partName === part.userData.name
+        );
+  });
+  const detailingPipeline = rebuildDetailingPipeline();
+  const constructionQC = runConstructionQC(detailingPipeline);
+  const releaseGate = runReleaseGate();
+
+  renderPartsTable();
+  const status = releaseGate.passed
+    ? "IFC-технология обновлена без изменения геометрии."
+    : "IFC-технология обновлена; выпуск заблокирован Release Gate: " + releaseGate.issues.join(" ");
+  validate(status, releaseGate.passed ? "ok" : "error");
+}
+
+function applyIfcMaterial() {
+  const selected = $("material")?.value || "ldsp18";
+  const palette = {
+    ldsp18: 0xc69b68,
+    ldsp16: 0xc69b68,
+    mdf18: 0xd7d9dc,
+    ply18: 0xb88a58
+  };
+  const color = new THREE.Color(palette[selected] || 0xc69b68);
+
+  ifcImportedParts.forEach(part => {
+    part.userData.material = selected;
+    part.traverse(obj => {
+      if (!obj.isMesh || !obj.material) return;
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      mats.forEach(mat => {
+        if (mat.color) mat.color.copy(color);
+        mat.needsUpdate = true;
+      });
+    });
+  });
+}
+
+function applyIfcRecognition() {
+  if (!ifcImportedParts.length) return { counts:{}, lowConfidence:0 };
+
+  const overallBox = new THREE.Box3();
+  ifcImportedParts.forEach(part => overallBox.union(new THREE.Box3().setFromObject(part)));
+
+  const counters = {};
+  let lowConfidence = 0;
+
+  ifcImportedParts.forEach((part, index) => {
+    const u = part.userData;
+    const box = new THREE.Box3().setFromObject(part);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+
+    const result = recognizeIfcPart({
+      name: u.sourceName || u.name,
+      typeName: u.ifcType,
+      size,
+      center,
+      overallBox
+    });
+    counters[result.kind] = (counters[result.kind] || 0) + 1;
+    if (result.confidence === "low") lowConfidence++;
+
+    u.kind = result.kind;
+    u.recognizedKind = result.kind;
+    u.recognitionConfidence = result.confidence;
+    u.recognitionReason = result.reason;
+    u.sourceName = u.sourceName || u.name;
+
+    const sourceName = normalizeIfcText(u.sourceName);
+    const genericSource = !sourceName ||
+      sourceName === ("ifc элемент " + u.expressId) ||
+      sourceName === "ifc element " + u.expressId;
+
+    // Только если имя IFC было техническим/неинформативным,
+    // заменяем отображаемое имя на технологическое.
+    if (genericSource) {
+      const sameKind = ifcImportedParts.filter(p => p.userData.recognizedKind === result.kind).indexOf(part) + 1;
+      u.name = result.label + " " + sameKind;
+    }
+
+    u.width = size.x;
+    u.height = size.y;
+    u.depth = size.z;
+    u.thickness = Math.min(size.x, size.y, size.z);
+    u.recognitionIndex = index + 1;
+  });
+
+  return { counts:counters, lowConfidence };
+}
+
+function moveIfcSupportsToHardware() {
+  const supports = ifcImportedParts.filter(part => part.userData?.recognizedKind === "Опора");
+  if (!supports.length) return 0;
+
+  supports.forEach((part, index) => {
+    const u = part.userData;
+    u.isHardware = true;
+    u.hardwareCategory = "Фурнитура";
+    u.hardwareType = "Мебельная ножка";
+    u.kind = "Фурнитура";
+    u.recognizedKind = "Фурнитура";
+    u.recognitionReason = "IFC-геометрия + положение в нижнем углу";
+    u.hardwareNumber = "HW-" + String(index + 1).padStart(3, "0");
+    u.name = "Ножка " + (index + 1);
+    u.source = "IFC";
+    u.geometryLocked = true;
+    u.technology = null;
+    u.detailing = null;
+  });
+
+  ifcHardwareParts = supports;
+  ifcImportedParts = ifcImportedParts.filter(part => !part.userData?.isHardware);
+  for (let i = parts.length - 1; i >= 0; i--) {
+    if (parts[i].userData?.isHardware) parts.splice(i, 1);
+  }
+
+  return supports.length;
+}
+
+async function importIfcIntoFurnitureCore(file) {
+  if (!file) return;
+
+  const target = $("ifcRecognition");
+  const geometryStatus = $("ifcGeometry");
+  const objectsStatus = $("ifcProjectObjects");
+
+  try {
+    target && (target.textContent = "Импорт IFC: чтение геометрии…");
+
+    const api = await ensureIfcApi();
+    // Сначала инвалидируем старый проект и закрываем старый IFC,
+    // затем открываем новый IFC. Нельзя очищать модель после OpenModel(),
+    // потому что clearModel() закрывает активный IFC-документ.
+    clearModel();
+
+    const data = new Uint8Array(await file.arrayBuffer());
+    ifcModelId = api.OpenModel(data, { COORDINATE_TO_ORIGIN: true });
+    const ifcLengthScale = detectIfcModelLengthScale(api, ifcModelId);
+    console.info("IFC единицы: масштаб к мм =", ifcLengthScale);
+
+    if (ifcModelId === -1) {
+      throw new Error("IFC не удалось открыть.");
+    }
+
+    const candidateIds = new Set();
+    for (const name of ["IFCFURNITURE", "IFCFURNISHINGELEMENT", "IFCBUILDINGELEMENTPROXY"]) {
+      const code = WebIFC[name];
+      if (typeof code !== "number") continue;
+      vectorToArray(api.GetLineIDsWithType(ifcModelId, code)).forEach(id => candidateIds.add(id));
+    }
+
+    // Если IFC не классифицировал мебель отдельным типом, используем все
+    // геометрические элементы как резервный режим. Геометрия не меняется.
+    let expressIds = [...candidateIds];
+    if (!expressIds.length) {
+      expressIds = vectorToArray(api.GetAllLines(ifcModelId)).filter(id => {
+        try {
+          const line = api.GetLine(ifcModelId, id);
+          return Boolean(line && line.type && api.IsIfcElement?.(line.type));
+        } catch {
+          return false;
+        }
+      });
+    }
+
+    let rendered = 0;
+    let componentCount = 0;
+    for (const expressId of expressIds) {
+      let line = null;
+      try { line = api.GetLine(ifcModelId, expressId); } catch {}
+
+      let flatMesh = null;
+      try { flatMesh = api.GetFlatMesh(ifcModelId, expressId); } catch {}
+      if (!flatMesh || !flatMesh.geometries || !flatMesh.geometries.size()) continue;
+
+      const name =
+        String(ifcScalar(line?.Name) || ifcScalar(line?.ObjectType) ||
+        ifcScalar(line?.Tag) || ("IFC элемент " + expressId));
+
+      const typeName = line?.type ? api.GetNameFromTypeCode(line.type) : "IFC";
+
+      /*
+       * Один IFC product может содержать несколько геометрических
+       * компонентов (например, Archicad export с "Split complex elements: Off").
+       * Каждый placed geometry является отдельным источником реальной формы.
+       * Поэтому компоненты не объединяем в одну Furniture Part.
+       *
+       * Важно: mesh и его flatTransformation берутся напрямую из WebIFC.
+       * Мы только создаём отдельный Three.js-контейнер и масштабируем его
+       * к внутренним мм Furniture Core. Вершины IFC не пересчитываются.
+       */
+      for (let componentIndex = 0; componentIndex < flatMesh.geometries.size(); componentIndex++) {
+        const placed = flatMesh.geometries.get(componentIndex);
+        const mesh = makeIfcMesh(api, ifcModelId, placed);
+        const group = new THREE.Group();
+
+        group.name = name + " · компонент " + (componentIndex + 1);
+
+        // IFC использует Z-up, Furniture Core — Y-up.
+        // Меняем только систему координат отображения контейнера:
+        // IFC-вёршины и flatTransformation остаются неизменными.
+        group.rotation.x = -Math.PI / 2;
+        group.scale.setScalar(ifcLengthScale);
+        group.add(mesh);
+
+        const box = new THREE.Box3().setFromObject(group);
+        if (box.isEmpty()) continue;
+
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+
+        group.userData = {
+          source: "IFC",
+          expressId,
+          componentIndex: componentIndex + 1,
+          componentCount: flatMesh.geometries.size(),
+          ifcType: typeName,
+          kind: classifyIfcType(typeName),
+          recognizedKind: classifyIfcType(typeName),
+          recognitionConfidence: "pending",
+          recognitionReason: "ожидает геометрической классификации",
+          sourceName: name,
+          name: group.name,
+          width: size.x,
+          height: size.y,
+          depth: size.z,
+          thickness: Math.min(size.x, size.y, size.z),
+          quantity: 1,
+          material: $("material")?.value || "ldsp18",
+          edges: edgeLabels(),
+          // Для IFC группа содержит flatTransformation внутри mesh, поэтому её базовая
+          // позиция должна оставаться локальной позицией контейнера, а не центром геометрии.
+          // Иначе сборка/взрыв повторно прибавляет центр детали и смещает её от корпуса.
+          base: group.position.clone(),
+          partNumber: ""
+        };
+
+        root.add(group);
+        parts.push(group);
+        ifcImportedParts.push(group);
+        rendered++;
+        componentCount++;
+      }
+    }
+
+    // rendered = реальные геометрические детали, componentCount оставлен
+    // отдельным счётчиком для диагностики сложных IFC products.
+
+    if (!rendered) throw new Error("В IFC не найдены элементы с геометрией.");
+
+    root.updateMatrixWorld(true);
+
+    // IFC может иметь произвольный мировой ноль. После распознавания
+    // ставим нижнюю точку реальной мебели на уровень пола Furniture Core.
+    // X/Z не меняем: сохраняем исходное позиционирование и геометрию IFC.
+    const importedBox = new THREE.Box3().setFromObject(root);
+    if (!importedBox.isEmpty() && Number.isFinite(importedBox.min.y)) {
+      root.position.y -= importedBox.min.y;
+      root.updateMatrixWorld(true);
+    }
+
+    const recognition = applyIfcRecognition();
+    const hardwareCount = moveIfcSupportsToHardware();
+    if (hardwareCount) {
+      recognition.counts["Фурнитура / ножка"] = hardwareCount;
+      delete recognition.counts["Опора"];
+    }
+    ifcMode = true;
+    syncIfcParametersFromRecognition();
+    applyIfcMaterial();
+    const technology = buildIfcTechnologyState();
+    assignPartNumbers();
+    const ifcTechnologyOps = buildIfcTechnologyOperations();
+    technology.ready = ifcImportedParts.filter(part => part.userData.technology?.status === "ready").length;
+    technology.review = ifcImportedParts.filter(part => part.userData.technology?.status !== "ready").length;
+    const ifcHardwareSchedule = buildIfcHardwareSchedule();
+    window._ifcHardwareSchedule = ifcHardwareSchedule;
+    [...ifcImportedParts, ...ifcHardwareParts].forEach(part => {
+      const key = part.userData.isHardware
+        ? part.userData.hardwareNumber
+        : part.userData.partNumber;
+      part.userData.ifcHardwareSchedule = part.userData.isHardware
+        ? ifcHardwareSchedule.filter(item => item.type === "Мебельная ножка")
+        : ifcHardwareSchedule.filter(
+            item => item.partNumber === key || item.partName === part.userData.name
+          );
+    });
+    const detailingPipeline = rebuildDetailingPipeline();
+    const constructionQC = runConstructionQC(detailingPipeline);
+    const releaseGate = runReleaseGate();
+    renderPartsTable();
+    fitView();
+
+    const recognitionSummary = Object.entries(recognition.counts)
+      .map(([kind, count]) => kind + ": " + count)
+      .join(" · ");
+
+    if (target) target.textContent =
+      "IFC импортирован: " + rendered + " элементов. Автораспознавание деталей завершено.";
+
+    if (geometryStatus) geometryStatus.textContent =
+      "Реальная IFC-геометрия: " + rendered + " элементов. Геометрия не изменялась.";
+
+    if (objectsStatus) objectsStatus.textContent =
+      "Распознано: " + recognitionSummary +
+      (recognition.lowConfidence ? " · требуют проверки: " + recognition.lowConfidence : " · неоднозначных деталей нет") +
+      " · технология: готово " + technology.ready + ", на проверке " + technology.review +
+      " · соединения-кандидаты: " + ifcTechnologyOps.joints.length +
+      " · позиции крепежа-кандидаты: " + ifcHardwareSchedule.length +
+      " · фурнитура: " + ifcHardwareParts.length + " ножек" +
+      " · деталировка: готово " + detailingPipeline.ready + ", на проверке " + detailingPipeline.review +
+      " · Construction QC: " + constructionQC.status +
+      " · Release Gate: " + releaseGate.status;
+
+    if ($("projectName")) $("projectName").textContent = file.name;
+    if ($("status")) $("status").textContent = "IFC импортирован · геометрия является источником истины";
+
+    validate(
+      technology.review || detailingPipeline.review || !constructionQC.passed
+        ? "IFC импортирован. Construction QC требует проверки: " + constructionQC.issueCount + " замечаний."
+        : "IFC импортирован. Construction QC PASS: цепочка конструкция → детали → присадка → деталировка согласована. Геометрия не изменена.",
+      technology.review || detailingPipeline.review || !constructionQC.passed ? "error" : "ok"
+    );
+  } catch (error) {
+    console.error(error);
+    target && (target.textContent = "Ошибка IFC: " + (error?.message || error));
+    geometryStatus && (geometryStatus.textContent = "Геометрия IFC не импортирована.");
+    validate("Ошибка импорта IFC: " + (error?.message || error), "error");
+  }
+}
+
+$("ifcImport")?.addEventListener("click", async () => {
+  const file = $("ifcFile")?.files?.[0];
+  await importIfcIntoFurnitureCore(file);
+});
+
+$("ifcFile")?.addEventListener("change", async (event) => {
+  const file = event.target.files?.[0];
+  if (file) await importIfcIntoFurnitureCore(file);
+});
+
 
 function readParams() {
   return {
@@ -53,7 +1051,20 @@ function readParams() {
     connectorDiameter: Number($("connectorDiameter").value),
     secondaryFastener: $("secondaryFastener").value,
     dowelDiameter: Number($("dowelDiameter").value),
-    eccentricDiameter: Number($("eccentricDiameter").value)
+    eccentricDiameter: Number($("eccentricDiameter").value),
+    shelfSupportType: $("shelfSupportType").value,
+    shelfFrontOffset: Number($("shelfFrontOffset").value),
+    lightingEnabled: $("lightingEnabled").value,
+    lightingMount: $("lightingMount").value,
+    shelfLighting: $("shelfLighting").value,
+    countertopEnabled: $("countertopEnabled").value,
+    countertopThickness: Number($("countertopThickness").value),
+    countertopPostforming: $("countertopPostforming").value,
+    countertopCut: $("countertopCut").value,
+    countertopMaterial: $("countertopMaterial").value,
+    facadeManufacturer: $("facadeManufacturer").value.trim(),
+    facadeModel: $("facadeModel").value.trim(),
+    facadeLibraryItem: $("facadeLibraryItem").value
   };
 }
 
@@ -245,6 +1256,26 @@ function constructionChecks(bodyFasteners, shelfSupportDrilling, secondaryFasten
 function buildDetailedProcessing(part) {
   const u = part.userData;
   const operations = [];
+  if (u.source === "IFC") {
+    (u.technology?.edgeOperations || []).forEach(op => operations.push({
+      type:"Кромление", operation:"Кромление",
+      edge:op.edge, material:op.material, status:op.status, source:"IFC"
+    }));
+    (u.technology?.drilling || []).forEach(op => operations.push({
+      type:op.type, operation:"Кандидат сверления",
+      diameter:op.diameter, depth:op.depth,
+      x:op.x, y:op.y, z:op.z,
+      linkedHardware:op.linkedPart || "",
+      status:op.status, source:op.source, needsReference:op.needsReference
+    }));
+    (u.technology?.operations || []).filter(op=>op.type==="Соединение").forEach(op => operations.push({
+      type:"Соединение", operation:op.operation,
+      status:op.status, linkedPart:op.linkedPart,
+      contactCenter:op.contactCenter, contactAxis:op.contactAxis,
+      hardwareRecommendation:op.hardwareRecommendation, source:"IFC"
+    }));
+    return operations;
+  }
   (u.drilling || []).forEach(h => operations.push({
     type:"Сверление", operation:h.operation, diameter:h.diameter, depth:h.depth,
     x:h.x, y:h.y, z:h.z, linkedHardware:h.linkedHardware || h.type || ""
@@ -267,6 +1298,62 @@ function buildDetailedProcessing(part) {
 function constructionChecksDetailed() {
   const p = readParams();
   const issues = [];
+
+  // Геометрическая целостность параметрической модели.
+  // Для IFC источник геометрии остаётся неизменным, поэтому эти проверки
+  // применяются только к модели, построенной Furniture Core.
+  if (!ifcMode) {
+    const innerW = p.width - 2 * p.thickness;
+    const innerH = p.height - 2 * p.thickness;
+    const eps = 0.5;
+
+    parts.forEach(part => {
+      const u = part.userData;
+      if (![u.width, u.height, u.depth].every(v => Number.isFinite(Number(v)) && Number(v) > 0)) {
+        issues.push("Некорректные габариты детали: " + u.name);
+      }
+
+      if (u.kind === "Полка") {
+        const left = part.position.x - u.width / 2;
+        const right = part.position.x + u.width / 2;
+        if (left < -innerW / 2 - eps || right > innerW / 2 + eps) {
+          issues.push("Полка выходит за пределы внутренней секции: " + u.name);
+        }
+        if (u.height > p.thickness + eps) {
+          issues.push("Толщина полки не соответствует материалу: " + u.name);
+        }
+      }
+
+      if (u.kind === "Вертикальная перегородка") {
+        const x = part.position.x;
+        if (x < -innerW / 2 - eps || x > innerW / 2 + eps) {
+          issues.push("Вертикальная перегородка выходит за корпус: " + u.name);
+        }
+      }
+
+      if (u.kind === "Горизонтальная перегородка") {
+        const y = part.position.y;
+        if (y < p.thickness - eps || y > p.height - p.thickness + eps) {
+          issues.push("Горизонтальная перегородка выходит за корпус: " + u.name);
+        }
+      }
+
+      if (u.kind === "Фасад") {
+        const left = part.position.x - u.width / 2;
+        const right = part.position.x + u.width / 2;
+        const bottom = part.position.y - u.height / 2;
+        const top = part.position.y + u.height / 2;
+        if (left < -p.width / 2 - eps || right > p.width / 2 + eps ||
+            bottom < -eps || top > p.height + eps) {
+          issues.push("Фасад выходит за габариты корпуса: " + u.name);
+        }
+      }
+    });
+
+    if (innerW <= 0 || innerH <= 0) {
+      issues.push("Внутренний объём корпуса имеет недопустимый размер.");
+    }
+  }
   parts.forEach(part => {
     const u = part.userData;
     const minDrillEdge = 4;
@@ -276,6 +1363,18 @@ function constructionChecksDetailed() {
         issues.push("Отверстие слишком близко к базовой грани: " + u.name + " / " + h.id);
       }
     });
+    if (u.source === "IFC") {
+      (u.technology?.joints || []).forEach(joint => {
+        if (joint.status !== "ready") issues.push("IFC-соединение требует подтверждения: " + u.name + " / " + (joint.id || "joint"));
+      });
+      (u.technology?.drilling || []).forEach(op => {
+        if (op.status === "review") issues.push("IFC-присадка требует подтверждения базы: " + u.name + " / " + op.id);
+        if (!Number.isFinite(op.depth) || op.depth <= 0) issues.push("Недопустимая глубина IFC-присадки: " + u.name + " / " + op.id);
+        if (op.depth > Math.max(0, Number(u.technology?.thicknessEstimate || 0) - 1)) {
+          issues.push("Глубина IFC-присадки превышает безопасную толщину детали: " + u.name + " / " + op.id);
+        }
+      });
+    }
     if (u.kind === "Полка" && u.width < 100) issues.push("Полка слишком узкая: " + u.name);
     if (u.kind === "Фасад" && (u.width < 100 || u.height < 200)) issues.push("Недопустимые габариты фасада: " + u.name);
   });
@@ -285,18 +1384,122 @@ function constructionChecksDetailed() {
   return [...new Set(issues)];
 }
 
-function material() {
+/*
+ * Construction QC Gate
+ * Единая контрольная точка перед передачей деталировки в раскрой.
+ *
+ * Порядок:
+ * параметры → конструкция → детали → присадка → деталировка → QC → раскрой.
+ *
+ * QC ничего не исправляет автоматически и не меняет IFC-геометрию.
+ * Он только собирает результаты уже выполненных проверок в единый контракт.
+ */
+function runConstructionQC(pipelineResult = { ready:0, review:0, issues:[] }) {
+  const baseIssues = [
+    ...constructionChecks(
+      parts.flatMap(part => part.userData.bodyFasteners || []),
+      parts.flatMap(part => part.userData.shelfSupportDrilling || []),
+      parts.flatMap(part => part.userData.secondaryFasteners || [])
+    ),
+    ...constructionChecksDetailed(),
+    ...(pipelineResult.issues || [])
+  ];
+
+  const uniqueIssues = [...new Set(baseIssues.filter(Boolean))];
+  const detailStatuses = parts.filter(part => !part.userData?.isHardware).map(part => ({
+    partNumber: part.userData.partNumber || "",
+    name: part.userData.name || "",
+    role: part.userData.recognizedKind || part.userData.kind || "",
+    status: part.userData.detailing?.status || "review",
+    processingCount: part.userData.detailing?.processing?.length || 0,
+    holesCount: part.userData.detailing?.holes?.length || 0,
+    cuttingEligible: Boolean(part.userData.detailing?.cutting?.eligible)
+  }));
+
+  const unresolvedDetails = detailStatuses.filter(item => item.status !== "ready");
+  const missingCuttingLink = detailStatuses.filter(item => !item.cuttingEligible);
+  const geometrySourceErrors = parts.filter(part =>
+    part.userData.source === "IFC" && part.userData.geometryLocked !== true
+  );
+
+  const checks = {
+    parameters: uniqueIssues.filter(x =>
+      /размер|зазор|угол|секци|глубин|толщин|объём/i.test(x)
+    ).length === 0,
+    construction: uniqueIssues.length === 0,
+    detailing: unresolvedDetails.length === 0,
+    cuttingLink: missingCuttingLink.length === 0,
+    ifcGeometryLocked: geometrySourceErrors.length === 0
+  };
+
+  const passed = Object.values(checks).every(Boolean);
+
+  const report = {
+    gate: "CONSTRUCTION_QC",
+    status: passed ? "PASS" : "REVIEW",
+    passed,
+    checks,
+    issueCount: uniqueIssues.length,
+    issues: uniqueIssues,
+    details: detailStatuses,
+    summary: {
+      parts: parts.length,
+      detailingReady: Number(pipelineResult.ready || 0),
+      detailingReview: Number(pipelineResult.review || 0),
+      unresolvedDetails: unresolvedDetails.length,
+      missingCuttingLink: missingCuttingLink.length,
+      geometrySourceErrors: geometrySourceErrors.length
+    }
+  };
+
+  parts.forEach(part => {
+    const number = part.userData.partNumber || "";
+    const item = detailStatuses.find(x => x.partNumber === number);
+    part.userData.constructionQC = {
+      status: item?.status === "ready" && passed ? "PASS" : "REVIEW",
+      sourceGeometry: part.userData.source === "IFC" ? "IFC" : "Furniture Core",
+      detailingReady: item?.status === "ready",
+      cuttingEligible: Boolean(item?.cuttingEligible),
+      processingCount: item?.processingCount || 0,
+      holesCount: item?.holesCount || 0
+    };
+  });
+
+  report.modelRevision = modelRevision;
+  window._constructionQC = report;
+  return report;
+}
+
+function material(materialValue = $("material")?.value) {
   const colors = {
-    ldsp18: 0xc69b68,
-    ldsp16: 0xc69b68,
-    mdf18: 0xd7d9dc,
-    ply18: 0xb88a58
+    ldsp16: 0xc69b68, ldsp18: 0xc69b68, ldsp22: 0xc69b68, ldsp35: 0xc69b68,
+    mdf16: 0xd7d9dc, mdf18: 0xd7d9dc,
+    ply15: 0xb88a58, ply18: 0xb88a58, ply22: 0xb88a58
   };
   return new THREE.MeshStandardMaterial({
-    color: colors[$("material").value] || 0xc69b68,
+    color: colors[materialValue] || 0xc69b68,
     roughness: 0.68,
     metalness: 0
   });
+}
+
+function syncMaterialAndThickness(source = "material") {
+  const materialSelect = $("material");
+  const thicknessInput = $("thickness");
+  if (!materialSelect || !thicknessInput) return;
+
+  const value = String(materialSelect.value || "");
+  const match = value.match(/^(ldsp|mdf|ply)(16|18|22|35|15)$/);
+  if (source === "material" && match) {
+    thicknessInput.value = match[2];
+    return;
+  }
+
+  const family = value.replace(/(?:15|16|18|22|35)$/, "");
+  const candidate = family + String(Math.round(Number(thicknessInput.value)));
+  if ([...materialSelect.options].some(option => option.value === candidate)) {
+    materialSelect.value = candidate;
+  }
 }
 
 function edgeLabels() { return [1, 2, 3, 4].map(i => $("edge" + i).value); }
@@ -318,241 +1521,631 @@ function addPart(name, kind, width, height, depth, position, quantity = 1, edges
 
 function assignPartNumbers() {
   parts.forEach((part, index) => {
+    part.userData.partNumber = String(index + 1).padStart(3, "0");
+  });
+}
+
+/*
+ * Единая точка сборки цепочки:
+ * конструкция → деталь → присадка → деталировка → раскрой.
+ * Никаких новых геометрических данных здесь не создаётся.
+ * Источником размеров остаётся userData детали, а для IFC — исходная IFC-геометрия.
+ */
+function rebuildDetailingPipeline() {
+  const issues = [];
+  let ready = 0;
+  let review = 0;
+
+  parts.forEach(part => {
     const u = part.userData;
-    u.partNumber = String(index + 1).padStart(3, "0");
+
+    // Деталировка является производным состоянием.
+    // Перед каждой пересборкой удаляем только предыдущий производный результат,
+    // не изменяя исходную геометрию и исходные технологические источники.
+    delete u.detailing;
+    delete u.detailingContinuity;
+    delete u.processing;
+
+    const processing = buildDetailedProcessing(part);
+    u.processing = processing;
+
+    const holes = [
+      ...(u.drilling || []),
+      ...(u.bodyFasteners || []),
+      ...(u.shelfSupportDrilling || []),
+      ...(u.secondaryFasteners || []),
+      ...((u.technology && u.technology.drilling) || [])
+    ];
+
+    const spec = getSheetSpec(part);
+    const sourceGeometry = u.source === "IFC" ? "IFC" : "Furniture Core";
+
+    const partIssues = [];
+    if (!u.partNumber) partIssues.push("нет номера детали");
+    if (u.source === "IFC" && u.recognitionConfidence === "low") {
+      partIssues.push("низкая уверенность IFC-распознавания; требуется ручная проверка");
+    }
+    if (u.source === "IFC" && (u.technology?.joints || []).some(j => j.status === "candidate")) {
+      partIssues.push("есть неподтверждённое IFC-соединение; требуется ручное подтверждение технологии");
+    }
+    if (u.source === "IFC" && (!Array.isArray(u.edges) || u.edges.length !== 4 || u.edges.some(edge => !String(edge || "").trim()))) {
+      partIssues.push("кромка IFC не определена; требуется ручное назначение/подтверждение");
+    }
+    if (![u.width, u.height, u.depth].every(v => Number.isFinite(Number(v)) && Number(v) > 0)) {
+      partIssues.push("некорректные габариты");
+    }
+    if (!String(u.material || "").trim()) {
+      partIssues.push("не задан материал детали");
+    }
+    const detailQuantity = Number(u.quantity || 1);
+    if (!Number.isFinite(detailQuantity) || detailQuantity < 1 || !Number.isInteger(detailQuantity)) {
+      partIssues.push("некорректное количество детали");
+    }
+    if (u.source === "IFC" && u.sheetSpecConfidence === "review") {
+      const sourceThickness = Number.isFinite(Number(u.sheetThickness)) ? Math.round(Number(u.sheetThickness)) : "не определена";
+      const materialThickness = Number.isFinite(Number(u.sheetMaterialThickness)) ? Math.round(Number(u.sheetMaterialThickness)) : "не определена";
+      partIssues.push(
+        "толщина IFC " + sourceThickness + " мм не совпадает с выбранным материалом " +
+        materialThickness + " мм; требуется ручная проверка"
+      );
+    }
+    processing.forEach((op, index) => {
+      if (!op || !op.type) partIssues.push("операция №" + (index + 1) + " без типа");
+      if (op.type === "Сверление" || /сверлен|отверст/i.test(op.operation || "")) {
+        if (!Number.isFinite(Number(op.diameter)) || Number(op.diameter) <= 0) {
+          partIssues.push("присадка без диаметра");
+        }
+        if (!Number.isFinite(Number(op.depth)) || Number(op.depth) <= 0) {
+          partIssues.push("присадка без глубины");
+        }
+      }
+    });
+    holes.forEach((hole, index) => {
+      if (!hole || !Number.isFinite(Number(hole.x)) || !Number.isFinite(Number(hole.y))) {
+        partIssues.push("отверстие №" + (index + 1) + " без координат X/Y");
+      }
+    });
+
+    const detailStatus = partIssues.length ? "review" : "ready";
+    if (detailStatus === "ready") ready++; else review++;
+    issues.push(...partIssues.map(issue => "Деталь " + (u.partNumber || u.name) + ": " + issue));
+
     u.detailing = {
       number: u.partNumber,
       name: u.name,
-      length: Math.round(u.width),
-      width: Math.round(u.height),
-      thickness: Math.round(u.depth),
-      quantity: u.quantity,
+      length: spec.length,
+      width: spec.width,
+      thickness: spec.thickness,
+      quantity: Number(u.quantity || 1),
       material: u.material,
-      edges: [...u.edges],
-      processing: [...(u.processing || [])],
-      holes: [...(u.drilling || []), ...(u.shelfSupportDrilling || [])],
-      milling: (u.processing || []).filter(op => /фрез|паз|выбор/i.test(op.operation || "")),
-      notes: []
+      edges: [...(u.edges || [])],
+      processing: [...processing],
+      holes: [...holes],
+      milling: processing.filter(op => /фрез|паз|выбор/i.test(op.operation || "")),
+      construction: {
+        source: sourceGeometry,
+        role: u.recognizedKind || u.kind || "",
+        confidence: u.recognitionConfidence || "n/a",
+        jointCount: Number(u.technology?.jointCount || 0),
+        operationCount: processing.length
+      },
+      cutting: {
+        thickness: spec.thickness,
+        length: spec.length,
+        width: spec.width,
+        quantity: Number(u.quantity || 1),
+        eligible: detailStatus === "ready"
+      },
+      status: detailStatus,
+      notes: partIssues,
+      modelRevision
+    };
+
+    u.detailingContinuity = {
+      construction: Boolean(u.kind || u.recognizedKind),
+      detail: Boolean(u.partNumber),
+      processingCount: processing.length,
+      holesCount: holes.length,
+      cuttingReady: detailStatus === "ready",
+      sourceGeometry,
+      modelRevision
     };
   });
+
+  return { ready, review, issues: [...new Set(issues)] };
+}
+
+function getSheetSpec(part) {
+  const u = part.userData;
+  const materialValue = String($("material")?.value || "");
+  const materialMatch = materialValue.match(/^(ldsp|mdf|ply)(15|16|18|22|35)$/);
+  const materialThickness = materialMatch ? Number(materialMatch[2]) : null;
+  const uiThickness = Number($("thickness")?.value || 18);
+  // Для IFC подтверждение толщины должно относиться именно к выбранному
+  // материалу. Поле толщины интерфейса не может само по себе подтвердить
+  // исходную толщину IFC, если такого материала в библиотеке нет.
+  const target = u.source === "IFC" && Number.isFinite(materialThickness)
+    ? materialThickness
+    : uiThickness;
+  const strictIfcMatch = u.source === "IFC";
+
+  const confidenceFor = value => {
+    if (!Number.isFinite(Number(value)) || !Number.isFinite(target)) return "review";
+    return strictIfcMatch
+      ? (Math.abs(Number(value) - target) < 0.01 ? "high" : "review")
+      : (Math.abs(Number(value) - target) <= 2 ? "high" : "review");
+  };
+
+  if (Number.isFinite(Number(u.sheetThickness)) &&
+      Number.isFinite(Number(u.sheetLength)) &&
+      Number.isFinite(Number(u.sheetWidth)) &&
+      Number.isFinite(Number(u.sheetSpecTargetThickness)) &&
+      Number(u.sheetSpecTargetThickness) === target) {
+    u.sheetSpecConfidence = confidenceFor(u.sheetThickness);
+    u.sheetMaterialThickness = Number.isFinite(materialThickness) ? materialThickness : null;
+    u.sheetThicknessConfirmed = u.sheetSpecConfidence === "high";
+    return {
+      thickness: Math.round(u.sheetThickness),
+      length: Math.round(u.sheetLength),
+      width: Math.round(u.sheetWidth),
+      confidence: u.sheetSpecConfidence
+    };
+  }
+
+  const dims = [
+    {axis:"width", value:Number(u.width)},
+    {axis:"height", value:Number(u.height)},
+    {axis:"depth", value:Number(u.depth)}
+  ].filter(d => Number.isFinite(d.value));
+  dims.sort((a,b) => Math.abs(a.value-target) - Math.abs(b.value-target));
+  const thickness = dims[0]?.value || target;
+  const remaining = dims.filter(d => d !== dims[0]).map(d => Math.round(d.value));
+  u.sheetThickness = Math.round(thickness);
+  u.sheetLength = remaining[0] || Math.round(u.width);
+  u.sheetWidth = remaining[1] || Math.round(u.height);
+  u.sheetSpecTargetThickness = target;
+  u.sheetMaterialThickness = Number.isFinite(materialThickness) ? materialThickness : null;
+  u.sheetSpecConfidence = confidenceFor(thickness);
+  u.sheetThicknessConfirmed = u.sheetSpecConfidence === "high";
+  return {
+    thickness: u.sheetThickness,
+    length: u.sheetLength,
+    width: u.sheetWidth,
+    confidence: u.sheetSpecConfidence
+  };
 }
 
 function buildCuttingGroups() {
   const groups = new Map();
+
+  // Раскрой больше не читает конструкционные поля напрямую.
+  // Источник для него — уже согласованная деталировка.
   parts.forEach(part => {
     const u = part.userData;
+    const d = u.detailing;
+    if (!d) return;
+
     const key = [
-      u.material,
-      Math.round(u.depth),
-      u.edges.join("|"),
-      Math.round(u.width),
-      Math.round(u.height)
+      d.material,
+      d.cutting.thickness,
+      d.edges.join("|"),
+      d.cutting.length,
+      d.cutting.width
     ].join("::");
+
     if (!groups.has(key)) {
       groups.set(key, {
         key,
-        material: u.material,
-        thickness: Math.round(u.depth),
-        length: Math.round(u.width),
-        width: Math.round(u.height),
-        edges: [...u.edges],
+        material: d.material,
+        thickness: d.cutting.thickness,
+        length: d.cutting.length,
+        width: d.cutting.width,
+        edges: [...d.edges],
         quantity: 0,
-        partNumbers: []
+        partNumbers: [],
+        details: [],
+        detailingStatus: d.status
       });
     }
+
     const g = groups.get(key);
-    g.quantity += Number(u.quantity || 1);
-    g.partNumbers.push(u.partNumber);
+    const quantity = Number(d.quantity || 1);
+    g.quantity += quantity;
+    g.partNumbers.push(d.number);
+    g.details.push({
+      number: d.number,
+      length: d.cutting.length,
+      width: d.cutting.width,
+      thickness: d.cutting.thickness,
+      quantity,
+      material: d.material,
+      edges: [...d.edges]
+    });
+    if (d.status !== "ready") g.detailingStatus = "review";
   });
-  return [...groups.values()].map((g, index) => ({...g, groupNumber: String(index + 1).padStart(3, "0")}));
+
+  return [...groups.values()].map((g, index) => ({
+    ...g,
+    groupNumber: String(index + 1).padStart(3, "0")
+  }));
 }
 
-function buildSheetLayout(sheetLength, sheetWidth, kerf, margin, allowRotation, grainMode) {
+
+function buildSheetLayout(sheetLength, sheetWidth, kerf, margin) {
   const groups = buildCuttingGroups();
   const sheets = [];
   let sheetIndex = 1;
+
   const newSheet = (material) => ({
-    sheetNumber: sheetIndex++, material, length: sheetLength, width: sheetWidth, placements: []
+    sheetNumber: sheetIndex++,
+    material,
+    thickness: null,
+    length: sheetLength,
+    width: sheetWidth,
+    placements: []
   });
 
   const items = [];
   groups.forEach(group => {
-    for (let q = 0; q < group.quantity; q++) {
-      items.push({
-        groupNumber: group.groupNumber,
-        partNumber: group.partNumbers[q] || group.partNumbers[0] || "",
-        material: group.material,
-        length: group.length,
-        width: group.width,
-        edges: group.edges
-      });
-    }
-  });
-  items.sort((a, b) => (b.length * b.width) - (a.length * a.width));
-
-  const canRotate = allowRotation && grainMode === "нет";
-  const tryPlace = (sheet, item) => {
-    const candidates = [
-      {w:item.length, h:item.width, rotated:false},
-      ...(canRotate ? [{w:item.width, h:item.length, rotated:true}] : [])
-    ];
-    let best = null;
-    sheet.placements.forEach(p => {
-      for (const c of candidates) {
-        const x = p.x + p.length + kerf;
-        const y = p.y;
-        if (x + c.w <= sheetLength - margin && y + c.h <= sheetWidth - margin) {
-          best = best || {x, y, ...c};
-        }
+    // Номер детали берём из конкретной записи деталировки.
+    // Нельзя индексировать group.partNumbers по общей quantity:
+    // quantity может быть больше числа исходных деталей.
+    group.details.forEach(detail => {
+      const quantity = Math.max(1, Number(detail.quantity || 1));
+      for (let q = 0; q < quantity; q++) {
+        items.push({
+          groupNumber: group.groupNumber,
+          partNumber: detail.number || "",
+          material: detail.material || group.material,
+          length: detail.length,
+          width: detail.width,
+          thickness: detail.thickness,
+          edges: [...(detail.edges || group.edges || [])]
+        });
       }
     });
-    for (const c of candidates) {
-      const x = margin;
-      const y = margin;
-      if (x + c.w <= sheetLength - margin && y + c.h <= sheetWidth - margin) {
-        best = best || {x, y, ...c};
+  });
+
+  items.sort((a, b) => (b.length * b.width) - (a.length * a.width));
+
+  const tryPlace = (sheet, item) => {
+    const rows = [];
+    const rowMap = new Map();
+    sheet.placements.forEach(p => {
+      const key = p.y;
+      if (!rowMap.has(key)) rowMap.set(key, []);
+      rowMap.get(key).push(p);
+    });
+
+    for (const [y, row] of [...rowMap.entries()].sort((a,b) => a[0]-b[0])) {
+      const right = row.reduce((m,p) => Math.max(m, p.x + p.length), margin);
+      if (right + kerf + item.length <= sheetLength - margin &&
+          y + item.width <= sheetWidth - margin) {
+        return { x:right + kerf, y, length:item.length, width:item.width };
       }
     }
-    const rowYs = [...new Set(sheet.placements.map(p => p.y))].sort((x,y)=>x-y);
-    for (const y of rowYs) {
-      const row = sheet.placements.filter(p => p.y === y);
-      const right = row.reduce((m,p)=>Math.max(m,p.x+p.length), margin);
-      for (const c of candidates) {
-        if (right + kerf + c.w <= sheetLength - margin && y + c.h <= sheetWidth - margin) {
-          const candidate = {x:right+kerf,y,...c};
-          if (!best || candidate.y < best.y || (candidate.y === best.y && candidate.x < best.x)) best = candidate;
-        }
-      }
+
+    const maxY = sheet.placements.reduce(
+      (m,p) => Math.max(m, p.y + p.width + kerf),
+      margin
+    );
+    if (margin + item.length <= sheetLength - margin &&
+        maxY + item.width <= sheetWidth - margin) {
+      return { x:margin, y:maxY, length:item.length, width:item.width };
     }
-    return best;
+
+    if (sheet.placements.length === 0 &&
+        margin + item.length <= sheetLength - margin &&
+        margin + item.width <= sheetWidth - margin) {
+      return { x:margin, y:margin, length:item.length, width:item.width };
+    }
+
+    return null;
   };
 
   items.forEach(item => {
-    let sheet = [...sheets].reverse().find(s => s.material === item.material);
+    let sheet = [...sheets].reverse().find(s =>
+      s.material === item.material && Number(s.thickness) === Number(item.thickness)
+    );
     let placement = sheet ? tryPlace(sheet, item) : null;
+
     if (!placement) {
       sheet = newSheet(item.material);
+      sheet.thickness = item.thickness;
       sheets.push(sheet);
       placement = tryPlace(sheet, item);
     }
-    if (!placement) {
-      sheet.placements.push({
-        sheetNumber: sheet.sheetNumber, groupNumber: item.groupNumber, partNumber: item.partNumber,
-        x: margin, y: margin, length: item.length, width: item.width, rotated:false, overflow:true
-      });
-      return;
-    }
+
     sheet.placements.push({
       sheetNumber: sheet.sheetNumber,
       groupNumber: item.groupNumber,
       partNumber: item.partNumber,
-      x: Math.round(placement.x),
-      y: Math.round(placement.y),
-      length: placement.w,
-      width: placement.h,
-      rotated: placement.rotated,
-      overflow:false,
-      grain: grainMode
+      x: placement ? Math.round(placement.x) : margin,
+      y: placement ? Math.round(placement.y) : margin,
+      length: item.length,
+      width: item.width,
+      thickness: item.thickness,
+      material: item.material,
+      overflow: !placement,
+      edges: [...item.edges]
     });
   });
 
-  return {sheetLength, sheetWidth, kerf, margin, allowRotation:canRotate, grainMode, sheets};
+  return { sheetLength, sheetWidth, kerf, margin, sheets };
 }
 
-function showCuttingMap() {
-  const layout = buildSheetLayout(
-    Number($("sheetLength")?.value || 2800),
-    Number($("sheetWidth")?.value || 2070),
-    Number($("cutKerf")?.value || 4),
-    Number($("sheetMargin")?.value || 10),
-    Boolean($("allowRotation")?.checked),
-    $("grainMode")?.value || "нет"
-  );
+function renderCuttingMap(layout) {
   const panel = $("cuttingMap");
   if (!panel) return;
+
   panel.innerHTML = "";
-  layout.sheets.forEach((sheet, index) => {
+  layout.sheets.forEach(sheet => {
     const card = document.createElement("div");
     card.className = "cutting-sheet";
+
     const title = document.createElement("div");
     title.className = "cutting-sheet-title";
-    title.textContent = "Лист " + sheet.sheetNumber + " · " + sheet.material + " · " + sheet.length + " × " + sheet.width + " мм";
+    title.textContent =
+      "Лист " + sheet.sheetNumber + " · " + sheet.material +
+      " · " + sheet.length + " × " + sheet.width + " мм";
     card.appendChild(title);
+
     const canvas = document.createElement("canvas");
-    canvas.width = 900; canvas.height = Math.max(300, Math.round(900 * sheet.width / sheet.length));
+    canvas.width = 900;
+    canvas.height = Math.max(300, Math.round(900 * sheet.width / sheet.length));
     canvas.className = "cutting-canvas";
+
     const ctx = canvas.getContext("2d");
-    const sx = canvas.width / sheet.length, sy = canvas.height / sheet.width;
-    ctx.strokeStyle = "#334155"; ctx.lineWidth = 3; ctx.strokeRect(1,1,canvas.width-2,canvas.height-2);
+    const sx = canvas.width / sheet.length;
+    const sy = canvas.height / sheet.width;
+
+    ctx.strokeStyle = "#334155";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(1, 1, canvas.width - 2, canvas.height - 2);
+
     sheet.placements.forEach(p => {
-      const x=p.x*sx, y=p.y*sy, w=p.length*sx, h=p.width*sy;
+      const x = p.x * sx, y = p.y * sy;
+      const w = p.length * sx, h = p.width * sy;
+
       ctx.fillStyle = p.overflow ? "#fecaca" : "#dbeafe";
-      ctx.fillRect(x,y,w,h); ctx.strokeRect(x,y,w,h);
-      ctx.fillStyle = "#111827"; ctx.textAlign="center"; ctx.textBaseline="middle";
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = "#334155";
+      ctx.strokeRect(x, y, w, h);
+
+      ctx.fillStyle = "#111827";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
       ctx.font = Math.max(11, Math.min(24, Math.min(w,h)*0.18)) + "px Arial";
-      ctx.fillText(p.partNumber, x+w/2, y+h/2);
+      ctx.fillText(p.partNumber, x + w/2, y + h/2);
       ctx.font = "11px Arial";
-      ctx.fillText(Math.round(p.length)+"×"+Math.round(p.width), x+w/2, y+h/2+16);
-      if (p.rotated) { ctx.font="10px Arial"; ctx.fillText("90°",x+w/2,y+h/2-16); }
-      if (p.overflow) { ctx.fillStyle="#991b1b"; ctx.fillText("ВНЕ ЛИСТА",x+w/2,y+h/2+31); }
+      ctx.fillText(
+        Math.round(p.length) + "×" + Math.round(p.width),
+        x + w/2,
+        y + h/2 + 16
+      );
+
+      if (p.overflow) {
+        ctx.fillStyle = "#991b1b";
+        ctx.fillText("НЕ ПОМЕЩАЕТСЯ", x + w/2, y + h/2 + 31);
+      }
     });
-    card.appendChild(canvas);
+
     panel.appendChild(card);
   });
+
   panel.hidden = false;
 }
 
-function exportSheetLayout() {
-  if (!window.XLSX) { validate("Модуль Excel недоступен.", "error"); return; }
-  const sheetLength = Number($("sheetLength")?.value || 2800);
-  const sheetWidth = Number($("sheetWidth")?.value || 2070);
-  const kerf = Number($("cutKerf")?.value || 4);
-  const margin = Number($("sheetMargin")?.value || 10);
-  const allowRotation = Boolean($("allowRotation")?.checked);
-  const grainMode = $("grainMode")?.value || "нет";
-  const layout = buildSheetLayout(sheetLength, sheetWidth, kerf, margin, allowRotation, grainMode);
-  const rows = [];
-  layout.sheets.forEach(sheet => sheet.placements.forEach(p => rows.push({
-    "Лист": sheet.sheetNumber,
-    "Группа": p.groupNumber,
-    "№ детали": p.partNumber,
-    "X, мм": p.x,
-    "Y, мм": p.y,
-    "Длина, мм": p.length,
-    "Ширина, мм": p.width,
-    "Поворот": p.rotated ? "90°" : "0°",
-    "Направление текстуры": p.grain || "нет",
-    "Переполнение": p.overflow ? "ДА" : "нет"
-  })));
-  const ws = XLSX.utils.json_to_sheet(rows);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Карта раскроя");
-  XLSX.writeFile(wb, "furniture-ai-sheet-layout.xlsx");
-  validate("Карта раскроя рассчитана: " + layout.sheets.length + " лист(ов).", "ok");
-}
-
-function exportCuttingStructure() {
-  if (!window.XLSX) { validate("Модуль Excel недоступен.", "error"); return; }
-  const groups = buildCuttingGroups();
-  const rows = groups.map(g => ({
-    "Группа раскроя": g.groupNumber,
-    "Материал": g.material,
-    "Толщина, мм": g.thickness,
-    "Длина, мм": g.length,
-    "Ширина, мм": g.width,
-    "Кромка 1": g.edges[0],
-    "Кромка 2": g.edges[1],
-    "Кромка 3": g.edges[2],
-    "Кромка 4": g.edges[3],
-    "Количество": g.quantity,
-    "№ деталей": g.partNumbers.join(", ")
+function cuttingOperationList(part) {
+  const detailing = part.userData?.detailing;
+  const sources = Array.isArray(detailing?.holes) ? detailing.holes : [];
+  return sources.map((op, index) => ({
+    number: index + 1,
+    type: op.operation || op.type || "Сверление",
+    diameter: Number.isFinite(Number(op.diameter)) ? Number(op.diameter) : null,
+    depth: Number.isFinite(Number(op.depth)) ? Number(op.depth) : null,
+    x: Number.isFinite(Number(op.x)) ? Number(op.x) : null,
+    y: Number.isFinite(Number(op.y)) ? Number(op.y) : null,
+    hardware: op.linkedHardware || op.linkedPart || op.type || "",
+    quantity: Number.isFinite(Number(op.quantity)) ? Number(op.quantity) : 1
   }));
-  const ws = XLSX.utils.json_to_sheet(rows);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Раскрой");
-  XLSX.writeFile(wb, "furniture-ai-cutting.xlsx");
 }
 
+function edgeSummary(edges) {
+  return (edges || []).map((e, i) => "С" + (i + 1) + ": " + e).join(" · ");
+}
+
+function drillingSchematic(part) {
+  const u = part.userData;
+  const d = u.detailing || {};
+  const ops = cuttingOperationList(part);
+  const W = 420, H = 240, pad = 28;
+  const dw = Math.max(40, Number(d.length) || Number(u.width) || 40);
+  const dh = Math.max(40, Number(d.width) || Number(u.height) || 40);
+
+  const circles = ops.map((op, i) => {
+    const rx = Number(op.x);
+    const ry = Number(op.y);
+    const px = Number.isFinite(rx) ? Math.max(0.03, Math.min(0.97, (rx + dw/2) / dw)) : 0.12 + (i % 6) * 0.15;
+    const py = Number.isFinite(ry) ? Math.max(0.03, Math.min(0.97, (ry + dh/2) / dh)) : 0.12 + (Math.floor(i/6) % 5) * 0.19;
+    const cx = pad + px * (W - pad*2);
+    const cy = pad + py * (H - pad*2);
+    const r = Math.max(4, Math.min(10, Number(op.diameter || 6)));
+    const label = op.number + (op.quantity > 1 ? " ×"+op.quantity : "");
+    return '<circle cx="' + cx.toFixed(1) + '" cy="' + cy.toFixed(1) +
+      '" r="' + r.toFixed(1) + '" fill="none" stroke="#111827" stroke-width="2"/>' +
+      '<text x="' + (cx+8).toFixed(1) + '" y="' + (cy-8).toFixed(1) +
+      '" font-size="10" fill="#111827">' + label + '</text>';
+  }).join("");
+
+  return '<svg viewBox="0 0 '+W+' '+H+'" class="drilling-schematic">' +
+    '<rect x="'+pad+'" y="'+pad+'" width="'+(W-pad*2)+'" height="'+(H-pad*2)+'" fill="#f8fafc" stroke="#334155" stroke-width="2"/>' +
+    '<line x1="'+pad+'" y1="'+(H-pad)+'" x2="'+(W-pad)+'" y2="'+(H-pad)+'" stroke="#94a3b8"/>' +
+    '<line x1="'+pad+'" y1="'+pad+'" x2="'+pad+'" y2="'+(H-pad)+'" stroke="#94a3b8"/>' +
+    circles +
+    '<text x="'+W/2+'" y="15" text-anchor="middle" font-size="12" font-weight="bold">Схема присадки · номера соответствуют перечню</text>' +
+    '<text x="'+(W/2)+'" y="'+(H-8)+'" text-anchor="middle" font-size="9" fill="#475569">X →</text>' +
+    '<text x="10" y="'+(H/2)+'" text-anchor="middle" font-size="9" fill="#475569" transform="rotate(-90 10 '+(H/2)+')">Y →</text>' +
+    '</svg>';
+}
+
+function buildCuttingPdfHtml(layout, gatedParts = parts) {
+  const projectName = $("projectName")?.textContent || "Furniture AI Designer";
+  const gatedCount = gatedParts.length;
+  const detailPages = gatedParts.map(part => {
+    const u = part.userData;
+    const d = u.detailing;
+    const ops = cuttingOperationList(part);
+    const rows = ops.length ? ops.map(op =>
+      '<tr><td>'+op.number+'</td><td>'+op.type+'</td><td>'+
+      (op.x ?? "—")+'</td><td>'+(op.y ?? "—")+'</td><td>'+
+      (op.diameter ?? "—")+'</td><td>'+(op.depth ?? "—")+
+      '</td><td>'+op.quantity+'</td><td>'+op.hardware+'</td></tr>'
+    ).join("") : '<tr><td colspan="8">Присадка не задана</td></tr>';
+
+    return '<section class="detail-page">' +
+      '<h2>Деталь №'+u.partNumber+' — '+u.name+'</h2>' +
+      '<div class="detail-meta"><b>Размер:</b> '+d.length+' × '+d.width+' × '+d.thickness+' мм · '+
+      '<b>Материал:</b> '+d.material+' · <b>Количество:</b> '+(d.quantity || 1)+'</div>' +
+      '<div class="detail-meta"><b>Кромка:</b> '+edgeSummary(d.edges)+'</div>' +
+      '<div class="detail-meta"><b>Операций присадки:</b> '+ops.length+' · <b>Всего отверстий:</b> '+ops.reduce((sum, op) => sum + (op.quantity || 1), 0)+'</div>' +
+      (ops.length ? drillingSchematic(part) : '<div class="no-drilling">Присадка и сверловка отсутствуют.</div>') +
+      '<table><thead><tr><th>№</th><th>Операция</th><th>X, мм</th><th>Y, мм</th><th>Ø, мм</th><th>Глубина, мм</th><th>Количество</th><th>Фурнитура / назначение</th></tr></thead><tbody>'+
+      rows+'</tbody></table></section>';
+  }).join("");
+
+  const sheetPages = layout.sheets.map(sheet => {
+    const rects = sheet.placements.map(p => {
+      const x = p.x / sheet.length * 760;
+      const y = p.y / sheet.width * 510;
+      const w = p.length / sheet.length * 760;
+      const h = p.width / sheet.width * 510;
+      const label = p.partNumber + '  ' + Math.round(p.length) + '×' + Math.round(p.width);
+      return '<g><rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+h.toFixed(1)+'" fill="#e5e7eb" stroke="#111827"/>' +
+        '<text x="'+(x+w/2).toFixed(1)+'" y="'+(y+h/2).toFixed(1)+'" text-anchor="middle" dominant-baseline="middle" font-size="12">'+label+'</text>'+
+        (p.overflow ? '<text x="'+(x+w/2).toFixed(1)+'" y="'+(y+h/2+18).toFixed(1)+'" text-anchor="middle" font-size="11" fill="#991b1b">НЕ ПОМЕЩАЕТСЯ</text>' : '')+
+        '</g>';
+    }).join("");
+
+    return '<section class="sheet-page">' +
+      '<h2>Карта раскроя · лист '+sheet.sheetNumber+'</h2>' +
+      '<div class="sheet-meta">'+sheet.material+' · '+sheet.length+' × '+sheet.width+' мм · пропил '+sheet.kerf+' мм</div>' +
+      '<svg viewBox="0 0 760 510" class="sheet-svg"><rect x="0" y="0" width="760" height="510" fill="white" stroke="#111827" stroke-width="3"/>'+rects+'</svg>' +
+      '<table><thead><tr><th>№ детали</th><th>Размер</th><th>Материал</th><th>Кромка</th></tr></thead><tbody>'+
+      sheet.placements.map(p => {
+        return '<tr><td>'+p.partNumber+'</td><td>'+Math.round(p.length)+' × '+Math.round(p.width)+' × '+Math.round(p.thickness || 0)+' мм</td><td>'+
+          (p.material || sheet.material)+'</td><td>'+edgeSummary(p.edges)+'</td></tr>';
+      }).join("")+'</tbody></table></section>';
+  }).join("");
+
+  return '<!doctype html><html lang="ru"><head><meta charset="utf-8"><title>Карта раскроя — '+projectName+'</title><style>'+
+    '@page{size:A4 portrait;margin:12mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#111827;margin:0;font-size:10pt}h1{font-size:20pt;margin:0 0 8mm}h2{font-size:15pt;margin:0 0 4mm}.cover{page-break-after:always}.sheet-page{page-break-after:always}.detail-page{page-break-after:always}.sheet-meta,.detail-meta{margin:2mm 0}.sheet-svg{width:100%;height:auto;border:1px solid #111827}.drilling-schematic{width:100%;max-width:180mm;height:auto;margin:5mm 0}table{width:100%;border-collapse:collapse;margin-top:5mm}th,td{border:1px solid #6b7280;padding:3px 4px;text-align:left;vertical-align:top}th{font-weight:700}.no-drilling{margin:8mm 0;padding:5mm;border:1px solid #9ca3af}'+
+    '</style></head><body><section class="cover"><h1>Карта раскроя</h1><p><b>Проект:</b> '+projectName+'</p><p><b>Листов:</b> '+layout.sheets.length+' · <b>Деталей:</b> '+gatedCount+'</p><p>Документ для производственного использования: листы раскроя, детали, кромка, присадка и сверловка.</p></section>'+
+    sheetPages + detailPages + '</body></html>';
+}
+
+function runReleaseGate() {
+  const qc = window._constructionQC;
+  const canBuild = Boolean(qc && qc.status === "PASS" && parts.length);
+
+  const cuttingGroups = canBuild ? buildCuttingGroups() : [];
+  const sheetLayout = canBuild ? buildSheetLayout(
+    Number($("sheetLength")?.value || 2800),
+    Number($("sheetWidth")?.value || 2070),
+    Number($("cutKerf")?.value || 4),
+    Number($("sheetMargin")?.value || 10)
+  ) : null;
+
+  const partStates = parts.filter(part => !part.userData?.isHardware).map(part => {
+    const u = part.userData || {};
+    return {
+      number: u.partNumber || "",
+      name: u.name || "",
+      sourceGeometry: u.source === "IFC" ? "IFC" : "Furniture Core",
+      geometryLocked: u.geometryLocked === true,
+      detailing: u.detailing || null
+    };
+  });
+
+  const report = evaluateReleaseGateState({
+    qc,
+    partsCount: parts.length,
+    partStates,
+    cuttingGroups,
+    sheetLayout,
+    modelRevision
+  });
+
+  report.modelRevision = modelRevision;
+  report.sheetLayout = sheetLayout;
+  report.cuttingGroups = cuttingGroups;
+  report.gatedParts = parts.filter(part => !part.userData?.isHardware).map(part => ({
+    partNumber: part.userData?.partNumber || "",
+    name: part.userData?.name || "",
+    sourceGeometry: part.userData?.source === "IFC" ? "IFC" : "Furniture Core",
+    detailing: structuredClone(part.userData?.detailing || null)
+  }));
+  report.gatedPartsRevision = modelRevision;
+  window._releaseGate = report;
+  return report;
+}
+
+function showCuttingMap() {
+  const releaseGate = runReleaseGate();
+  if (!releaseGate.passed) {
+    validate("Release Gate: просмотр карты раскроя заблокирован. " + releaseGate.issues.join(" "), "error");
+    return;
+  }
+  if (!releaseGate.sheetLayout) {
+    validate("Release Gate: отсутствует проверенная раскладка листа.", "error");
+    return;
+  }
+  renderCuttingMap(releaseGate.sheetLayout);
+  validate("Карта раскроя показана из проверенной раскладки Release Gate.", "ok");
+}
+
+function exportSheetLayout() {
+  const releaseGate = runReleaseGate();
+  if (!releaseGate.passed) {
+    validate("Release Gate: выпуск PDF заблокирован. " + releaseGate.issues.join(" "), "error");
+    return;
+  }
+  // После успешного Release Gate PDF обязан использовать именно
+  // проверенную раскладку этого же Gate. Повторная самостоятельная
+  // генерация layout здесь запрещена.
+  const layout = releaseGate.sheetLayout;
+  if (!layout) {
+    validate("Release Gate: отсутствует проверенная раскладка листа. Выпуск PDF заблокирован.", "error");
+    return;
+  }
+
+  renderCuttingMap(layout);
+
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    validate("Браузер заблокировал окно PDF. Разрешите всплывающие окна для приложения.", "error");
+    return;
+  }
+
+  printWindow.document.open();
+  if (Number(releaseGate.gatedPartsRevision) !== Number(releaseGate.modelRevision)) {
+    validate("Release Gate: состав деталей относится к другой ревизии модели. Выпуск PDF заблокирован.", "error");
+    return;
+  }
+  const gatedParts = (releaseGate.gatedParts || []).map(snapshot => ({
+    userData: {
+      partNumber: snapshot.partNumber,
+      name: snapshot.name,
+      source: snapshot.sourceGeometry === "IFC" ? "IFC" : "Furniture Core",
+      detailing: snapshot.detailing
+    }
+  }));
+  printWindow.document.write(buildCuttingPdfHtml(layout, gatedParts));
+  printWindow.document.close();
+  printWindow.focus();
+  setTimeout(() => printWindow.print(), 250);
+  validate("Карта раскроя подготовлена. В окне печати выберите «Сохранить как PDF».", "ok");
+}
 function createPartLabel(part) {
   const canvas = document.createElement("canvas");
   canvas.width = 256; canvas.height = 96;
@@ -587,11 +2180,11 @@ function rebuildPartLabels() {
     label.material.map?.dispose();
     label.material.dispose();
   });
-  parts.forEach(part => createPartLabel(part));
+  parts.filter(part => !part.userData?.isHardware).forEach(part => createPartLabel(part));
 }
 
 function syncPartLabels() {
-  parts.forEach(part => {
+  parts.filter(part => !part.userData?.isHardware).forEach(part => {
     const label = part.userData.label;
     if (!label) return;
     label.position.copy(part.position).add(new THREE.Vector3(
@@ -603,12 +2196,31 @@ function syncPartLabels() {
 }
 
 function clearModel() {
+  modelRevision += 1;
+  window._modelRevision = modelRevision;
+  window._constructionQC = null;
+  window._releaseGate = null;
+
+  clearInteriorView();
+  const oldIfcPreview = scene.getObjectByName("IFC Preview");
+  if (oldIfcPreview) {
+    scene.remove(oldIfcPreview);
+    oldIfcPreview.traverse(obj => {
+      if (obj.geometry?.dispose) obj.geometry.dispose();
+      if (obj.material?.dispose) obj.material.dispose();
+    });
+  }
+
   while (root.children.length) {
     const object = root.children.pop();
-    object.geometry.dispose();
-    object.material.dispose();
+    if (object.geometry?.dispose) object.geometry.dispose();
+    if (object.material?.map?.dispose) object.material.map.dispose();
+    if (object.material?.dispose) object.material.dispose();
   }
   parts.length = 0;
+  ifcImportedParts = [];
+  ifcHardwareParts = [];
+  closeIfcModel();
 }
 
 function parseIfcGeometry(source) {
@@ -632,8 +2244,14 @@ function detectIfcLengthScale(source) {
 }
 
 function renderIfcGeometryPreview(result) {
-  const old=$("ifcPreviewGroup");
-  if(old) old.remove();
+  const old=scene.getObjectByName("IFC Preview");
+  if(old){
+    scene.remove(old);
+    old.traverse(obj => {
+      if (obj.geometry?.dispose) obj.geometry.dispose();
+      if (obj.material?.dispose) obj.material.dispose();
+    });
+  }
   if(!result?.geometry?.points?.length) return;
   const points=result.geometry.points;
   const scale=detectIfcLengthScale(result.sourceText||"");
@@ -725,21 +2343,121 @@ function importIfcFile(file){
   reader.readAsText(file);
 }
 
-function analyzeFurnitureImageMetadata(file) {
+async function analyzeFurnitureImageMetadata(file) {
   if (!file) return null;
-  const result = {fileName:file.name,type:file.type||"unknown",recognized:[],params:{},confidence:"низкая"};
-  if (/^image\\//.test(file.type || "")) {
-    result.recognized.push("изображение мебели загружено");
-    result.recognized.push("требуется визуальное распознавание конструкции");
+  const result = {
+    fileName:file.name,
+    type:file.type||"unknown",
+    recognized:[],
+    params:{},
+    confidence:"низкая",
+    source:"AI image"
+  };
+  if (!/^image\//.test(file.type || "")) {
+    result.confirmation = "Файл не является изображением.";
+    return result;
   }
-  result.confirmation = "Я распознал конструкцию следующим образом: " + result.recognized.join(", ") + ".";
+
+  const image = await new Promise((resolve,reject)=>{
+    const objectUrl = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(objectUrl); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); reject(new Error("Не удалось прочитать изображение.")); };
+    img.src = objectUrl;
+  });
+
+  const maxSide = 900;
+  const scale = Math.min(1, maxSide / Math.max(image.naturalWidth || image.width, image.naturalHeight || image.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round((image.naturalWidth || image.width) * scale));
+  canvas.height = Math.max(1, Math.round((image.naturalHeight || image.height) * scale));
+  const ctx = canvas.getContext("2d", {willReadFrequently:true});
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+
+  const gray = (x,y) => {
+    const i=(y*canvas.width+x)*4;
+    return (pixels[i]+pixels[i+1]+pixels[i+2])/3;
+  };
+  const threshold = 28;
+  const verticalScores = new Array(canvas.width).fill(0);
+  const horizontalScores = new Array(canvas.height).fill(0);
+
+  for(let y=1;y<canvas.height-1;y++){
+    for(let x=1;x<canvas.width-1;x++){
+      const gx=Math.abs(gray(x+1,y)-gray(x-1,y));
+      const gy=Math.abs(gray(x,y+1)-gray(x,y-1));
+      if(gx>threshold) verticalScores[x]+=gx;
+      if(gy>threshold) horizontalScores[y]+=gy;
+    }
+  }
+
+  function countPeaks(scores, minDistance, minScore) {
+    const peaks=[];
+    for(let i=1;i<scores.length-1;i++){
+      if(scores[i] < minScore || scores[i] < scores[i-1] || scores[i] < scores[i+1]) continue;
+      if(!peaks.length || i-peaks[peaks.length-1] >= minDistance) peaks.push(i);
+      else if(scores[i] > scores[peaks[peaks.length-1]]) peaks[peaks.length-1]=i;
+    }
+    return peaks;
+  }
+
+  const verticalPeaks=countPeaks(
+    verticalScores,
+    Math.max(12, Math.round(canvas.width*0.05)),
+    Math.max(1000, canvas.height*18)
+  );
+  const horizontalPeaks=countPeaks(
+    horizontalScores,
+    Math.max(12, Math.round(canvas.height*0.05)),
+    Math.max(1000, canvas.width*18)
+  );
+
+  const sections=Math.max(1, Math.min(12, verticalPeaks.length + 1));
+  const doors=Math.max(0, Math.min(12, sections));
+  const shelves=Math.max(0, Math.min(30, Math.round(horizontalPeaks.length * sections / 2)));
+
+  result.params.sections=sections;
+  result.params.doors=doors;
+  result.params.shelves=shelves;
+  result.recognized.push("секций: "+sections);
+  result.recognized.push("фасадов: "+doors);
+  result.recognized.push("съёмных полок: "+shelves);
+
+  if (horizontalPeaks.length || verticalPeaks.length) {
+    result.confidence = "средняя";
+    result.recognized.push("конструкция определена по визуальным вертикальным и горизонтальным элементам");
+  } else {
+    result.confidence = "низкая";
+    result.recognized.push("явные конструктивные элементы не обнаружены");
+  }
+
+  result.confirmation =
+    "По изображению распознана конструкция: " + result.recognized.join(", ") + ".";
   return result;
 }
+
 function renderAiImageRecognition(result) {
   const target=$("aiImageRecognition");
   if(!target || !result) return;
-  target.innerHTML="<b>"+result.confirmation+"</b><div class='status'>Файл: "+result.fileName+"</div><div class='status'>Геометрия автоматически не изменяется до подтверждения AI-анализа.</div>";
+  target.innerHTML="<b>"+result.confirmation+"</b>" +
+    "<div class='status'>Файл: "+result.fileName+" · уверенность: "+result.confidence+"</div>" +
+    (result.confidence !== "низкая"
+      ? "<div class='row'><button id='aiImageApply' class='primary'>Применить распознанную конструкцию</button></div>"
+      : "<div class='status error'>Недостаточно данных для автоматического применения.</div>");
   window._aiImageRecognition=result;
+  $("aiImageApply")?.addEventListener("click", applyAiImageRecognition);
+}
+
+function applyAiImageRecognition() {
+  const result=window._aiImageRecognition;
+  if(!result || !result.recognized.length) return;
+  Object.entries(result.params).forEach(([key,value])=>{
+    const el=$(key);
+    if(el) el.value=value;
+  });
+  build();
+  validate("AI-распознавание изображения применено: параметрическая модель построена.", "ok");
 }
 
 function recognizeFurnitureText(text) {
@@ -802,6 +2520,26 @@ function build() {
   }
 
   clearModel();
+  ifcMode = false;
+  root.userData.designOptions = {
+    lighting: {
+      enabled: p.lightingEnabled,
+      mount: p.lightingMount,
+      shelfLighting: p.shelfLighting
+    },
+    countertop: {
+      enabled: p.countertopEnabled,
+      thickness: p.countertopThickness,
+      postforming: p.countertopPostforming,
+      cut: p.countertopCut,
+      material: p.countertopMaterial
+    },
+    facadeLibrary: {
+      item: p.facadeLibraryItem,
+      manufacturer: p.facadeManufacturer,
+      model: p.facadeModel
+    }
+  };
 
   const innerW = p.width - 2 * p.thickness;
   const innerH = p.height - 2 * p.thickness;
@@ -899,6 +2637,9 @@ function build() {
   });
 
   assignPartNumbers();
+  const detailingPipeline = rebuildDetailingPipeline();
+  const constructionQC = runConstructionQC(detailingPipeline);
+  const releaseGate = runReleaseGate();
   rebuildPartLabels();
   exploded = false;
   $("explode").textContent = "Взрыв";
@@ -909,18 +2650,29 @@ function build() {
   const drillingCount = parts.reduce((sum, part) => sum + (part.userData.drilling?.length || 0), 0);
   const bodyFastenerCount = bodyFasteners.length;
   const shelfSupportCount = shelfSupportDrilling.length;
-  const constructionIssues = [...constructionChecks(bodyFasteners, shelfSupportDrilling, secondaryFasteners), ...constructionChecksDetailed()];
+  const constructionIssues = constructionQC.issues;
   if ($("drillingSummary")) $("drillingSummary").textContent = drillingCount
     ? "Фасады: " + drillingCount + " отв. · корпус: " + bodyFastenerCount + " креплений · полкодержатели: " + shelfSupportCount
-    : "Фасадное сверление не требуется. Корпус: " + bodyFastenerCount + " креплений.";
-  validate(constructionIssues.length ? "Проверка: " + constructionIssues.join(" ") : "Проверка конструкции: ошибок не обнаружено.", constructionIssues.length ? "error" : "ok");
+    : "Фасадное сверление не требуется. Корпус: " + bodyFastenerCount + " креплений."; 
+  if (!releaseGate.passed) {
+    validate("Release Gate: " + releaseGate.issues.join(" "), "error");
+  } else {
+    validate(
+      constructionIssues.length ? "Проверка: " + constructionIssues.join(" ") : "Проверка конструкции: ошибок не обнаружено.",
+      constructionIssues.length ? "error" : "ok"
+    );
+  }
   fitView();
 }
 
 function renderPartsTable() {
   const body = $("partsList");
   body.innerHTML = "";
-  parts.forEach((part, index) => {
+  const materialOptions = [...($("material")?.options || [])]
+    .map(option => '<option value="' + option.value + '">' + option.textContent + '</option>')
+    .join("");
+
+  parts.filter(part => !part.userData?.isHardware).forEach((part, index) => {
     const row = document.createElement("tr");
     row.innerHTML =
       "<td>" + part.userData.partNumber + "</td>" +
@@ -928,13 +2680,44 @@ function renderPartsTable() {
       "<td>" + part.userData.width.toFixed(0) + "</td>" +
       "<td>" + part.userData.height.toFixed(0) + "</td>" +
       "<td>" + part.userData.depth.toFixed(0) + "</td>" +
-      "<td>" + part.userData.material.toUpperCase() + "</td>" +
+      '<td><select class="detail-material" data-part-index="' + index + '">' + materialOptions + '</select></td>' +
       "<td>" + part.userData.edges.map(e => e || "—").join(" / ") + "</td>" +
       "<td>" + part.userData.quantity + "</td>" +
       "<td>" + (part.userData.hardware?.quantity || "—") + "</td>";
+
+    const materialSelect = row.querySelector(".detail-material");
+    if (materialSelect) {
+      materialSelect.value = part.userData.material;
+      materialSelect.addEventListener("click", event => event.stopPropagation());
+      materialSelect.addEventListener("change", event => {
+        event.stopPropagation();
+        applyPartMaterial(index, materialSelect.value);
+      });
+    }
     row.addEventListener("click", () => focusPart(part));
     body.appendChild(row);
   });
+}
+
+function applyPartMaterial(index, materialValue) {
+  const furnitureParts = parts.filter(part => !part.userData?.isHardware);
+  const part = furnitureParts[index];
+  if (!part || !materialValue) return;
+
+  part.userData.material = materialValue;
+  if (part.material) part.material.dispose();
+  part.material = material(materialValue);
+
+  modelRevision++;
+  window._modelRevision = modelRevision;
+  window._constructionQC = null;
+  window._releaseGate = null;
+
+  const detailingPipeline = rebuildDetailingPipeline();
+  runConstructionQC(detailingPipeline);
+  runReleaseGate();
+  renderPartsTable();
+  validate("Материал детали " + part.userData.partNumber + " изменён.", "ok");
 }
 
 function focusPart(part) {
@@ -944,7 +2727,24 @@ function focusPart(part) {
   controls.update();
 }
 
+function publishViewerState(context = "model") {
+  root.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(root);
+  window._viewerState = {
+    context,
+    exploded,
+    empty: box.isEmpty(),
+    minY: box.isEmpty() ? null : Number(box.min.y.toFixed(3)),
+    maxY: box.isEmpty() ? null : Number(box.max.y.toFixed(3)),
+    width: box.isEmpty() ? 0 : Number(box.getSize(new THREE.Vector3()).x.toFixed(3)),
+    height: box.isEmpty() ? 0 : Number(box.getSize(new THREE.Vector3()).y.toFixed(3)),
+    depth: box.isEmpty() ? 0 : Number(box.getSize(new THREE.Vector3()).z.toFixed(3)),
+    hasInterior: Boolean(interiorGroup)
+  };
+}
+
 function fitView() {
+  root.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(root);
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
@@ -952,12 +2752,19 @@ function fitView() {
   controls.target.copy(center);
   camera.position.set(center.x + radius * 0.95, center.y + radius * 0.7, center.z + radius);
   controls.update();
+  publishViewerState("model");
 }
 
 function setExplode(on) {
+  if (on) clearInteriorView();
   exploded = on;
-  const p = readParams();
-  const distance = Math.max(p.width, p.height, p.depth) * 0.42;
+
+  // Взрывная схема должна работать одинаково для параметрической и IFC-модели.
+  // Для IFC поля параметров шкафа могут быть пустыми, поэтому расстояние
+  // рассчитываем только по фактической 3D-геометрии.
+  const modelBox = new THREE.Box3().setFromObject(root);
+  const modelSize = modelBox.getSize(new THREE.Vector3());
+  const distance = Math.max(modelSize.x, modelSize.y, modelSize.z, 1) * 0.42;
 
   parts.forEach((part, index) => {
     const direction = new THREE.Vector3(
@@ -966,10 +2773,17 @@ function setExplode(on) {
       index % 2 ? 1 : -1
     ).normalize();
 
-    part.position.copy(part.userData.base);
-    if (on) part.position.add(direction.multiplyScalar(distance));
+    const base = part.userData.base instanceof THREE.Vector3
+      ? part.userData.base
+      : part.position.clone();
+
+    part.position.copy(base);
+    if (on) part.position.add(direction.clone().multiplyScalar(distance));
   });
+
+  root.updateMatrixWorld(true);
   syncPartLabels();
+  publishViewerState(on ? "exploded" : "assembled");
 
   $("explode").textContent = on ? "Свернуть" : "Взрыв";
 }
@@ -981,674 +2795,156 @@ function frontView() {
   controls.update();
 }
 
-function dxfPair(code, value) { return code + "\n" + value + "\n"; }
-
-function buildMillingGeometry(part) {
-  const u = part.userData;
-  const ops = [];
-  (u.processing || []).filter(op => /паз|фрез|выбор|карман/i.test(op.operation || "")).forEach((op, i) => {
-    const width = Math.max(1, Number(op.width) || Number(op.diameter) || 6);
-    const length = Math.max(width, Number(op.length) || width);
-    const depth = Math.max(0.1, Number(op.depth) || 3);
-    const x = Number(op.x) || 0;
-    const y = Number(op.y) || 0;
-    ops.push({
-      id:"M"+(i+1), type:"POCKET",
-      operation:op.operation || "Фрезеровка",
-      partNumber:u.partNumber,
-      x,y,z:Number(op.z)||0,width,length,depth,
-      path:[
-        [x-length/2,y-width/2],
-        [x+length/2,y-width/2],
-        [x+length/2,y+width/2],
-        [x-length/2,y+width/2],
-        [x-length/2,y-width/2]
-      ]
-    });
-  });
-  return ops;
-}
-
-function buildCncToolPlan(part) {
-  const material = part.userData.material || "Не задан";
-  const ordered = optimizeCncOperationSequence(part);
-  let previousToolId = null;
-  return ordered.map((op, i) => {
-    const enriched = cncOperationWithTool(op, material);
-    const toolNumber = enriched.toolId === "TBD" ? 0 :
-      (enriched.toolId === "DRILL-5" ? 1 :
-      enriched.toolId === "DRILL-6" ? 2 :
-      enriched.toolId === "DRILL-35" ? 3 :
-      enriched.toolId === "MILL-6" ? 4 : 5);
-    const toolChange = i === 0 || enriched.toolId !== previousToolId;
-    previousToolId = enriched.toolId;
-    return {...enriched, toolNumber, toolChange};
-  });
-}
-
-function readCncMachineSetup() {
-  return {
-    units: $("cncUnits")?.value || "mm",
-    origin: $("cncOrigin")?.value || "top-center",
-    safeZ: Number($("cncSafeZ")?.value || 5),
-    workZ: Number($("cncWorkZ")?.value || 0),
-    defaultFeed: Number($("cncFeed")?.value || 300),
-    spindle: Number($("cncSpindle")?.value || 18000)
-  };
-}
-
-function validateCncMachineSetup(setup = readCncMachineSetup()) {
-  const issues = [];
-  if (setup.safeZ <= 0) issues.push({level:"error",message:"Safe Z должен быть больше 0 мм."});
-  if (setup.defaultFeed <= 0) issues.push({level:"error",message:"Подача должна быть больше 0 мм/мин."});
-  if (setup.spindle <= 0) issues.push({level:"error",message:"Обороты шпинделя должны быть больше 0 об/мин."});
-  if (setup.workZ > 0) issues.push({level:"warning",message:"Рабочий Z выше нулевой плоскости детали."});
-  if (setup.safeZ <= Math.abs(setup.workZ)) issues.push({level:"error",message:"Safe Z должен быть выше рабочей глубины."});
-  return issues;
-}
-
-function applyCncMachineSetup() {
-  const setup = readCncMachineSetup();
-  const setupIssues = validateCncMachineSetup(setup);
-  if (setupIssues.some(i => i.level === "error")) {
-    validate(setupIssues.map(i => i.message).join(" "), "error");
-    return setup;
-  }
-  CNC_POSTPROCESSORS.generic.safeZ = setup.safeZ;
-  CNC_POSTPROCESSORS.generic.drillFeed = setup.defaultFeed;
-  validate("Настройки CNC применены: Safe Z " + setup.safeZ + " мм, подача " + setup.defaultFeed + " мм/мин.", "ok");
-  return setup;
-}
-
-function buildCncJobManifest() {
-  const post = getPostprocessor();
-  const machineSetup = applyCncMachineSetup();
-  const preflight = cncPreflight();
-  const jobs = parts.map(part => buildCncJob(part));
-  const tools = [];
-  jobs.forEach(job => (job.operations || []).forEach(op => {
-    if (op.toolId && !tools.some(t => t.id === op.toolId)) {
-      tools.push({id:op.toolId, number:op.toolNumber, name:op.toolName, diameter:op.toolDiameter});
-    }
-  }));
-  return {
-    format:"Furniture AI Designer CNC Job",
-    version:"2.7",
-    postprocessor:post.name,
-    postprocessorStatus: post.name === "Universal G-code" ? "generic" : "template-unvalidated",
-    units:"mm",
-    zeroPoint:"G54 / XY — по центру детали, Z0 — верх детали",
-    safeZ:post.safeZ,
-    machineSetup,
-    parts:jobs,
-    tools,
-    preflight,
-    readyForMachine:preflight.filter(i => i.level === "error").length === 0
-  };
-}
-
-function exportCncJobManifest() {
-  const manifest = buildCncJobManifest();
-  const blob = new Blob([JSON.stringify(manifest,null,2)], {type:"application/json"});
-  const link=document.createElement("a");
-  link.href=URL.createObjectURL(blob);
-  link.download="cnc-job-manifest.json";
-  link.click();
-  URL.revokeObjectURL(link.href);
-  validate(manifest.readyForMachine ?
-    "CNC Job Manifest сформирован: критических ошибок нет." :
-    "CNC Job Manifest сформирован, но обнаружены ошибки Preflight.", manifest.readyForMachine ? "ok" : "error");
-}
-
-function buildCncJob(part) {
-  const u = part.userData;
-  return {
-    partNumber:u.partNumber,
-    material:u.material || "Не задан",
-    thickness:Number(u.thickness || 0),
-    safeZ:5,
-    zeroPoint:"G54",
-    operations:buildCncToolPlan(part)
-  };
-}
-
-function optimizeCncOperationSequence(part) {
-  const ops = buildCncOperations(part).map(op => ({...op}));
-  const priority = {CONTOUR: 30, POCKET: 20, MILL: 20, DRILL: 10};
-  ops.sort((x,y) => (priority[x.type]||50) - (priority[y.type]||50) ||
-    Math.hypot(Number(x.x)||0,Number(x.y)||0) - Math.hypot(Number(y.x)||0,Number(y.y)||0));
-  let last = null;
-  return ops.map((op,i) => {
-    const x=Number(op.x)||0, y=Number(op.y)||0;
-    const travel=last ? Math.hypot(x-last.x,y-last.y) : 0;
-    last={x,y};
-    return {...op, sequence:i+1, rapidTravel:Math.round(travel*100)/100, safeZ:5};
-  });
-}
-
-function cncSequenceChecks(part) {
-  const ops = optimizeCncOperationSequence(part);
-  const issues=[];
-  let lastType="";
-  ops.forEach((op,i)=>{
-    if (i && op.rapidTravel > 1000)
-      issues.push({level:"warning",operation:op.sequence,message:"Большой холостой переход инструмента: "+op.rapidTravel+" мм"});
-    if (lastType==="CONTOUR" && op.type==="DRILL")
-      issues.push({level:"warning",operation:op.sequence,message:"Сверление выполняется после чистового контура"});
-    lastType=op.type;
-    if (op.safeZ <= 0)
-      issues.push({level:"error",operation:op.sequence,message:"Недопустимая безопасная высота Z"});
-  });
-  return {ops,issues};
-}
-
-function cncCollisionChecks(part) {
-  const u = part.userData;
-  const issues = [];
-  const w = Number(u.width)||0, h = Number(u.height)||0;
-  buildCncOperations(part).forEach(op => {
-    if (op.x !== undefined && (Math.abs(Number(op.x)) > w/2 || Math.abs(Number(op.y)||0) > h/2)) {
-      issues.push({level:"error",operation:op.sequence,message:"Операция выходит за границы детали"});
-    }
-    if (op.depth !== undefined && Number(op.depth) > Number(u.thickness || u.depth || 0)) {
-      issues.push({level:"error",operation:op.sequence,message:"Глубина обработки превышает толщину детали"});
-    }
-    if (op.type === "DRILL" && Number(op.diameter) > Number(u.thickness || u.depth || 0)) {
-      issues.push({level:"warning",operation:op.sequence,message:"Диаметр сверления больше толщины детали"});
+function clearInteriorView() {
+  if (!interiorGroup) return;
+  scene.remove(interiorGroup);
+  interiorGroup.traverse(obj => {
+    if (obj.geometry) obj.geometry.dispose();
+    if (obj.material) {
+      if (Array.isArray(obj.material)) obj.material.forEach(m => m.dispose());
+      else obj.material.dispose();
     }
   });
-  return issues;
+  interiorGroup = null;
 }
 
-function cncPreflight() {
-  const result = [];
-  parts.forEach(part => {
-    const issues = [...cncCollisionChecks(part), ...cncSequenceChecks(part).issues];
-    issues.forEach(issue => result.push({...issue,partNumber:part.userData.partNumber}));
-  });
-  return result;
-}
+function showInteriorView() {
+  // В интерьер всегда попадает собранная мебель.
+  // Если до этого была включена взрывная схема, сначала возвращаем детали
+  // в базовые позиции, иначе комната рассчитывается вокруг взорванной модели.
+  if (exploded) setExplode(false);
+  root.updateMatrixWorld(true);
 
-function renderCncPreflight() {
-  const target = $("cncPreflight");
-  if (!target) return;
-  const issues = cncPreflight();
-  target.innerHTML = "<b>Проверка CNC перед экспортом</b>" +
-    (issues.length ? "<div>" + issues.map(i =>
-      "<div class='status " + i.level + "'>Деталь " + i.partNumber +
-      ", операция " + i.operation + ": " + i.message + "</div>").join("") + "</div>" :
-      "<div class='status ok'>Ошибок и предупреждений не обнаружено.</div>");
-  return issues;
-}
-
-function buildCncOperations(part) {
-  const u = part.userData;
-  const ops = [];
-  const add = (type, operation, data={}) => ops.push({
-    sequence: ops.length + 1,
-    type, operation,
-    partNumber: u.partNumber,
-    ...data
-  });
-  add("CONTOUR","Контур детали",{
-    width:Number(u.width)||0,
-    height:Number(u.height)||0,
-    depth:Number(u.thickness)||Number(u.depth)||0,
-    path:[
-      [-Number(u.width||0)/2,-Number(u.height||0)/2],
-      [ Number(u.width||0)/2,-Number(u.height||0)/2],
-      [ Number(u.width||0)/2, Number(u.height||0)/2],
-      [-Number(u.width||0)/2, Number(u.height||0)/2]
-    ],
-    toolId:"MILL-8",
-    toolName:"Фреза Ø8 мм"
-  });
-  (u.drilling || []).forEach(h => add("DRILL","Сверление",{
-    x:Number(h.x)||0, y:Number(h.y)||0, z:Number(h.z)||0,
-    diameter:Number(h.diameter)||0, depth:Number(h.depth)||0,
-    linkedHardware:h.linkedHardware || h.type || ""
-  }));
-  (u.bodyFasteners || []).forEach(h => add("DRILL","Крепёж корпуса",{
-    x:Number(h.x)||0,y:Number(h.y)||0,z:Number(h.z)||0,
-    diameter:Number(h.diameter)||0,depth:Number(h.depth)||0,linkedHardware:h.type
-  }));
-  (u.shelfSupportDrilling || []).forEach(h => add("DRILL","Полкодержатель",{
-    x:Number(h.x)||0,y:Number(h.y)||0,z:Number(h.z)||0,
-    diameter:Number(h.diameter)||0,depth:Number(h.depth)||0,linkedHardware:h.type
-  }));
-  (u.secondaryFasteners || []).forEach(h => add("DRILL","Соединитель",{
-    x:Number(h.x)||0,y:Number(h.y)||0,z:Number(h.z)||0,
-    diameter:Number(h.diameter)||0,depth:Number(h.depth)||0,linkedHardware:h.type
-  }));
-  buildMillingGeometry(part).forEach(m => add("POCKET",m.operation,{
-    x:m.x,y:m.y,z:m.z,width:m.width,length:m.length,depth:m.depth,
-    path:m.path,source:m.operation
-  }));
-  return ops;
-}
-
-function buildCncProgram(part) {
-  const u = part.userData;
-  const ops = buildCncOperations(part).map(op => cncOperationWithTool(op, material));
-  const lines = [
-    "; Furniture AI Designer CNC",
-    "; Detail: " + u.partNumber + " " + u.name,
-    "; Size: " + Math.round(u.width) + " x " + Math.round(u.height) + " x " + Math.round(u.depth),
-    "G21",
-    "G90",
-    "G17",
-    "G54"
-  ];
-  ops.forEach(op => {
-    if (op.type === "CONTOUR") {
-      lines.push("; CONTOUR " + op.width + " X " + op.height);
-      lines.push("G0 Z5.000");
-      op.path.forEach(([x,y], i) => {
-        if (i === 0) lines.push("G0 X" + x.toFixed(3) + " Y" + y.toFixed(3));
-        else lines.push("G1 X" + x.toFixed(3) + " Y" + y.toFixed(3) + " F600");
-      });
-      lines.push("G1 X" + op.path[0][0].toFixed(3) + " Y" + op.path[0][1].toFixed(3) + " F600");
-    } else if (op.type === "DRILL") {
-      lines.push("; " + op.operation + " " + op.diameter + " x " + op.depth);
-      lines.push("G0 X" + op.x.toFixed(3) + " Y" + op.y.toFixed(3));
-      lines.push("G0 Z5.000");
-      lines.push("G1 Z-" + op.depth.toFixed(3) + " F300");
-      lines.push("G0 Z5.000");
-    } else if (op.type === "MILL") {
-      lines.push("; " + op.operation);
-      lines.push("G0 X" + op.x.toFixed(3) + " Y" + op.y.toFixed(3));
-      lines.push("G0 Z5.000");
-      lines.push("G1 Z-" + op.depth.toFixed(3) + " F300");
-      lines.push("G0 Z5.000");
-    }
-  });
-  lines.push("M5","M30");
-  return lines.join("\n");
-}
-
-function exportCncProgram(part) {
-  const blob = new Blob([buildCncProgram(part)], {type:"text/plain"});
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = "detail-" + part.userData.partNumber + ".nc";
-  link.click();
-  URL.revokeObjectURL(link.href);
-}
-
-const CNC_TOOL_LIBRARY = {
-  drilling: [
-    {id:"DRILL-5",name:"Сверло Ø5 мм",diameter:5,kind:"drill",materials:["ЛДСП","МДФ","Фанера"]},
-    {id:"DRILL-6",name:"Сверло Ø6 мм",diameter:6,kind:"drill",materials:["ЛДСП","МДФ","Фанера"]},
-    {id:"DRILL-35",name:"Сверло чашечное Ø35 мм",diameter:35,kind:"drill",materials:["ЛДСП","МДФ","Фанера"]}
-  ],
-  milling: [
-    {id:"MILL-6",name:"Фреза Ø6 мм",diameter:6,kind:"mill",materials:["ЛДСП","МДФ","Фанера"]},
-    {id:"MILL-8",name:"Фреза Ø8 мм",diameter:8,kind:"mill",materials:["ЛДСП","МДФ","Фанера"]}
-  ]
-};
-
-function selectCncTool(op, material) {
-  const family = op.type === "DRILL" ? CNC_TOOL_LIBRARY.drilling : CNC_TOOL_LIBRARY.milling;
-  const candidates = family.filter(t => t.materials.includes(material));
-  if (op.diameter > 0) {
-    const exact = candidates.find(t => t.diameter === op.diameter);
-    if (exact) return exact;
-  }
-  return candidates[0] || family[0];
-}
-
-function cncOperationWithTool(op, material) {
-  const tool = selectCncTool(op, material);
-  return {
-    ...op,
-    toolId: tool ? tool.id : "TBD",
-    toolName: tool ? tool.name : "Инструмент не назначен",
-    toolDiameter: tool ? tool.diameter : 0
-  };
-}
-
-function buildCncTechCard(part) {
-  const u = part.userData;
-  const material = u.material || "Не задан";
-  const thickness = Number(u.thickness || u.depth || 0);
-  const post = getPostprocessor();
-  const ops = optimizeCncOperationSequence(part);
-  return {
-    partNumber: u.partNumber || "",
-    name: u.name || "",
-    material,
-    thickness,
-    size: { length:Number(u.width)||0, width:Number(u.height)||0, depth:Number(u.depth)||0 },
-    machine: post.name,
-    zeroPoint: "G54 / XY — по центру детали, Z0 — верх детали",
-    safeZ: post.safeZ,
-    tool: "TBD — назначается технологом",
-    spindle: "TBD — назначается технологом",
-    feed: post.drillFeed,
-    operations: ops
-  };
-}
-
-function renderCncTechCard(part) {
-  const card = buildCncTechCard(part);
-  const target = $("cncTechCard");
-  if (!target) return;
-  target.innerHTML =
-    "<b>CNC-карточка детали " + card.partNumber + "</b>" +
-    "<div>Материал: " + card.material + " | Толщина: " + card.thickness + " мм</div>" +
-    "<div>Размер: " + Math.round(card.size.length) + " × " + Math.round(card.size.width) + " × " + Math.round(card.size.depth) + " мм</div>" +
-    "<div>Постпроцессор: " + card.machine + " | Нулевая точка: " + card.zeroPoint + "</div>" +
-    "<div>Safe Z: " + card.safeZ + " мм | Подача: " + card.feed + " мм/мин</div>" +
-    "<div>Инструмент: " + card.tool + " | Обороты: " + card.spindle + "</div>" +
-    "<div>Операций: " + card.operations.length + "</div>";
-}
-
-function exportCncTechCards() {
-  const cards = parts.map(buildCncTechCard);
-  const blob = new Blob([JSON.stringify({
-    format:"Furniture AI CNC Tech Card",
-    version:"2.0",
-    postprocessor:getPostprocessor().name,
-    cards
-  }, null, 2)], {type:"application/json"});
-  const link=document.createElement("a");
-  link.href=URL.createObjectURL(blob);
-  link.download="cnc-tech-cards.json";
-  link.click();
-  URL.revokeObjectURL(link.href);
-  validate("Технологическая карта CNC экспортирована.", "ok");
-}
-
-const CNC_POSTPROCESSORS = {
-  generic: {
-    name: "Universal G-code",
-    extension: ".nc",
-    header: ["G21","G90","G17","G54"],
-    footer: ["M5","M30"],
-    drillFeed: 300,
-    safeZ: 5
-  },
-  biesse: {
-    name: "Biesse — базовый шаблон",
-    extension: ".cix",
-    header: ["; BIESSE CNC PROGRAM","; Furniture AI Designer"],
-    footer: ["; END"],
-    drillFeed: 300,
-    safeZ: 5
-  },
-  homag: {
-    name: "Homag — базовый шаблон",
-    extension: ".mpr",
-    header: ["; HOMAG CNC PROGRAM","; Furniture AI Designer"],
-    footer: ["; END"],
-    drillFeed: 300,
-    safeZ: 5
-  },
-  scm: {
-    name: "SCM — базовый шаблон",
-    extension: ".pgm",
-    header: ["; SCM CNC PROGRAM","; Furniture AI Designer"],
-    footer: ["; END"],
-    drillFeed: 300,
-    safeZ: 5
-  }
-};
-
-function getPostprocessor() {
-  return CNC_POSTPROCESSORS[$("cncPostprocessor")?.value || "generic"] || CNC_POSTPROCESSORS.generic;
-}
-
-function buildCncJobProgram(part) {
-  const job = buildCncJob(part);
-  const lines = [
-    "; Furniture AI Designer CNC JOB",
-    "; DETAIL " + job.partNumber,
-    "; MATERIAL " + job.material,
-    "; THICKNESS " + job.thickness,
-    "G21","G90","G17","G54"
-  ];
-  let currentTool = null;
-  job.operations.forEach(op => {
-    if (op.toolChange && op.toolNumber > 0) {
-      lines.push("; TOOL CHANGE T" + op.toolNumber + " " + op.toolName);
-      lines.push("M5");
-      lines.push("T" + op.toolNumber + " M6");
-      currentTool = op.toolNumber;
-    }
-    if (op.type === "DRILL") {
-      lines.push("; DRILL " + op.operation);
-      lines.push("G0 Z5.000");
-      lines.push("G0 X" + (op.x||0).toFixed(3) + " Y" + (op.y||0).toFixed(3));
-      lines.push("G1 Z-" + (Number(op.depth)||0).toFixed(3) + " F300");
-      lines.push("G0 Z5.000");
-    } else if (op.type === "POCKET") {
-      lines.push("; POCKET " + op.operation);
-      (op.path || []).forEach(([x,y],idx)=>{
-        lines.push((idx===0?"G0":"G1")+" X"+x.toFixed(3)+" Y"+y.toFixed(3)+(idx===0?"":" F600"));
-      });
-      lines.push("G0 Z5.000");
-    } else if (op.type === "CONTOUR") {
-      lines.push("; CONTOUR");
-      (op.path || []).forEach(([x,y],idx)=>{
-        lines.push((idx===0?"G0":"G1")+" X"+x.toFixed(3)+" Y"+y.toFixed(3)+(idx===0?"":" F600"));
-      });
-      lines.push("G0 Z5.000");
-    }
-  });
-  lines.push("M5","M30");
-  return lines.join("\n");
-}
-
-function buildPostprocessedProgram(part) {
-  const post = getPostprocessor();
-  const u = part.userData;
-  const ops = buildCncOperations(part);
-  const lines = [
-    ...post.header,
-    "; DETAIL " + u.partNumber + " " + u.name,
-    "; SIZE " + Math.round(u.width) + " X " + Math.round(u.height) + " X " + Math.round(u.depth)
-  ];
-  ops.forEach(op => {
-    if (op.type === "DRILL") {
-      lines.push("; DRILL " + op.diameter + " DEPTH " + op.depth);
-      lines.push("G0 X" + op.x.toFixed(3) + " Y" + op.y.toFixed(3));
-      lines.push("G0 Z" + post.safeZ.toFixed(3));
-      lines.push("G1 Z-" + op.depth.toFixed(3) + " F" + post.drillFeed);
-      lines.push("G0 Z" + post.safeZ.toFixed(3));
-    } else if (op.type === "MILL") {
-      lines.push("; MILL " + (op.source || "operation"));
-      lines.push("G0 X" + op.x.toFixed(3) + " Y" + op.y.toFixed(3));
-      lines.push("G0 Z" + post.safeZ.toFixed(3));
-      lines.push("G1 Z-" + op.depth.toFixed(3) + " F" + post.drillFeed);
-      lines.push("G0 Z" + post.safeZ.toFixed(3));
-    }
-  });
-  lines.push(...post.footer);
-  return lines.join("\n");
-}
-
-function exportAllCnc() {
-  const setupIssues = validateCncMachineSetup();
-  const preflightIssues = cncPreflight();
-  const critical = [...setupIssues, ...preflightIssues].filter(i => i.level === "error");
-  if (critical.length) {
-    validate("CNC-экспорт заблокирован: обнаружены критические ошибки. Исправьте их в Preflight.", "error");
-    renderCncPreflight();
-    renderCncSetupValidation();
+  clearInteriorView();
+  const box = new THREE.Box3().setFromObject(root);
+  if (box.isEmpty()) {
+    validate("Сначала постройте мебель.", "error");
     return;
   }
-  const post = getPostprocessor();
-  parts.forEach(part => {
-    const blob = new Blob([buildCncJobProgram(part)], {type:"text/plain"});
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = "detail-" + part.userData.partNumber + post.extension;
-    link.click();
-    URL.revokeObjectURL(link.href);
-  });
-  validate("CNC-файлы подготовлены после успешного Preflight: " + post.name, "ok");
+
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  const roomW = Math.max(size.x * 3.0, 4200);
+  const roomH = Math.max(size.y * 1.8, 3000);
+  const roomD = Math.max(size.z * 3.0, 3600);
+
+  interiorGroup = new THREE.Group();
+  interiorGroup.name = "Визуализация интерьера";
+
+  const floor = new THREE.Mesh(
+    new THREE.BoxGeometry(roomW, 40, roomD),
+    new THREE.MeshStandardMaterial({color:0xd2c7b8, roughness:0.85})
+  );
+  floor.position.set(center.x, -20, center.z);
+  interiorGroup.add(floor);
+
+  const backWall = new THREE.Mesh(
+    new THREE.BoxGeometry(roomW, roomH, 40),
+    new THREE.MeshStandardMaterial({color:0xe8e4dc, roughness:0.9})
+  );
+  backWall.position.set(center.x, roomH / 2, center.z - roomD / 2);
+  interiorGroup.add(backWall);
+
+  const sideWall = new THREE.Mesh(
+    new THREE.BoxGeometry(40, roomH, roomD),
+    new THREE.MeshStandardMaterial({color:0xe0dbd2, roughness:0.9})
+  );
+  sideWall.position.set(center.x - roomW / 2, roomH / 2, center.z);
+  interiorGroup.add(sideWall);
+
+  scene.add(interiorGroup);
+
+  controls.target.set(center.x, Math.max(size.y * 0.45, 700), center.z);
+  camera.position.set(
+    center.x + roomW * 0.42,
+    Math.max(size.y * 0.75, 1400),
+    center.z + roomD * 0.48
+  );
+  controls.update();
+  root.updateMatrixWorld(true);
+  publishViewerState("interior");
+  validate("Мебель вписана в интерьер.", "ok");
 }
 
 
-  parts.forEach(part => exportCncProgram(part));
-  validate("CNC-программы подготовлены для " + parts.length + " деталей.", "ok");
-}
-
-function addMillingEntities(lines, part) {
-  buildMillingGeometry(part).forEach(m => {
-    lines.push("0","LWPOLYLINE","8","MILLING","90",m.path.length,"70",1);
-    m.path.forEach(([x,y]) => lines.push("10",x,"20",y));
-  });
-}
-
-function buildPartDxf(part) {
-  const u = part.userData;
-  const w = Number(u.width), h = Number(u.height);
-  const lines = ["0","SECTION","2","HEADER","9","$INSUNITS","70","4","0","ENDSEC","0","SECTION","2","ENTITIES"];
-  addMillingEntities(lines, part);
-  const addLine = (x1,y1,x2,y2,layer="OUTLINE") => {
-    lines.push("0","LINE","8",layer,"10",x1,"20",y1,"30",0,"11",x2,"21",y2,"31",0);
-  };
-  const addCircle = (x,y,r,layer="DRILLING") => {
-    lines.push("0","CIRCLE","8",layer,"10",x,"20",y,"30",0,"40",r);
-  };
-  const addPolyline = (points, layer="MILLING") => {
-    lines.push("0","LWPOLYLINE","8",layer,"90",points.length,"70",1);
-    points.forEach(([x,y]) => lines.push("10",x,"20",y));
-  };
-  addLine(-w/2,-h/2,w/2,-h/2);
-  addLine(w/2,-h/2,w/2,h/2);
-  addLine(w/2,h/2,-w/2,h/2);
-  addLine(-w/2,h/2,-w/2,-h/2);
-
-  const holes = [...(u.drilling || []), ...(u.shelfSupportDrilling || []), ...(u.bodyFasteners || []), ...(u.secondaryFasteners || [])];
-  holes.forEach(hole => {
-    const x = Number(hole.x) || 0, y = Number(hole.y) || 0;
-    const r = (Number(hole.diameter) || 5) / 2;
-    addCircle(x,y,r,"DRILLING");
-  });
-
-  (u.processing || []).filter(op => /паз|фрез|выбор|карман/i.test(op.operation || "")).forEach(op => {
-    const x=Number(op.x)||0, y=Number(op.y)||0, d=Math.max(2,Number(op.diameter)||5);
-    addCircle(x,y,d/2,"MILLING");
-  });
-
-  if (u.partNumber) {
-    lines.push("0","TEXT","8","INFO","10",-w/2,"20",h/2+12,"30",0,"40",8,"1",String(u.partNumber));
+$("build")?.addEventListener("click", build);
+$("explode")?.addEventListener("click", () => setExplode(!exploded));
+$("resetExplode")?.addEventListener("click", () => setExplode(false));
+$("frontView")?.addEventListener("click", frontView);
+$("isoView")?.addEventListener("click", fitView);
+$("interiorView")?.addEventListener("click", showInteriorView);
+$("material")?.addEventListener("change", () => {
+  syncMaterialAndThickness("material");
+  if (ifcMode) {
+    refreshIfcTechnology();
+    return;
   }
-  lines.push("0","ENDSEC","0","EOF");
-  return lines.join("\n");
-}
-
-function downloadDxf(part) {
-  const blob = new Blob([buildPartDxf(part)], {type:"application/dxf"});
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = "detail-" + part.userData.partNumber + ".dxf";
-  link.click();
-  URL.revokeObjectURL(link.href);
-}
-
-function exportAllDxf() {
-  parts.forEach(part => downloadDxf(part));
-  validate("DXF подготовлены для " + parts.length + " деталей.", "ok");
-}
-
-function exportExcel() {
-  if (!window.XLSX) { validate("Модуль Excel недоступен.", "error"); return; }
-  const rows = parts.map((part, i) => ({
-    "№": part.userData.partNumber, "Деталь": part.userData.name,
-    "Тип": part.userData.kind, "Количество": part.userData.quantity,
-    "Длина": Math.round(part.userData.width), "Ширина": Math.round(part.userData.height),
-    "Глубина": Math.round(part.userData.depth), "Материал": part.userData.material,
-    "Деталировка L×W×T": part.userData.detailing ? part.userData.detailing.length + " × " + part.userData.detailing.width + " × " + part.userData.detailing.thickness : "",
-    "Обработка": part.userData.detailing?.processing?.map(h => h.operation + " Ø" + h.diameter + "×" + h.depth).join(" | ") || "",
-    "Отверстия": part.userData.detailing?.holes?.map(h => h.operation + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
-    "Фрезеровка": part.userData.detailing?.milling?.map(h => h.operation).join(" | ") || "",
-    "Примечания деталировки": part.userData.detailing?.notes?.join(" | ") || "",
-    "Кромка 1": part.userData.edges[0], "Кромка 2": part.userData.edges[1],
-    "Кромка 3": part.userData.edges[2], "Кромка 4": part.userData.edges[3],
-    "Тип фасада": part.userData.frontTechnology?.type || "",
-    "Петли": part.userData.frontTechnology?.hinge || "",
-    "Ограничитель": part.userData.frontTechnology?.limiter || "",
-    "Угол открывания": part.userData.frontTechnology?.openingAngle || "",
-    "Петель": part.userData.hardware?.quantity || "",
-    "Позиции петель, мм": part.userData.hardware?.mountingPositionsFromBottom?.join("; ") || "",
-    "Сверление": part.userData.drilling?.map(h => h.operation + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ")").join(" | ") || "",
-    "Крепёж корпуса": part.userData.bodyFasteners?.map(h => h.type + " Ø" + h.diameter + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
-    "Полкодержатели": part.userData.shelfSupportDrilling?.map(h => h.type + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
-    "Дюбели/эксцентрики": part.userData.secondaryFasteners?.map(h => h.type + " Ø" + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
-    "Обработка": part.userData.detailing?.processing?.map(h => h.operation + " " + h.diameter + "×" + h.depth + " (" + h.x + ";" + h.y + ";" + h.z + ")").join(" | ") || "",
-    "Примечания": constructionChecksDetailed().filter(x => x.includes(part.userData.name)).join(" | ")
-  }));
-  const ws = XLSX.utils.json_to_sheet(rows); const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Деталировка");
-  XLSX.writeFile(wb, "furniture-ai-parts.xlsx");
-}
-
-function exportPdf() {
-  if (!window.jspdf) { validate("Модуль PDF недоступен.", "error"); return; }
-  const { jsPDF } = window.jspdf; const doc = new jsPDF({orientation:"landscape", unit:"mm", format:"a4"});
-  doc.setFontSize(16); doc.text("Furniture AI Designer — Спецификация", 14, 16);
-  doc.setFontSize(9); doc.text("Модель: " + readParams().width + " × " + readParams().height + " × " + readParams().depth + " мм", 14, 23);
-  let y=31; doc.setFontSize(7);
-  doc.text("№   Деталь                         Ш        В        Г        Материал        Кромка 1-4",14,y); y+=5;
-  parts.forEach((part,i)=>{ const u=part.userData; const line=(u.partNumber+"   "+u.name).slice(0,42)+"   "+Math.round(u.width)+"   "+Math.round(u.height)+"   "+Math.round(u.depth)+"   "+u.material+"   "+u.edges.join(" / "); doc.text(line.slice(0,150),14,y); y+=4; if(y>195){doc.addPage();y=15;} });
-  doc.save("furniture-ai-specification.pdf");
-}
-
-function validate(message, type) {
-  const box = $("validation");
-  box.textContent = message;
-  box.className = "validation " + type;
-}
-
-$("build").addEventListener("click", build);
-$("explode").addEventListener("click", () => setExplode(!exploded));
-$("resetExplode").addEventListener("click", () => setExplode(false));
-$("frontView").addEventListener("click", frontView);
-$("isoView").addEventListener("click", fitView);
-$("material").addEventListener("change", build);
-[1, 2, 3, 4].forEach(i => $("edge" + i).addEventListener("change", build));
-$("exportExcel").addEventListener("click", exportExcel);
-if ($("exportCutting")) $("exportCutting").addEventListener("click", exportCuttingStructure);
-if ($("exportSheetLayout")) $("exportSheetLayout").addEventListener("click", exportSheetLayout);
-if ($("exportDxf")) $("exportDxf").addEventListener("click", exportAllDxf);
-if ($("exportCnc")) $("exportCnc").addEventListener("click", exportAllCnc);
-if ($("exportCncTech")) $("exportCncTech").addEventListener("click", exportCncTechCards);
-if ($("exportCncManifest")) $("exportCncManifest").addEventListener("click", exportCncJobManifest);
-if ($("exportCnc")) $("exportCnc").addEventListener("click", renderCncPreflight);
-function renderCncSetupValidation() {
-  const target=$("cncSetupValidation");
-  if(!target) return;
-  const issues=validateCncMachineSetup();
-  target.innerHTML="<b>Проверка настроек станка</b>"+(issues.length ?
-    issues.map(i=>"<div class='status "+i.level+"'>"+i.message+"</div>").join("") :
-    "<div class='status ok'>Настройки CNC корректны.</div>");
-}
-["cncSafeZ","cncWorkZ","cncFeed","cncSpindle"].forEach(id=>{
-  const el=$(id);
-  if(el) el.addEventListener("input",renderCncSetupValidation);
-});
-renderCncSetupValidation();
-function renderCncOperations() {
-  const target=$("cncOperationsTable");
-  if(!target || !parts.length) return;
-  const rows=parts.flatMap(p=>buildCncOperations(p).map(op=>"<tr><td>"+op.partNumber+"</td><td>"+op.sequence+"</td><td>"+op.type+"</td><td>"+op.operation+"</td><td>"+(op.diameter||"—")+"</td><td>"+(op.depth||"—")+"</td></tr>"));
-  target.innerHTML="<b>CNC-операции</b><table><thead><tr><th>№</th><th>№ оп.</th><th>Тип</th><th>Операция</th><th>Ø</th><th>Глубина</th></tr></thead><tbody>"+rows.join("")+"</tbody></table>";
-}
-setTimeout(renderCncOperations, 0);
-
-if ($("showCuttingMap")) $("showCuttingMap").addEventListener("click", showCuttingMap);
-$("exportPdf").addEventListener("click", exportPdf);
-
-$("newProject").addEventListener("click", () => {
-  [2400, 2200, 600, 18, 3, 6, 0, 3, 2, 3].forEach((value, i) => {
-    $("width height depth thickness sections shelves fixedPartitions doors frontGapTB frontGapBetween".split(" ")[i]).value = value;
-  });
   build();
 });
 
+$("thickness")?.addEventListener("change", () => {
+  syncMaterialAndThickness("thickness");
+  build();
+});
+
+
+[1,2,3,4].forEach(i => $("edge"+i)?.addEventListener("change", () => {
+  if (ifcMode) {
+    refreshIfcTechnology();
+    return;
+  }
+  build();
+}));
+
+const technologyBuildFields = [
+  "frontType","hingeType","hingeLimiter","openingAngle",
+  "fastenerType","confirmatDiameter","connectorDiameter",
+  "secondaryFastener","dowelDiameter","eccentricDiameter",
+  "shelfSupportType","shelfFrontOffset"
+];
+technologyBuildFields.forEach(id => $(id)?.addEventListener("change", () => {
+  if (ifcMode) {
+    validate("Для IFC технологические атрибуты задаются исходной моделью. Геометрия IFC не изменена.", "ok");
+    return;
+  }
+  build();
+}));
+
+$("aiRecognize")?.addEventListener("click", () => {
+  const result = recognizeFurnitureText($("aiPrompt")?.value || "");
+  renderAiRecognition(result);
+});
+$("aiApply")?.addEventListener("click", applyAiRecognition);
+$("aiImageAnalyze")?.addEventListener("click", async () => {
+  const file=$("aiImageFile")?.files?.[0];
+  if(!file){ validate("Загрузите изображение мебели.","error"); return; }
+  try {
+    const result=await analyzeFurnitureImageMetadata(file);
+    renderAiImageRecognition(result);
+  } catch (error) {
+    validate("Не удалось распознать изображение: "+error.message, "error");
+  }
+});
+document.querySelectorAll(".exportSheetLayout").forEach(button => button.addEventListener("click", exportSheetLayout));
+document.querySelectorAll(".showCuttingMap").forEach(button => button.addEventListener("click", showCuttingMap));
+$("newProject").addEventListener("click", () => {
+  const ids = ["width","height","depth","thickness","sections","shelves","fixedPartitions","doors","frontGapTB","frontGapBetween"];
+  ids.forEach(id => { if ($(id)) $(id).value = ""; });
+  clearModel();
+  ifcMode = false;
+  ifcImportedParts = [];
+  ifcHardwareParts = [];
+  $("partsCount").textContent = "0";
+  $("partsList").innerHTML = "";
+  $("summary").textContent = "—";
+  $("projectName").textContent = "Новый проект";
+  $("status").textContent = "Параметры не заданы";
+  $("drillingSummary").textContent = "Сверление будет рассчитано после построения.";
+  validate("Новый проект: введите параметры мебели и нажмите «Построить».", "ok");
+  controls.target.set(0, 0, 0);
+  camera.position.set(3200, 2600, 3800);
+  controls.update();
+});
 $("saveProject").addEventListener("click", () => {
   const ids = ["width", "height", "depth", "thickness", "sections", "shelves", "fixedPartitions", "doors", "frontGapTB", "frontGapBetween"];
   const parameters = Object.fromEntries(ids.map(id => [id, $(id).value]));
@@ -1666,60 +2962,44 @@ $("saveProject").addEventListener("click", () => {
   parameters.secondaryFastener = $("secondaryFastener").value;
   parameters.dowelDiameter = $("dowelDiameter").value;
   parameters.eccentricDiameter = $("eccentricDiameter").value;
-
-  const data = {
-    version: projectVersion,
-    name: "Furniture AI Designer",
-    parameters
-  };
-
-  const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], {type: "application/json"}));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "furniture-ai-project.json";
-  link.click();
-  URL.revokeObjectURL(url);
+  parameters.lightingEnabled = $("lightingEnabled").value;
+  parameters.lightingMount = $("lightingMount").value;
+  parameters.shelfLighting = $("shelfLighting").value;
+  parameters.countertopEnabled = $("countertopEnabled").value;
+  parameters.countertopThickness = $("countertopThickness").value;
+  parameters.countertopPostforming = $("countertopPostforming").value;
+  parameters.countertopCut = $("countertopCut").value;
+  parameters.countertopMaterial = $("countertopMaterial").value;
+  parameters.facadeManufacturer = $("facadeManufacturer").value;
+  parameters.facadeModel = $("facadeModel").value;
+  parameters.facadeLibraryItem = $("facadeLibraryItem").value;
+  const data = {version: projectVersion,name:"Furniture AI Designer",parameters};
+  const url = URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}));
+  const link=document.createElement("a"); link.href=url; link.download="furniture-ai-project.json"; link.click(); URL.revokeObjectURL(url);
 });
-
-$("loadProject").addEventListener("change", (event) => {
-  const file = event.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = () => {
-    try {
-      const data = JSON.parse(reader.result);
-      Object.entries(data.parameters || {}).forEach(([key, value]) => {
-        if ($(key)) $(key).value = value;
-      });
-      const savedEdges = data.parameters?.edges || [];
-      savedEdges.forEach((value, index) => {
-        if ($("edge" + (index + 1))) $("edge" + (index + 1)).value = value;
-      });
-      if (!savedEdges.length && data.parameters?.edge) {
-        [1, 2, 3, 4].forEach(i => $("edge" + i).value = data.parameters.edge);
-      }
+$("loadProject").addEventListener("change",(event)=>{
+  const file=event.target.files[0]; if(!file)return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    try{
+      const data=JSON.parse(reader.result);
+      Object.entries(data.parameters||{}).forEach(([key,value])=>{if($(key))$(key).value=value;});
+      (data.parameters?.edges||[]).forEach((value,index)=>{if($("edge"+(index+1)))$("edge"+(index+1)).value=value;});
       build();
-    } catch {
-      validate("Не удалось прочитать проект JSON.", "error");
-    }
+    }catch{validate("Не удалось прочитать проект JSON.","error");}
   };
   reader.readAsText(file);
 });
-
-function resize() {
-  const width = viewer.clientWidth;
-  const height = viewer.clientHeight;
-  camera.aspect = width / Math.max(height, 1);
-  camera.updateProjectionMatrix();
-  renderer.setSize(width, height);
+function resize(){
+  const width=viewer.clientWidth,height=viewer.clientHeight;
+  camera.aspect=width/Math.max(height,1); camera.updateProjectionMatrix(); renderer.setSize(width,height);
 }
-window.addEventListener("resize", resize);
+window.addEventListener("resize",resize);
 resize();
 
-function animate() {
-  requestAnimationFrame(animate);
+function renderLoop() {
   controls.update();
   renderer.render(scene, camera);
+  requestAnimationFrame(renderLoop);
 }
-animate();
-build();
+renderLoop();

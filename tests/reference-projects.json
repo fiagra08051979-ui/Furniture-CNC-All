@@ -1,0 +1,66 @@
+{
+  "version": "1.0",
+  "scope": "Furniture AI Designer",
+  "projects": [
+    {
+      "id": "cabinet-basic",
+      "description": "Базовый корпус: 2 боковины, дно, крышка, 1 полка, 2 фасада",
+      "parameters": {
+        "width": 600,
+        "height": 1800,
+        "depth": 400,
+        "thickness": 18,
+        "sections": 1,
+        "shelves": 1,
+        "fixedPartitions": 0,
+        "doors": 2
+      },
+      "expected": {
+        "minimumParts": 6,
+        "doors": 2,
+        "shelves": 1,
+        "materialThickness": 18
+      }
+    },
+    {
+      "id": "cabinet-two-sections",
+      "description": "Двухсекционный корпус с вертикальной перегородкой и 4 полками",
+      "parameters": {
+        "width": 1200,
+        "height": 2200,
+        "depth": 500,
+        "thickness": 16,
+        "sections": 2,
+        "shelves": 4,
+        "fixedPartitions": 1,
+        "doors": 2
+      },
+      "expected": {
+        "minimumParts": 10,
+        "doors": 2,
+        "shelves": 4,
+        "materialThickness": 16
+      }
+    },
+    {
+      "id": "cabinet-empty",
+      "description": "Минимальный корпус без полок и перегородок",
+      "parameters": {
+        "width": 800,
+        "height": 1000,
+        "depth": 350,
+        "thickness": 18,
+        "sections": 1,
+        "shelves": 0,
+        "fixedPartitions": 0,
+        "doors": 0
+      },
+      "expected": {
+        "minimumParts": 4,
+        "doors": 0,
+        "shelves": 0,
+        "materialThickness": 18
+      }
+    }
+  ]
+}
