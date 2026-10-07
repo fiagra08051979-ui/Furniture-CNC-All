@@ -138,14 +138,8 @@ const apartmentGate = await page.evaluate(() => window._releaseGate);
 if (!apartmentGate || !Array.isArray(apartmentGate.gatedParts) || apartmentGate.gatedParts.length !== 7) throw new Error("Release Gate должен видеть только 7 мебельных деталей.");
 if (apartmentGate.gatedParts.some(part => part?.userData?.isHardware || part?.isHardware)) throw new Error("Ножка-фурнитура попала в gatedParts Release Gate.");
 const apartmentScheduleByPart = await page.evaluate(() => {
-  const nodes = [];
-  if (typeof parts !== "undefined") nodes.push(...parts);
-  if (typeof ifcHardwareParts !== "undefined") nodes.push(...ifcHardwareParts);
-  const items = nodes.flatMap(part => Array.isArray(part?.userData?.ifcHardwareSchedule)
-    ? part.userData.ifcHardwareSchedule
-    : []);
-  const unique = new Map(items.map(item => [item.id, item]));
-  return [...unique.values()];
+  const items = Array.isArray(window._ifcHardwareSchedule) ? window._ifcHardwareSchedule : [];
+  return [...new Map(items.map(item => [item.id, item])).values()];
 });
 const jointHardware = apartmentScheduleByPart.filter(item => item.type === "Крепёж соединения");
 const legHardware = apartmentScheduleByPart.filter(item => item.type === "Мебельная ножка");
@@ -175,12 +169,7 @@ const apartmentScheduleBeforeRefresh = apartmentScheduleByPart;
 await page.locator("#material").selectOption("mdf18");
 await page.waitForTimeout(500);
 const apartmentScheduleAfterRefresh = await page.evaluate(() => {
-  const nodes = [];
-  if (typeof parts !== "undefined") nodes.push(...parts);
-  if (typeof ifcHardwareParts !== "undefined") nodes.push(...ifcHardwareParts);
-  const items = nodes.flatMap(part => Array.isArray(part?.userData?.ifcHardwareSchedule)
-    ? part.userData.ifcHardwareSchedule
-    : []);
+  const items = Array.isArray(window._ifcHardwareSchedule) ? window._ifcHardwareSchedule : [];
   return [...new Map(items.map(item => [item.id, item])).values()];
 });
 if (JSON.stringify(apartmentScheduleAfterRefresh) !== JSON.stringify(apartmentScheduleBeforeRefresh)) {
