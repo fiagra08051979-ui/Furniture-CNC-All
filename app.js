@@ -903,7 +903,10 @@ async function importIfcIntoFurnitureCore(file) {
           quantity: 1,
           material: $("material")?.value || "ldsp18",
           edges: edgeLabels(),
-          base: center.clone(),
+          // Для IFC группа содержит flatTransformation внутри mesh, поэтому её базовая
+          // позиция должна оставаться локальной позицией контейнера, а не центром геометрии.
+          // Иначе сборка/взрыв повторно прибавляет центр детали и смещает её от корпуса.
+          base: group.position.clone(),
           partNumber: ""
         };
 
@@ -921,6 +924,16 @@ async function importIfcIntoFurnitureCore(file) {
     if (!rendered) throw new Error("В IFC не найдены элементы с геометрией.");
 
     root.updateMatrixWorld(true);
+
+    // IFC может иметь произвольный мировой ноль. После распознавания
+    // ставим нижнюю точку реальной мебели на уровень пола Furniture Core.
+    // X/Z не меняем: сохраняем исходное позиционирование и геометрию IFC.
+    const importedBox = new THREE.Box3().setFromObject(root);
+    if (!importedBox.isEmpty() && Number.isFinite(importedBox.min.y)) {
+      root.position.y -= importedBox.min.y;
+      root.updateMatrixWorld(true);
+    }
+
     const recognition = applyIfcRecognition();
     const hardwareCount = moveIfcSupportsToHardware();
     if (hardwareCount) {
@@ -2700,6 +2713,7 @@ function focusPart(part) {
 }
 
 function fitView() {
+  root.updateMatrixWorld(true);
   const box = new THREE.Box3().setFromObject(root);
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
@@ -2711,8 +2725,13 @@ function fitView() {
 
 function setExplode(on) {
   exploded = on;
-  const p = readParams();
-  const distance = Math.max(p.width, p.height, p.depth) * 0.42;
+
+  // Взрывная схема должна работать одинаково для параметрической и IFC-модели.
+  // Для IFC поля параметров шкафа могут быть пустыми, поэтому расстояние
+  // рассчитываем только по фактической 3D-геометрии.
+  const modelBox = new THREE.Box3().setFromObject(root);
+  const modelSize = modelBox.getSize(new THREE.Vector3());
+  const distance = Math.max(modelSize.x, modelSize.y, modelSize.z, 1) * 0.42;
 
   parts.forEach((part, index) => {
     const direction = new THREE.Vector3(
@@ -2721,9 +2740,15 @@ function setExplode(on) {
       index % 2 ? 1 : -1
     ).normalize();
 
-    part.position.copy(part.userData.base);
-    if (on) part.position.add(direction.multiplyScalar(distance));
+    const base = part.userData.base instanceof THREE.Vector3
+      ? part.userData.base
+      : part.position.clone();
+
+    part.position.copy(base);
+    if (on) part.position.add(direction.clone().multiplyScalar(distance));
   });
+
+  root.updateMatrixWorld(true);
   syncPartLabels();
 
   $("explode").textContent = on ? "Свернуть" : "Взрыв";
@@ -2750,6 +2775,12 @@ function clearInteriorView() {
 }
 
 function showInteriorView() {
+  // В интерьер всегда попадает собранная мебель.
+  // Если до этого была включена взрывная схема, сначала возвращаем детали
+  // в базовые позиции, иначе комната рассчитывается вокруг взорванной модели.
+  if (exploded) setExplode(false);
+  root.updateMatrixWorld(true);
+
   clearInteriorView();
   const box = new THREE.Box3().setFromObject(root);
   if (box.isEmpty()) {
@@ -2796,6 +2827,7 @@ function showInteriorView() {
     center.z + roomD * 0.48
   );
   controls.update();
+  root.updateMatrixWorld(true);
   validate("Мебель вписана в интерьер.", "ok");
 }
 
