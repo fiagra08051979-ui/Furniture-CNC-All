@@ -53,6 +53,7 @@ let ifcApi = null;
 let ifcModelId = null;
 let ifcImportedParts = [];
 let ifcHardwareParts = [];
+window._ifcHardwareSchedule = [];
 
 function ifcScalar(value) {
   if (value === null || value === undefined) return "";
@@ -664,6 +665,7 @@ function refreshIfcTechnology() {
   buildIfcTechnologyState();
   buildIfcTechnologyOperations();
   const ifcHardwareSchedule = buildIfcHardwareSchedule();
+  window._ifcHardwareSchedule = ifcHardwareSchedule;
   [...ifcImportedParts, ...ifcHardwareParts].forEach(part => {
     const key = part.userData.isHardware
       ? part.userData.hardwareNumber
@@ -934,6 +936,7 @@ async function importIfcIntoFurnitureCore(file) {
     technology.ready = ifcImportedParts.filter(part => part.userData.technology?.status === "ready").length;
     technology.review = ifcImportedParts.filter(part => part.userData.technology?.status !== "ready").length;
     const ifcHardwareSchedule = buildIfcHardwareSchedule();
+    window._ifcHardwareSchedule = ifcHardwareSchedule;
     [...ifcImportedParts, ...ifcHardwareParts].forEach(part => {
       const key = part.userData.isHardware
         ? part.userData.hardwareNumber
