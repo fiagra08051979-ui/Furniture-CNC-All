@@ -109,6 +109,10 @@ if (!apartmentObjects.includes("Release Gate:")) throw new Error("Release Gate �
 const apartmentGate = await page.evaluate(() => window._releaseGate);
 if (!apartmentGate || !Array.isArray(apartmentGate.gatedParts) || apartmentGate.gatedParts.length !== 7) throw new Error("Release Gate должен видеть только 7 мебельных деталей.");
 if (apartmentGate.gatedParts.some(part => part?.userData?.isHardware || part?.isHardware)) throw new Error("Ножка-фурнитура попала в gatedParts Release Gate.");
+const apartmentThicknessReviews = apartmentGate.gatedParts
+  .flatMap(part => Array.isArray(part?.detailing?.notes) ? part.detailing.notes : [])
+  .filter(note => String(note).includes("толщина IFC 20 мм не совпадает с выбранным материалом 18 мм"));
+if (!apartmentThicknessReviews.length) throw new Error("Для реального IFC не зафиксировано расхождение толщины 20 мм с выбранным материалом 18 мм.");
 const apartmentPlacements = (apartmentGate.sheetLayout?.sheets || []).flatMap(sheet => sheet.placements || []);
 if (apartmentPlacements.some(p => /ножка|HW-00/i.test(String(p?.partName || p?.partNumber || "")))) throw new Error("Ножка-фурнитура попала в раскрой.");
 if (!apartmentValidation.includes("IFC импортирован")) throw new Error("Реальный IFC не завершил импорт: " + apartmentValidation);
