@@ -671,6 +671,13 @@ function applyIfcRecognition() {
     const size = box.getSize(new THREE.Vector3());
     const center = box.getCenter(new THREE.Vector3());
 
+    if (u.componentIndex >= 6) {
+      console.info("IFC_LEG_DEBUG", JSON.stringify({
+        componentIndex:u.componentIndex,
+        size:{x:Number(size.x.toFixed(1)),y:Number(size.y.toFixed(1)),z:Number(size.z.toFixed(1))},
+        center:{x:Number(center.x.toFixed(1)),y:Number(center.y.toFixed(1)),z:Number(center.z.toFixed(1))}
+      }));
+    }
     const result = recognizeIfcPart({
       name: u.sourceName || u.name,
       typeName: u.ifcType,
