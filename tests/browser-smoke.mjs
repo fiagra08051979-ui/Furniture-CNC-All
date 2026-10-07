@@ -165,6 +165,48 @@ if (!apartmentValidation.includes("IFC импортирован")) throw new Err
 if (String(apartmentGate.status) !== "BLOCKED" || apartmentGate.passed === true) {
   throw new Error("Release Gate реального IFC не должен проходить автоматически при неподтверждённых соединениях/толщине: " + JSON.stringify(apartmentGate));
 }
+
+await page.locator("#isoView").click();
+await page.waitForTimeout(300);
+const assembledViewer = await page.evaluate(() => window._viewerState || null);
+if (!assembledViewer || assembledViewer.empty || assembledViewer.exploded) {
+  throw new Error("После импорта реального IFC модель должна находиться в собранном состоянии.");
+}
+if (Math.abs(Number(assembledViewer.minY)) > 1) {
+  throw new Error("Реальный IFC не стоит на уровне пола: minY=" + assembledViewer.minY);
+}
+
+await page.locator("#explode").click();
+await page.waitForTimeout(300);
+const explodedViewer = await page.evaluate(() => window._viewerState || null);
+if (!explodedViewer?.exploded || explodedViewer.context !== "exploded") {
+  throw new Error("Взрывная схема реального IFC не перешла в состояние exploded.");
+}
+if (Math.abs(Number(explodedViewer.minY) - Number(assembledViewer.minY)) < 1) {
+  throw new Error("Взрывная схема не разнесла детали реального IFC.");
+}
+
+await page.locator("#resetExplode").click();
+await page.waitForTimeout(300);
+const reassembledViewer = await page.evaluate(() => window._viewerState || null);
+if (!reassembledViewer || reassembledViewer.exploded || reassembledViewer.context !== "assembled") {
+  throw new Error("После «Собрать» реальный IFC не вернулся в исходные позиции.");
+}
+if (Math.abs(Number(reassembledViewer.minY) - Number(assembledViewer.minY)) > 1) {
+  throw new Error("После «Собрать» реальный IFC изменил положение по высоте.");
+}
+
+await page.locator("#explode").click();
+await page.waitForTimeout(300);
+await page.locator("#interiorView").click();
+await page.waitForTimeout(500);
+const interiorViewer = await page.evaluate(() => window._viewerState || null);
+if (!interiorViewer || interiorViewer.context !== "interior" || interiorViewer.exploded) {
+  throw new Error("В интерьер должна попадать собранная, а не взорванная IFC-модель.");
+}
+if (Math.abs(Number(interiorViewer.minY)) > 1) {
+  throw new Error("После встраивания в интерьер IFC должен оставаться на уровне пола: minY=" + interiorViewer.minY);
+}
 const apartmentScheduleBeforeRefresh = apartmentScheduleByPart;
 await page.locator("#material").selectOption("mdf18");
 await page.waitForTimeout(500);
