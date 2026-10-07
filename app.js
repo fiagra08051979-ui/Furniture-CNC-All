@@ -561,7 +561,7 @@ function buildIfcTechnologyOperations() {
         gapMm:Number(gaps[contactAxis].toFixed(2)),
         contactCenter:{x:Number(center.x.toFixed(2)),y:Number(center.y.toFixed(2)),z:Number(center.z.toFixed(2))},
         source:"IFC bounding boxes",
-        hardwareRecommendation: roleSet.has("Полка") ? "полкодержатель или штифт" : "конфирмат / стяжка",
+        hardwareRecommendation: "Тип крепежа не определён по IFC; требуется подтверждение технологии",
         note:"Кандидат соединения определён по фактическому пересечению/контакту IFC. Отверстия не генерируются автоматически до подтверждения базы и направления сверления."
       };
 
