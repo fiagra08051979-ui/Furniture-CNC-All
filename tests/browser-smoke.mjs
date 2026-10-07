@@ -145,6 +145,22 @@ if (!apartmentValidation.includes("IFC импортирован")) throw new Err
 if (String(apartmentGate.status) !== "BLOCKED" || apartmentGate.passed === true) {
   throw new Error("Release Gate реального IFC не должен проходить автоматически при неподтверждённых соединениях/толщине: " + JSON.stringify(apartmentGate));
 }
+const apartmentScheduleBeforeRefresh = apartmentScheduleByPart;
+await page.locator("#material").selectOption("mdf18");
+await page.waitForTimeout(500);
+const apartmentScheduleAfterRefresh = await page.evaluate(() => {
+  const nodes = [];
+  if (typeof parts !== "undefined") nodes.push(...parts);
+  if (typeof ifcHardwareParts !== "undefined") nodes.push(...ifcHardwareParts);
+  const items = nodes.flatMap(part => Array.isArray(part?.userData?.ifcHardwareSchedule)
+    ? part.userData.ifcHardwareSchedule
+    : []);
+  return [...new Map(items.map(item => [item.id, item])).values()];
+});
+if (JSON.stringify(apartmentScheduleAfterRefresh) !== JSON.stringify(apartmentScheduleBeforeRefresh)) {
+  throw new Error("После обновления IFC-технологии график hardware потерял связность.");
+}
+
 if (!Array.isArray(apartmentGate.issues) || !apartmentGate.issues.some(issue => /соединен|крепеж|технолог/i.test(String(issue)))) {
   throw new Error("Release Gate не зафиксировал блокировку по неподтверждённой IFC-технологии: " + JSON.stringify(apartmentGate.issues));
 }
