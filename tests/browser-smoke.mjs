@@ -111,18 +111,6 @@ if (!apartmentObjects.includes("Release Gate:")) throw new Error("Release Gate �
 const apartmentGate = await page.evaluate(() => window._releaseGate);
 if (!apartmentGate || !Array.isArray(apartmentGate.gatedParts) || apartmentGate.gatedParts.length !== 7) throw new Error("Release Gate должен видеть только 7 мебельных деталей.");
 if (apartmentGate.gatedParts.some(part => part?.userData?.isHardware || part?.isHardware)) throw new Error("Ножка-фурнитура попала в gatedParts Release Gate.");
-const apartmentHardwareSchedule = await page.evaluate(() => {
-  const all = [...document.querySelectorAll("*")];
-  return window._releaseGate ? [] : [];
-});
-const apartmentHardwareItems = await page.evaluate(() => {
-  const seen = new Map();
-  const candidates = [];
-  const parts = window._releaseGate?.gatedParts || [];
-  const sceneObjects = [];
-  if (window._ifcRecognitionDebug) sceneObjects.push(...(window._ifcRecognitionDebug.parts || []));
-  return { partsCount: parts.length };
-});
 const apartmentScheduleByPart = await page.evaluate(() => {
   const nodes = [];
   if (typeof parts !== "undefined") nodes.push(...parts);
