@@ -107,6 +107,7 @@ if (apartmentParts !== 7) throw new Error("Ожидалось 7 мебельны
 if (!apartmentObjects.includes("деталировка:")) throw new Error("IFC-деталировка не дошла до статуса.");
 if (!apartmentObjects.includes("Construction QC:")) throw new Error("Construction QC не дошёл до статуса.");
 if (!apartmentObjects.includes("Release Gate:")) throw new Error("Release Gate не дошёл до статуса.");
+console.log("APARTMENT_GATE", JSON.stringify({passed:apartmentGate?.passed,issues:apartmentGate?.issues,qc:apartmentGate?.qc}, null, 2));
 const apartmentGate = await page.evaluate(() => window._releaseGate);
 if (!apartmentGate || !Array.isArray(apartmentGate.gatedParts) || apartmentGate.gatedParts.length !== 7) throw new Error("Release Gate должен видеть только 7 мебельных деталей.");
 if (apartmentGate.gatedParts.some(part => part?.userData?.isHardware || part?.isHardware)) throw new Error("Ножка-фурнитура попала в gatedParts Release Gate.");
