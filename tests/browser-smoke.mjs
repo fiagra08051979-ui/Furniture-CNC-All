@@ -103,22 +103,14 @@ const apartmentParts = await page.evaluate(() => Array.isArray(window._releaseGa
 if (!apartmentGeometry.includes("Реальная IFC-геометрия: 11 элементов")) throw new Error("Реальный IFC не разложен на 11 геометрических компонентов: " + apartmentGeometry);
 if (!apartmentObjects.includes("Фурнитура / ножка: 4") || !apartmentObjects.includes("фурнитура: 4 ножек")) throw new Error("4 ножки не переведены в фурнитуру: " + apartmentObjects);
 if (apartmentParts !== 7) throw new Error("Ожидалось 7 мебельных деталей после исключения 4 ножек, получено: " + apartmentParts);
+if (!apartmentObjects.includes("Фасад: 2")) throw new Error("Распознавание реального IFC должно дать 2 фасада: " + apartmentObjects);
+if (!apartmentObjects.includes("соединения-кандидаты: 4")) throw new Error("Для полноразмерных верхней/нижней панелей должны определиться 4 геометрических соединения: " + apartmentObjects);
 if (!apartmentObjects.includes("деталировка:")) throw new Error("IFC-деталировка не дошла до статуса.");
 if (!apartmentObjects.includes("Construction QC:")) throw new Error("Construction QC не дошёл до статуса.");
 if (!apartmentObjects.includes("Release Gate:")) throw new Error("Release Gate не дошёл до статуса.");
 const apartmentGate = await page.evaluate(() => window._releaseGate);
 if (!apartmentGate || !Array.isArray(apartmentGate.gatedParts) || apartmentGate.gatedParts.length !== 7) throw new Error("Release Gate должен видеть только 7 мебельных деталей.");
 if (apartmentGate.gatedParts.some(part => part?.userData?.isHardware || part?.isHardware)) throw new Error("Ножка-фурнитура попала в gatedParts Release Gate.");
-console.log("APARTMENT_JOINT_DEBUG", JSON.stringify({
-  partStates: apartmentGate.partStates?.map(part => ({
-    number: part.number,
-    source: part.sourceGeometry,
-    detailingStatus: part.detailing?.status,
-    notes: part.detailing?.notes,
-    construction: part.detailing?.construction
-  })),
-  qc: apartmentGate.qc
-}));
 const apartmentThicknessReviews = apartmentGate.gatedParts
   .flatMap(part => Array.isArray(part?.detailing?.notes) ? part.detailing.notes : [])
   .filter(note => String(note).includes("толщина IFC 20 мм не совпадает с выбранным материалом 18 мм"));
