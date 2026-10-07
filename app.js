@@ -434,31 +434,34 @@ function buildIfcHardwareSchedule() {
     });
   };
 
-  const jointParts = new Map();
-
+  const uniqueJointIds = new Set();
+  let jointPart = null;
   ifcImportedParts.forEach(part => {
     const joints = part.userData.technology?.joints || [];
-    if (!joints.length) return;
-    const uniqueIds = new Set(joints.map(j => j.id));
-    jointParts.set(part, uniqueIds.size);
+    joints.forEach(joint => {
+      if (!uniqueJointIds.has(joint.id)) {
+        uniqueJointIds.add(joint.id);
+        jointPart = jointPart || part;
+      }
+    });
   });
 
-  jointParts.forEach((quantity, part) => {
+  if (uniqueJointIds.size && jointPart) {
     add(
       "Крепёж соединения",
-      quantity,
-      part,
-      "Геометрическое сопряжение деталей подтверждено IFC; тип крепежа и его количество по типоразмеру не определены",
+      uniqueJointIds.size,
+      jointPart,
+      "Геометрические сопряжения подтверждены IFC; тип крепежа и типоразмер не определены",
       "candidate"
     );
-  });
+  }
 
   if (ifcHardwareParts.length) {
     add(
       "Мебельная ножка",
       ifcHardwareParts.length,
       ifcHardwareParts[0],
-      "Реальная IFC-геометрия распознана как четыре опорных элемента; переведено в фурнитуру",
+      "Реальная IFC-геометрия распознана как опорные элементы; переведено в фурнитуру",
       "candidate"
     );
   }
