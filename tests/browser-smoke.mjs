@@ -142,6 +142,13 @@ if (!apartmentThicknessReviews.length) throw new Error("Для реальног�
 const apartmentPlacements = (apartmentGate.sheetLayout?.sheets || []).flatMap(sheet => sheet.placements || []);
 if (apartmentPlacements.some(p => /ножка|HW-00/i.test(String(p?.partName || p?.partNumber || "")))) throw new Error("Ножка-фурнитура попала в раскрой.");
 if (!apartmentValidation.includes("IFC импортирован")) throw new Error("Реальный IFC не завершил импорт: " + apartmentValidation);
+if (String(apartmentGate.status) !== "BLOCKED" || apartmentGate.passed === true) {
+  throw new Error("Release Gate реального IFC не должен проходить автоматически при неподтверждённых соединениях/толщине: " + JSON.stringify(apartmentGate));
+}
+if (!Array.isArray(apartmentGate.issues) || !apartmentGate.issues.some(issue => /соединен|крепеж|технолог/i.test(String(issue)))) {
+  throw new Error("Release Gate не зафиксировал блокировку по неподтверждённой IFC-технологии: " + JSON.stringify(apartmentGate.issues));
+}
+
 
 
 await page.locator("#frontGapBetween").fill("2");
