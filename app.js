@@ -114,12 +114,12 @@ function detectIfcModelLengthScale(api, modelId) {
       const name = String(ifcScalar(unit?.Name) || "").toUpperCase();
       const prefix = String(ifcScalar(unit?.Prefix) || "").toUpperCase();
 
-      if (name === "METRE" || name === "METER") {
-        const metresPerIfcUnit = prefix ? (prefixFactor[prefix] ?? 1) : 1;
-        return metresPerIfcUnit * 1000;
+      // web-ifc выдаёт координаты геометрии в метрах независимо от
+      // исходного префикса IFC единицы. Furniture Core работает в мм.
+      // Поэтому после подтверждения LENGTHUNIT переводим результат в мм.
+      if (name === "METRE" || name === "METER" || name === "FOOT" || name === "FEET" || name === "INCH") {
+        return 1000;
       }
-      if (name === "FOOT" || name === "FEET") return 304.8;
-      if (name === "INCH") return 25.4;
 
       const conversionId = ifcScalar(unit?.ConversionFactor);
       if (conversionId) {
@@ -671,12 +671,6 @@ function applyIfcRecognition() {
     const size = box.getSize(new THREE.Vector3());
     const center = box.getCenter(new THREE.Vector3());
 
-    console.info("IFC_RECOGNITION_GEOMETRY", JSON.stringify({
-      componentIndex: u.componentIndex,
-      name: u.name,
-      size: { x:Number(size.x.toFixed(2)), y:Number(size.y.toFixed(2)), z:Number(size.z.toFixed(2)) },
-      center: { x:Number(center.x.toFixed(2)), y:Number(center.y.toFixed(2)), z:Number(center.z.toFixed(2)) }
-    }));
     const result = recognizeIfcPart({
       name: u.sourceName || u.name,
       typeName: u.ifcType,
