@@ -871,7 +871,6 @@ async function importIfcIntoFurnitureCore(file) {
         group.rotation.x = -Math.PI / 2;
         group.scale.setScalar(ifcLengthScale);
         group.add(mesh);
-        group.updateMatrixWorld(true);
 
         const box = new THREE.Box3().setFromObject(group);
         if (box.isEmpty()) continue;
@@ -915,6 +914,7 @@ async function importIfcIntoFurnitureCore(file) {
 
     if (!rendered) throw new Error("В IFC не найдены элементы с геометрией.");
 
+    root.updateMatrixWorld(true);
     const recognition = applyIfcRecognition();
     const hardwareCount = moveIfcSupportsToHardware();
     if (hardwareCount) {
