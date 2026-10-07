@@ -111,6 +111,42 @@ if (!apartmentObjects.includes("Release Gate:")) throw new Error("Release Gate �
 const apartmentGate = await page.evaluate(() => window._releaseGate);
 if (!apartmentGate || !Array.isArray(apartmentGate.gatedParts) || apartmentGate.gatedParts.length !== 7) throw new Error("Release Gate должен видеть только 7 мебельных деталей.");
 if (apartmentGate.gatedParts.some(part => part?.userData?.isHardware || part?.isHardware)) throw new Error("Ножка-фурнитура попала в gatedParts Release Gate.");
+const apartmentHardwareSchedule = await page.evaluate(() => {
+  const all = [...document.querySelectorAll("*")];
+  return window._releaseGate ? [] : [];
+});
+const apartmentHardwareItems = await page.evaluate(() => {
+  const seen = new Map();
+  const candidates = [];
+  const parts = window._releaseGate?.gatedParts || [];
+  const sceneObjects = [];
+  if (window._ifcRecognitionDebug) sceneObjects.push(...(window._ifcRecognitionDebug.parts || []));
+  return { partsCount: parts.length };
+});
+const apartmentScheduleByPart = await page.evaluate(() => {
+  const nodes = [];
+  if (typeof parts !== "undefined") nodes.push(...parts);
+  if (typeof ifcHardwareParts !== "undefined") nodes.push(...ifcHardwareParts);
+  const items = nodes.flatMap(part => Array.isArray(part?.userData?.ifcHardwareSchedule)
+    ? part.userData.ifcHardwareSchedule
+    : []);
+  const unique = new Map(items.map(item => [item.id, item]));
+  return [...unique.values()];
+});
+const jointHardware = apartmentScheduleByPart.filter(item => item.type === "Крепёж соединения");
+const legHardware = apartmentScheduleByPart.filter(item => item.type === "Мебельная ножка");
+if (jointHardware.length !== 1 || Number(jointHardware[0].quantity) !== 4 || jointHardware[0].status !== "candidate") {
+  throw new Error("IFC-график крепежа должен содержать ровно один нейтральный candidate на 4 соединения: " + JSON.stringify(apartmentScheduleByPart));
+}
+if (legHardware.length !== 1 || Number(legHardware[0].quantity) !== 4 || legHardware[0].status !== "candidate") {
+  throw new Error("IFC-график фурнитуры должен содержать 4 ножки со статусом candidate: " + JSON.stringify(apartmentScheduleByPart));
+}
+if (apartmentScheduleByPart.some(item => /конфирмат|эксцентрик|полкодержател|петл/i.test(String(item.type)))) {
+  throw new Error("IFC-график не должен автоматически назначать конкретный тип крепежа/фурнитуры: " + JSON.stringify(apartmentScheduleByPart));
+}
+if (apartmentScheduleByPart.some(item => item.status === "ready" && /Крепёж соединения|Мебельная ножка/.test(String(item.type)))) {
+  throw new Error("IFC-кандидаты hardware не должны автоматически становиться ready.");
+}
 const apartmentThicknessReviews = apartmentGate.gatedParts
   .flatMap(part => Array.isArray(part?.detailing?.notes) ? part.detailing.notes : [])
   .filter(note => String(note).includes("толщина IFC 20 мм не совпадает с выбранным материалом 18 мм"));
