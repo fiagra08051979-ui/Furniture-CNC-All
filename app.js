@@ -716,16 +716,6 @@ function applyIfcRecognition() {
       center,
       overallBox
     });
-    if (u.source === "IFC" && String(u.sourceName || "").includes("ШВ-062")) {
-      console.log("IFC_RECO_DEBUG", JSON.stringify({
-        sourceName:u.sourceName,
-        size:{x:size.x,y:size.y,z:size.z},
-        center:{x:center.x,y:center.y,z:center.z},
-        overall:{x:overallBox.getSize(new THREE.Vector3()).x,y:overallBox.getSize(new THREE.Vector3()).y,z:overallBox.getSize(new THREE.Vector3()).z},
-        recognized:result
-      }));
-    }
-
     counters[result.kind] = (counters[result.kind] || 0) + 1;
     if (result.confidence === "low") lowConfidence++;
 
